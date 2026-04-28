@@ -1,0 +1,134 @@
+import 'package:flutter/material.dart';
+import '../../../core/constants/app_colors.dart';
+
+class ProfilePage extends StatelessWidget {
+  const ProfilePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        backgroundColor: AppColors.primary,
+        elevation: 0,
+        title: const Text('Hồ sơ của tôi', style: TextStyle(color: AppColors.white)),
+        actions: [
+          IconButton(icon: const Icon(Icons.settings, color: AppColors.white), onPressed: () {}),
+          IconButton(icon: const Icon(Icons.shopping_cart_outlined, color: AppColors.white), onPressed: () {}),
+          IconButton(icon: const Icon(Icons.chat_outlined, color: AppColors.white), onPressed: () {}),
+        ],
+      ),
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            // Header: Avatar, Name, Rank
+            Container(
+              color: AppColors.primary,
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  const CircleAvatar(
+                    radius: 40,
+                    backgroundColor: AppColors.white,
+                    child: Icon(Icons.person, size: 50, color: AppColors.primary),
+                  ),
+                  const SizedBox(width: 15),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Username_Petshop',
+                        style: TextStyle(color: AppColors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                      ),
+                      const SizedBox(height: 5),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.secondary,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Text(
+                          'Hạng: Kim cương',
+                          style: TextStyle(color: AppColors.white, fontSize: 12),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            // Order Status Section
+            Container(
+              margin: const EdgeInsets.all(10),
+              padding: const EdgeInsets.symmetric(vertical: 15),
+              decoration: BoxDecoration(
+                color: AppColors.white,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 15),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text('Đơn mua', style: TextStyle(fontWeight: FontWeight.bold)),
+                        Text('Xem lịch sử >', style: TextStyle(color: AppColors.textLight, fontSize: 12)),
+                      ],
+                    ),
+                  ),
+                  const Divider(),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _buildStatusItem(Icons.payment, 'Chờ xác nhận'),
+                      _buildStatusItem(Icons.inventory_2_outlined, 'Chờ lấy hàng'),
+                      _buildStatusItem(Icons.local_shipping_outlined, 'Đang giao'),
+                      _buildStatusItem(Icons.star_outline, 'Đánh giá'),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            // Features List
+            _buildMenuItem(Icons.history, 'Lịch sử mua hàng', '24 đơn hàng'),
+            _buildMenuItem(Icons.card_membership, 'Điểm tích lũy', '1.500 điểm'),
+            _buildMenuItem(Icons.confirmation_number_outlined, 'Kho Voucher', '12 mã giảm giá'),
+            _buildMenuItem(Icons.storefront, 'Đăng ký thành người bán', 'Kiếm tiền ngay'),
+
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusItem(IconData icon, String label) {
+    return Column(
+      children: [
+        Icon(icon, color: AppColors.primary),
+        const SizedBox(height: 5),
+        Text(label, style: const TextStyle(fontSize: 11)),
+      ],
+    );
+  }
+
+  Widget _buildMenuItem(IconData icon, String title, String subtitle) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: ListTile(
+        leading: Icon(icon, color: AppColors.primary),
+        title: Text(title),
+        subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
+        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+        onTap: () {},
+      ),
+    );
+  }
+}
