@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../favorites/pages/favorites_page.dart';
 
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
@@ -93,10 +94,11 @@ class ProfilePage extends StatelessWidget {
             ),
 
             // Features List
-            _buildMenuItem(Icons.history, 'Lịch sử mua hàng', '24 đơn hàng'),
-            _buildMenuItem(Icons.card_membership, 'Điểm tích lũy', '1.500 điểm'),
-            _buildMenuItem(Icons.confirmation_number_outlined, 'Kho Voucher', '12 mã giảm giá'),
-            _buildMenuItem(Icons.storefront, 'Đăng ký thành người bán', 'Kiếm tiền ngay'),
+            _buildMenuItem(context, Icons.favorite, 'Danh sách yêu thích', 'Sản phẩm bạn đã thích', destination: const FavoritesPage()),
+            _buildMenuItem(context, Icons.history, 'Lịch sử mua hàng', '24 đơn hàng'),
+            _buildMenuItem(context, Icons.card_membership, 'Điểm tích lũy', '1.500 điểm'),
+            _buildMenuItem(context, Icons.confirmation_number_outlined, 'Kho Voucher', '12 mã giảm giá'),
+            _buildMenuItem(context, Icons.storefront, 'Đăng ký thành người bán', 'Kiếm tiền ngay'),
 
             const SizedBox(height: 20),
           ],
@@ -115,7 +117,7 @@ class ProfilePage extends StatelessWidget {
     );
   }
 
-  Widget _buildMenuItem(IconData icon, String title, String subtitle) {
+  Widget _buildMenuItem(BuildContext context, IconData icon, String title, String subtitle, {Widget? destination}) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
@@ -127,7 +129,14 @@ class ProfilePage extends StatelessWidget {
         title: Text(title),
         subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
         trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-        onTap: () {},
+        onTap: () {
+          if (destination != null) {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => destination),
+            );
+          }
+        },
       ),
     );
   }

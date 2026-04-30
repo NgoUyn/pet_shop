@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../features/home/pages/home_page.dart';
-import '../../features/favorites/pages/favorites_page.dart';
+import '../../features/home/pages/pet_list_page.dart';
+import '../../features/home/pages/shop_list_page.dart';
 import '../../features/notifications/pages/notification_page.dart';
 import '../../features/profile/pages/profile_page.dart';
 import '../constants/app_colors.dart';
@@ -17,7 +18,8 @@ class _MainWrapperState extends State<MainWrapper> {
 
   final List<Widget> _pages = [
     const HomePage(),
-    const FavoritesPage(),
+    const PetListPage(),
+    const ShopListPage(),
     const NotificationPage(),
     const ProfilePage(),
   ];
@@ -44,9 +46,14 @@ class _MainWrapperState extends State<MainWrapper> {
             label: 'Trang chủ',
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.favorite_outline),
-            activeIcon: Icon(Icons.favorite),
-            label: 'Yêu thích',
+            icon: Icon(Icons.pets_outlined),
+            activeIcon: Icon(Icons.pets),
+            label: 'Mua thú cưng',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.storefront_outlined),
+            activeIcon: Icon(Icons.storefront),
+            label: 'Cửa hàng',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.notifications_outlined),

@@ -54,7 +54,7 @@ class HomePage extends StatelessWidget {
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(15),
                 image: DecorationImage(
-                  image: NetworkImage(CloudinaryHelper.getBannerImage('pet_banner_main')), // Thay bằng publicId thật
+                  image: NetworkImage(CloudinaryHelper.getBannerImage('banner1')), // Thay bằng publicId thật
                   fit: BoxFit.cover,
                 ),
               ),
@@ -75,11 +75,9 @@ class HomePage extends StatelessWidget {
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 children: [
-                  _buildCategoryItem('Chó', 'dog_category_icon'),
-                  _buildCategoryItem('Mèo', 'cat_category_icon'),
-                  _buildCategoryItem('Hamster', 'hamster_icon'),
-                  _buildCategoryItem('Chim', 'bird_icon'),
-                  _buildCategoryItem('Cá', 'fish_icon'),
+                  _buildCategoryItem('Chó', 'dog_icon'),
+                  _buildCategoryItem('Mèo', 'cat_icon'),
+
                 ],
               ),
             ),
