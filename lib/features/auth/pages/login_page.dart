@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
-import '../services/auth_service.dart';
 import 'register_page.dart';
 import '../../../core/widgets/main_wrapper.dart';
 
@@ -26,9 +25,11 @@ class _LoginPageState extends State<LoginPage> {
 
   void _onLogin() async {
     setState(() => _loading = true);
-    final ok = await authService.login(_emailCtrl.text.trim(), _passCtrl.text);
+        await Future.delayed(const Duration(seconds: 1));
     setState(() => _loading = false);
-    if (ok) {
+        final email = _emailCtrl.text.trim();
+        final pass = _passCtrl.text;
+        if (email.isNotEmpty && pass.length >= 6) {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (_) => const MainWrapper()),

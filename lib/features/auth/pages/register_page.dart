@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
-import '../services/auth_service.dart';
 import '../../../core/widgets/main_wrapper.dart';
+import 'login_page.dart';
 import 'login_page.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -32,17 +32,13 @@ class _RegisterPageState extends State<RegisterPage> {
   Future<void> _onRegister() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _loading = true);
-    final ok = await authService.register(_nameCtrl.text.trim(), _emailCtrl.text.trim(), _passCtrl.text);
+    await Future.delayed(const Duration(seconds: 1));
     setState(() => _loading = false);
-    if (ok) {
-      // Navigate into main app
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const MainWrapper()),
-      );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đăng ký thất bại')));
-    }
+    // Mock: consider registration successful if form validated
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (_) => const MainWrapper()),
+    );
   }
 
   String? _validateEmail(String? v) {
