@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../core/constants/app_colors.dart';
+import '../features/auth/pages/login_page.dart';
 import '../core/widgets/main_wrapper.dart';
 
 class AppWidget extends StatelessWidget {
@@ -15,7 +16,7 @@ class AppWidget extends StatelessWidget {
         useMaterial3: true,
         scaffoldBackgroundColor: AppColors.background,
       ),
-      home: const MainWrapper(),
+      home: const LoginPage(),
     );
   }
 }
