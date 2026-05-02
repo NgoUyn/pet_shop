@@ -16,6 +16,7 @@ class AppWidget extends StatelessWidget {
         useMaterial3: true,
         scaffoldBackgroundColor: AppColors.background,
       ),
+      // Đặt LoginPage làm màn hình gốc để khi từ RegisterPage pop() sẽ quay về đây
       home: const LoginPage(),
     );
   }
