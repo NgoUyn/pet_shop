@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../services/auth_service.dart';
+import 'register_page.dart';
+import '../../../core/widgets/main_wrapper.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -23,9 +26,16 @@ class _LoginPageState extends State<LoginPage> {
 
   void _onLogin() async {
     setState(() => _loading = true);
-    await Future.delayed(const Duration(seconds: 1)); // TODO: call auth service
+    final ok = await authService.login(_emailCtrl.text.trim(), _passCtrl.text);
     setState(() => _loading = false);
-    // TODO: handle auth result (navigate or show error)
+    if (ok) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const MainWrapper()),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đăng nhập thất bại')));
+    }
   }
 
   void _onGoogleSignIn() async {
@@ -171,7 +181,7 @@ class _LoginPageState extends State<LoginPage> {
 
                   GestureDetector(
                     onTap: () {
-                      // TODO: navigate to register page
+                      Navigator.push(context, MaterialPageRoute(builder: (_) => const RegisterPage()));
                     },
                     child: const Text.rich(
                       TextSpan(
