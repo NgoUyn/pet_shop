@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../favorites/pages/favorites_page.dart';
+import 'profile_detail_page.dart';
 
 class ProfilePage extends StatelessWidget {
   const ProfilePage({super.key});
@@ -33,17 +34,22 @@ class ProfilePage extends StatelessWidget {
                           'Username_Petshop',
                           style: TextStyle(color: AppColors.white, fontSize: 20, fontWeight: FontWeight.bold),
                         ),
-                        const SizedBox(height: 5),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: AppColors.secondary,
-                            borderRadius: BorderRadius.circular(10),
+                        const SizedBox(height: 8),
+                        ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const ProfileDetailPage()),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.white,
+                            foregroundColor: AppColors.primary,
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                           ),
-                          child: const Text(
-                            'Hạng: Kim cương',
-                            style: TextStyle(color: AppColors.white, fontSize: 12),
-                          ),
+                          icon: const Icon(Icons.edit, size: 14),
+                          label: const Text('Chỉnh sửa hồ sơ'),
                         ),
                       ],
                     ),
@@ -134,3 +140,4 @@ class ProfilePage extends StatelessWidget {
     );
   }
 }
+
