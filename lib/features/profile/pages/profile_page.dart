@@ -34,6 +34,23 @@ class ProfilePage extends StatelessWidget {
                           'Username_Petshop',
                           style: TextStyle(color: AppColors.white, fontSize: 20, fontWeight: FontWeight.bold),
                         ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppColors.secondary,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Text(
+                                'Điểm tích lũy: 0',
+                                style: TextStyle(color: AppColors.white, fontSize: 12),
+                              ),
+                            ),
+                          ],
+                        ),
                         const SizedBox(height: 8),
                         ElevatedButton.icon(
                           onPressed: () {

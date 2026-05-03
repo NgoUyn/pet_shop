@@ -19,7 +19,7 @@ class AppWidget extends StatelessWidget {
         scaffoldBackgroundColor: AppColors.background,
       ),
         // Use MainWrapper as root so pages share header/footer navigation
-        home: const MainWrapper(),
+        home: const LoginPage(),
     );
   }
 }

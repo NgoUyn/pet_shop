@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/widgets/main_wrapper.dart';
-import 'login_page.dart';
+import '../../../core/db/app_database.dart';
 import 'login_page.dart';
 
 class RegisterPage extends StatefulWidget {
@@ -31,14 +31,48 @@ class _RegisterPageState extends State<RegisterPage> {
 
   Future<void> _onRegister() async {
     if (!_formKey.currentState!.validate()) return;
+
     setState(() => _loading = true);
-    await Future.delayed(const Duration(seconds: 1));
-    setState(() => _loading = false);
-    // Mock: consider registration successful if form validated
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const MainWrapper()),
-    );
+
+    try {
+      final db = await AppDatabase.instance;
+      final now = DateTime.now().toIso8601String();
+
+      final userId = await db.insert('User', {
+        'Role': 'customer',
+        'Email': _emailCtrl.text.trim(),
+        'PasswordHash': _passCtrl.text,
+        'FullName': _nameCtrl.text.trim(),
+        'IsActive': 1,
+        'CreatedAt': now,
+        'UpdatedAt': null,
+      });
+
+      await db.insert('Customer', {
+        'UserID': userId,
+        'Phone': null,
+        'Address': null,
+        'LoyaltyPoints': 0,
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đăng ký thành công')),
+      );
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (_) => const MainWrapper()),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Đăng ký thất bại: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
   }
 
   String? _validateEmail(String? v) {
