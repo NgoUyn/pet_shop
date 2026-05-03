@@ -33,11 +33,38 @@ class _MainWrapperState extends State<MainWrapper> {
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(kToolbarHeight),
         child: AppHeader(
-          title: 'Pet Shop',
-          onSearchText: (q) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Tìm: "${q}"'))),
-          onImageSearch: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Tìm bằng ảnh (chưa triển khai)'))),
-          onCartPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mở giỏ hàng (chưa triển khai)'))),
-          cartCount: 0,
+            onSearchText: (q) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Tìm: "${q}"'))),
+            onImageSearch: () {
+              showModalBottomSheet<void>(
+                context: context,
+                builder: (ctx) => SafeArea(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.camera_alt),
+                        title: const Text('Chụp ảnh'),
+                        onTap: () {
+                          Navigator.of(ctx).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chụp ảnh (chưa triển khai)')));
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.photo_library),
+                        title: const Text('Chọn từ thư viện'),
+                        onTap: () {
+                          Navigator.of(ctx).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chọn ảnh (chưa triển khai)')));
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
+                ),
+              );
+            },
+            onCartPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mở giỏ hàng (chưa triển khai)'))),
+            cartCount: 0,
         ),
       ),
       body: _pages[_selectedIndex],

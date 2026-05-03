@@ -9,99 +9,92 @@ class ProfilePage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        backgroundColor: AppColors.primary,
-        elevation: 0,
-        title: const Text('Hồ sơ của tôi', style: TextStyle(color: AppColors.white)),
-        actions: [
-          IconButton(icon: const Icon(Icons.settings, color: AppColors.white), onPressed: () {}),
-          IconButton(icon: const Icon(Icons.shopping_cart_outlined, color: AppColors.white), onPressed: () {}),
-          IconButton(icon: const Icon(Icons.chat_outlined, color: AppColors.white), onPressed: () {}),
-        ],
-      ),
-      body: SingleChildScrollView(
-        child: Column(
-          children: [
-            // Header: Avatar, Name, Rank
-            Container(
-              color: AppColors.primary,
-              padding: const EdgeInsets.all(20),
-              child: Row(
-                children: [
-                  const CircleAvatar(
-                    radius: 40,
-                    backgroundColor: AppColors.white,
-                    child: Icon(Icons.person, size: 50, color: AppColors.primary),
-                  ),
-                  const SizedBox(width: 15),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Username_Petshop',
-                        style: TextStyle(color: AppColors.white, fontSize: 20, fontWeight: FontWeight.bold),
-                      ),
-                      const SizedBox(height: 5),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: AppColors.secondary,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: const Text(
-                          'Hạng: Kim cương',
-                          style: TextStyle(color: AppColors.white, fontSize: 12),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            // Order Status Section
-            Container(
-              margin: const EdgeInsets.all(10),
-              padding: const EdgeInsets.symmetric(vertical: 15),
-              decoration: BoxDecoration(
-                color: AppColors.white,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Column(
-                children: [
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 15),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      body: SafeArea(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.only(bottom: 16),
+          child: Column(
+            children: [
+              // Header area (kept inside body; top app header provided by MainWrapper)
+              Container(
+                color: AppColors.primary,
+                padding: const EdgeInsets.all(20),
+                child: Row(
+                  children: [
+                    const CircleAvatar(
+                      radius: 40,
+                      backgroundColor: AppColors.white,
+                      child: Icon(Icons.person, size: 50, color: AppColors.primary),
+                    ),
+                    const SizedBox(width: 15),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Đơn mua', style: TextStyle(fontWeight: FontWeight.bold)),
-                        Text('Xem lịch sử >', style: TextStyle(color: AppColors.textLight, fontSize: 12)),
+                        const Text(
+                          'Username_Petshop',
+                          style: TextStyle(color: AppColors.white, fontSize: 20, fontWeight: FontWeight.bold),
+                        ),
+                        const SizedBox(height: 5),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AppColors.secondary,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Text(
+                            'Hạng: Kim cương',
+                            style: TextStyle(color: AppColors.white, fontSize: 12),
+                          ),
+                        ),
                       ],
                     ),
-                  ),
-                  const Divider(),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _buildStatusItem(Icons.payment, 'Chờ xác nhận'),
-                      _buildStatusItem(Icons.inventory_2_outlined, 'Chờ lấy hàng'),
-                      _buildStatusItem(Icons.local_shipping_outlined, 'Đang giao'),
-                      _buildStatusItem(Icons.star_outline, 'Đánh giá'),
-                    ],
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
 
-            // Features List
-            _buildMenuItem(context, Icons.favorite, 'Danh sách yêu thích', 'Sản phẩm bạn đã thích', destination: const FavoritesPage()),
-            _buildMenuItem(context, Icons.history, 'Lịch sử mua hàng', '24 đơn hàng'),
-            _buildMenuItem(context, Icons.card_membership, 'Điểm tích lũy', '1.500 điểm'),
-            _buildMenuItem(context, Icons.confirmation_number_outlined, 'Kho Voucher', '12 mã giảm giá'),
-            _buildMenuItem(context, Icons.storefront, 'Đăng ký thành người bán', 'Kiếm tiền ngay'),
+              // Order Status Section
+              Container(
+                margin: const EdgeInsets.all(10),
+                padding: const EdgeInsets.symmetric(vertical: 15),
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Column(
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 15),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Đơn mua', style: TextStyle(fontWeight: FontWeight.bold)),
+                          Text('Xem lịch sử >', style: TextStyle(color: AppColors.textLight, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    const Divider(),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceAround,
+                      children: [
+                        _buildStatusItem(Icons.payment, 'Chờ xác nhận'),
+                        _buildStatusItem(Icons.inventory_2_outlined, 'Chờ lấy hàng'),
+                        _buildStatusItem(Icons.local_shipping_outlined, 'Đang giao'),
+                        _buildStatusItem(Icons.star_outline, 'Đánh giá'),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
 
-            const SizedBox(height: 20),
-          ],
+              // Features List
+              _buildMenuItem(context, Icons.favorite, 'Danh sách yêu thích', 'Sản phẩm bạn đã thích', destination: const FavoritesPage()),
+              _buildMenuItem(context, Icons.history, 'Lịch sử mua hàng', '24 đơn hàng'),
+              _buildMenuItem(context, Icons.card_membership, 'Điểm tích lũy', '1.500 điểm'),
+              _buildMenuItem(context, Icons.confirmation_number_outlined, 'Kho Voucher', '12 mã giảm giá'),
+              _buildMenuItem(context, Icons.storefront, 'Đăng ký thành người bán', 'Kiếm tiền ngay'),
+
+              const SizedBox(height: 20),
+            ],
+          ),
         ),
       ),
     );

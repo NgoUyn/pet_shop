@@ -31,43 +31,12 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
   Size get preferredSize => Size.fromHeight(height);
 
   void _showSearchDialog(BuildContext context) {
-    final ctrl = TextEditingController();
-    showDialog<void>(
+    showSearch<String?>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Tìm sản phẩm'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: ctrl,
-              decoration: const InputDecoration(hintText: 'Nhập tên, mô tả...'),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                ElevatedButton.icon(
-                  onPressed: () {
-                    Navigator.of(ctx).pop();
-                    if (onImageSearch != null) onImageSearch!();
-                  },
-                  icon: const Icon(Icons.camera_alt),
-                  label: const Text('Tìm bằng ảnh'),
-                ),
-                const SizedBox(width: 8),
-                ElevatedButton.icon(
-                  onPressed: () {
-                    final q = ctrl.text.trim();
-                    Navigator.of(ctx).pop();
-                    if (onSearchText != null) onSearchText!(q);
-                  },
-                  icon: const Icon(Icons.search),
-                  label: const Text('Tìm'),
-                ),
-              ],
-            ),
-          ],
-        ),
+      delegate: _ProductSearchDelegate(
+        initialQuery: title,
+        onSearchText: onSearchText,
+        onImageSearch: onImageSearch,
       ),
     );
   }
@@ -120,7 +89,7 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
           // Search box
           Expanded(
             child: GestureDetector(
-              onTap: () => _showSearchDialog(context),
+                      onTap: () => _showSearchDialog(context),
               child: Container(
                 height: 44,
                 decoration: BoxDecoration(
@@ -175,6 +144,71 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
               child: Container(),
             )
           : null,
+    );
+  }
+}
+
+class _ProductSearchDelegate extends SearchDelegate<String?> {
+  final ValueChanged<String>? onSearchText;
+  final VoidCallback? onImageSearch;
+  final String? initialQuery;
+
+  _ProductSearchDelegate({this.onSearchText, this.onImageSearch, this.initialQuery}) {
+    if (initialQuery != null && initialQuery!.isNotEmpty) query = initialQuery!;
+  }
+
+  @override
+  List<Widget>? buildActions(BuildContext context) {
+    return [
+      IconButton(
+        icon: const Icon(Icons.camera_alt),
+        onPressed: () {
+          // Close search and trigger image search handler
+          close(context, null);
+          if (onImageSearch != null) onImageSearch!();
+        },
+        tooltip: 'Tìm bằng ảnh',
+      ),
+      if (query.isNotEmpty)
+        IconButton(
+          icon: const Icon(Icons.clear),
+          onPressed: () => query = '',
+        ),
+    ];
+  }
+
+  @override
+  Widget? buildLeading(BuildContext context) {
+    return IconButton(
+      icon: const Icon(Icons.arrow_back),
+      onPressed: () => close(context, null),
+    );
+  }
+
+  @override
+  Widget buildResults(BuildContext context) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (onSearchText != null) onSearchText!(query.trim());
+      close(context, query);
+    });
+    return const SizedBox.shrink();
+  }
+
+  @override
+  Widget buildSuggestions(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      child: query.isEmpty
+          ? const Text('Nhập tên, mô tả sản phẩm để tìm...')
+          : ListView(
+              children: [
+                ListTile(
+                  title: Text('Tìm "$query"'),
+                  leading: const Icon(Icons.search),
+                  onTap: () => showResults(context),
+                ),
+              ],
+            ),
     );
   }
 }
