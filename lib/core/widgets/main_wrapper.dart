@@ -33,7 +33,7 @@ class _MainWrapperState extends State<MainWrapper> {
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(kToolbarHeight),
         child: AppHeader(
-            onSearchText: (q) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Tìm: "${q}"'))),
+            onSearchText: (q) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Tìm: "$q"'))),
             onImageSearch: () {
               showModalBottomSheet<void>(
                 context: context,

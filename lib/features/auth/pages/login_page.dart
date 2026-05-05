@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import 'register_page.dart';
-import '../../../core/widgets/main_wrapper.dart';
+import '../services/auth_repository.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -25,17 +25,21 @@ class _LoginPageState extends State<LoginPage> {
 
   void _onLogin() async {
     setState(() => _loading = true);
-        await Future.delayed(const Duration(seconds: 1));
-    setState(() => _loading = false);
-        final email = _emailCtrl.text.trim();
-        final pass = _passCtrl.text;
-        if (email.isNotEmpty && pass.length >= 6) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const MainWrapper()),
+    try {
+      await AuthRepository.instance.login(
+        email: _emailCtrl.text,
+        password: _passCtrl.text,
       );
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đăng nhập thất bại')));
+      if (!mounted) return;
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('StateError: ', ''))),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
@@ -109,10 +113,31 @@ class _LoginPageState extends State<LoginPage> {
                   Align(
                     alignment: Alignment.centerRight,
                     child: TextButton(
-                      onPressed: () {
-                        // TODO: forgot password flow
-                      },
-                      child: const Text('Quên mật khẩu?'),
+                      onPressed: _loading
+                          ? null
+                          : () async {
+                              final email = _emailCtrl.text.trim();
+                              if (email.isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Nhập email trước khi gửi lại link xác thực')),
+                                );
+                                return;
+                              }
+
+                              try {
+                                await AuthRepository.instance.resendVerificationEmail(email);
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Đã gửi lại email xác thực')),
+                                );
+                              } catch (e) {
+                                if (!context.mounted) return;
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text(e.toString().replaceFirst('StateError: ', ''))),
+                                );
+                              }
+                            },
+                      child: const Text('Gửi lại link xác thực'),
                     ),
                   ),
 

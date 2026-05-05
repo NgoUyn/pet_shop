@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../core/widgets/main_wrapper.dart';
-import '../../../core/db/app_database.dart';
 import 'login_page.dart';
+import '../services/auth_repository.dart';
 
 class RegisterPage extends StatefulWidget {
   const RegisterPage({super.key});
@@ -35,34 +34,17 @@ class _RegisterPageState extends State<RegisterPage> {
     setState(() => _loading = true);
 
     try {
-      final db = await AppDatabase.instance;
-      final now = DateTime.now().toIso8601String();
-
-      final userId = await db.insert('User', {
-        'Role': 'customer',
-        'Email': _emailCtrl.text.trim(),
-        'PasswordHash': _passCtrl.text,
-        'FullName': _nameCtrl.text.trim(),
-        'IsActive': 1,
-        'CreatedAt': now,
-        'UpdatedAt': null,
-      });
-
-      await db.insert('Customer', {
-        'UserID': userId,
-        'Phone': null,
-        'Address': null,
-        'LoyaltyPoints': 0,
-      });
+      await AuthRepository.instance.registerCustomer(
+        name: _nameCtrl.text,
+        email: _emailCtrl.text,
+        password: _passCtrl.text,
+      );
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Đăng ký thành công')),
+        const SnackBar(content: Text('Đã gửi email xác thực. Vui lòng kiểm tra hộp thư.')),
       );
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(builder: (_) => const MainWrapper()),
-      );
+      Navigator.pop(context);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -128,6 +110,14 @@ class _RegisterPageState extends State<RegisterPage> {
                       textInputAction: TextInputAction.next,
                       decoration: const InputDecoration(labelText: 'E-mail', border: OutlineInputBorder(), isDense: true),
                       validator: _validateEmail,
+                    ),
+                    const SizedBox(height: 12),
+                    const Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text(
+                        'Sau khi đăng ký, hệ thống sẽ gửi một link xác thực vào email.',
+                        style: TextStyle(color: Colors.black54, fontSize: 12),
+                      ),
                     ),
                     const SizedBox(height: 12),
                     TextFormField(

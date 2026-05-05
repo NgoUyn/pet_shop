@@ -16,7 +16,7 @@ class AppDatabase {
 
     return openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: (db, version) async {
         await db.execute('PRAGMA foreign_keys = ON;');
 
@@ -29,6 +29,8 @@ class AppDatabase {
             PasswordHash TEXT NOT NULL,
             FullName TEXT NOT NULL,
             IsActive INTEGER NOT NULL CHECK (IsActive IN (0, 1)),
+            VerificationToken TEXT,
+            VerifiedAt TEXT,
             CreatedAt TEXT NOT NULL,
             UpdatedAt TEXT
           );
@@ -145,6 +147,11 @@ class AppDatabase {
           CREATE INDEX idx_user_role ON User(Role);
           ''',
           '''
+          CREATE UNIQUE INDEX idx_user_verification_token
+          ON User(VerificationToken)
+          WHERE VerificationToken IS NOT NULL;
+          ''',
+          '''
           CREATE INDEX idx_customer_user ON Customer(UserID);
           ''',
           '''
@@ -190,9 +197,20 @@ class AppDatabase {
           'PasswordHash': 'hash_customer',
           'FullName': 'Customer Test',
           'IsActive': 1,
+          'VerificationToken': null,
+          'VerifiedAt': null,
           'CreatedAt': DateTime.now().toIso8601String(),
           'UpdatedAt': null,
         });
+      },
+      onUpgrade: (db, oldVersion, newVersion) async {
+        await db.execute('PRAGMA foreign_keys = ON;');
+
+        if (oldVersion < 2) {
+          await db.execute('ALTER TABLE User ADD COLUMN VerificationToken TEXT;');
+          await db.execute('ALTER TABLE User ADD COLUMN VerifiedAt TEXT;');
+          await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_user_verification_token ON User(VerificationToken) WHERE VerificationToken IS NOT NULL;');
+        }
       },
     );
   }

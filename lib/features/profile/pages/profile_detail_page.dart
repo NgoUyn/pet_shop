@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../auth/services/auth_session.dart';
 
 class ProfileDetailPage extends StatefulWidget {
   const ProfileDetailPage({super.key});
@@ -43,8 +44,8 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Da cap nhat ho so')));
   }
 
-  void _logout() {
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Dang xuat (chua trien khai)')));
+  Future<void> _logout() async {
+    await AuthSession.instance.signOut();
   }
 
   @override

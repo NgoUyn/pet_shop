@@ -117,3 +117,7 @@ WHERE ProductID IS NOT NULL;
 CREATE UNIQUE INDEX idx_cartitem_cart_pet
 ON CartItem(CartID, PetID)
 WHERE PetID IS NOT NULL;
+
+
+
+& "D:\MyData\Android\Sdk\platform-tools\adb.exe" shell am start -W -a android.intent.action.VIEW -c android.intent.category.BROWSABLE -d "petshop://verify-email?token=6de0d063ab369860395b83bcf4bf688ccb74df2cf06bd24b717e9135249ab987"
