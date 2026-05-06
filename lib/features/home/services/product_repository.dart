@@ -53,4 +53,18 @@ class ProductRepository {
 
     return rows.map(ProductItem.fromRow).toList();
   }
+
+  Future<String?> getCategoryName(int categoryId) async {
+    final db = await AppDatabase.instance;
+    final rows = await db.query(
+      'Category',
+      columns: ['CategoryName'],
+      where: 'CategoryID = ?',
+      whereArgs: [categoryId],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) return null;
+    return rows.first['CategoryName'] as String?;
+  }
 }

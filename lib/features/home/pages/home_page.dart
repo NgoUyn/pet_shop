@@ -179,8 +179,13 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/cloudinary_helper.dart';
+import '../../auth/pages/login_page.dart';
+import '../../auth/services/auth_session.dart';
+import '../../cart/pages/cart_page.dart';
+import '../../cart/services/cart_repository.dart';
 import '../services/pet_repository.dart';
 import '../services/product_repository.dart';
+import 'product_detail_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -250,6 +255,56 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Future<void> _addProductToCart(ProductItem product) async {
+    final userId = AuthSession.instance.currentUserId.value;
+    if (userId == null) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+      );
+      if (!mounted) return;
+      if (AuthSession.instance.currentUserId.value == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Vui lòng đăng nhập để thêm vào giỏ hàng')),
+        );
+        return;
+      }
+    }
+
+    try {
+      await CartRepository.instance.addProductToCart(productId: product.productId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Đã thêm vào giỏ hàng'),
+          action: SnackBarAction(
+            label: 'Xem giỏ',
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const CartPage()),
+              );
+            },
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString())),
+      );
+    }
+  }
+
+  void _openRecommendedItem(_RecommendedItem item) {
+    if (item.kind != _RecommendedKind.product) return;
+    final product = item.product!;
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => ProductDetailPage(product: product)),
+    );
+  }
+
   Widget _buildCard(_RecommendedItem item) {
     if (item.kind == _RecommendedKind.product) {
       final product = item.product!;
@@ -264,7 +319,32 @@ class _HomePageState extends State<HomePage> {
             Expanded(
               child: ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-                child: _buildImage(product.imageUrl),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _buildImage(product.imageUrl),
+                    Positioned(
+                      right: 6,
+                      top: 6,
+                      child: Material(
+                        color: AppColors.white,
+                        borderRadius: BorderRadius.circular(999),
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(999),
+                          onTap: () => _addProductToCart(product),
+                          child: const Padding(
+                            padding: EdgeInsets.all(8),
+                            child: Icon(
+                              Icons.add_shopping_cart_outlined,
+                              color: AppColors.textDark,
+                              size: 20,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
             Padding(
@@ -448,7 +528,7 @@ class _HomePageState extends State<HomePage> {
                       final item = items[i];
                       return InkWell(
                         borderRadius: BorderRadius.circular(14),
-                        onTap: () {},
+                        onTap: () => _openRecommendedItem(item),
                         child: _buildCard(item),
                       );
                     },

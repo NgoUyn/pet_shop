@@ -3,6 +3,8 @@ import '../../features/home/pages/home_page.dart';
 import '../../features/favorites/pages/favorites_page.dart';
 import '../../features/home/pages/pet_list_page.dart';
 import '../../features/home/pages/shop_list_page.dart';
+import '../../features/cart/pages/cart_page.dart';
+import '../../features/cart/services/cart_repository.dart';
 import '../../features/notifications/pages/notification_page.dart';
 import '../../features/notifications/services/notification_repository.dart';
 import '../../features/profile/pages/profile_page.dart';
@@ -23,18 +25,24 @@ class MainWrapper extends StatefulWidget {
 class _MainWrapperState extends State<MainWrapper> {
   late int _selectedIndex;
   int _notificationCount = 0;
+  int _cartCount = 0;
 
   @override
   void initState() {
     super.initState();
     _selectedIndex = widget.initialIndex;
     AuthSession.instance.currentUserId.addListener(_loadNotificationCount);
+    AuthSession.instance.currentUserId.addListener(_refreshCartCount);
+    CartRepository.instance.cartCount.addListener(_onCartCountChanged);
     _loadNotificationCount();
+    _refreshCartCount();
   }
 
   @override
   void dispose() {
     AuthSession.instance.currentUserId.removeListener(_loadNotificationCount);
+    AuthSession.instance.currentUserId.removeListener(_refreshCartCount);
+    CartRepository.instance.cartCount.removeListener(_onCartCountChanged);
     super.dispose();
   }
 
@@ -44,6 +52,17 @@ class _MainWrapperState extends State<MainWrapper> {
     setState(() {
       _notificationCount = count;
     });
+  }
+
+  void _onCartCountChanged() {
+    if (!mounted) return;
+    setState(() {
+      _cartCount = CartRepository.instance.cartCount.value;
+    });
+  }
+
+  Future<void> _refreshCartCount() async {
+    await CartRepository.instance.refreshCountForCurrentUser();
   }
 
   final List<Widget> _pages = [
@@ -99,8 +118,16 @@ class _MainWrapperState extends State<MainWrapper> {
                 await _loadNotificationCount();
               }
             },
-            onCartPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mở giỏ hàng (chưa triển khai)'))),
-            cartCount: 0,
+            onCartPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const CartPage()),
+              );
+              if (mounted) {
+                await _refreshCartCount();
+              }
+            },
+            cartCount: _cartCount,
             notificationCount: _notificationCount,
         ),
       ),
