@@ -1,11 +1,9 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
-import 'package:app_links/app_links.dart';
 
 import '../core/constants/app_colors.dart';
-import '../features/auth/services/auth_repository.dart';
 import '../core/widgets/main_wrapper.dart';
+import '../features/auth/services/auth_repository.dart';
+import '../features/auth/services/auth_session.dart';
 
 final GlobalKey<ScaffoldMessengerState> rootScaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
@@ -16,73 +14,58 @@ class AppWidget extends StatefulWidget {
   State<AppWidget> createState() => _AppWidgetState();
 }
 
-class _AppWidgetState extends State<AppWidget> {
-  final AppLinks _appLinks = AppLinks();
-
-  StreamSubscription<Uri?>? _linkSubscription;
+class _AppWidgetState extends State<AppWidget> with WidgetsBindingObserver {
   bool _bootstrapping = true;
+
+  void _showVerificationSuccessMessage() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      rootScaffoldMessengerKey.currentState?.showSnackBar(
+        const SnackBar(content: Text('Xác thực email thành công')),
+      );
+    });
+  }
 
   @override
   void initState() {
     super.initState();
-    _initLinkHandling();
+    WidgetsBinding.instance.addObserver(this);
+    _bootstrap();
   }
 
   @override
-  void dispose() {
-    _linkSubscription?.cancel();
-    super.dispose();
-  }
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      final previousUserId = AuthSession.instance.currentUserId.value;
+      AuthRepository.instance.syncVerifiedFirebaseUser().then((syncedUserId) {
+        if (!mounted) {
+          return;
+        }
 
-  Future<void> _initLinkHandling() async {
-    try {
-      final initialUri = await _appLinks.getInitialLink();
-
-      if (initialUri != null) {
-        await _handleIncomingUri(initialUri);
-      }
-    } catch (_) {}
-
-    _linkSubscription = _appLinks.uriLinkStream.listen(
-          (uri) {
-        _handleIncomingUri(uri);
-      },
-      onError: (_) {},
-    );
-
-    if (mounted) {
-      setState(() {
-        _bootstrapping = false;
+        if (previousUserId == null && syncedUserId != null) {
+          _showVerificationSuccessMessage();
+        }
       });
     }
   }
 
-  Future<void> _handleIncomingUri(Uri uri) async {
-    final scheme = uri.scheme.toLowerCase();
-    final host = uri.host.toLowerCase();
-    if (scheme != 'petshop' || host != 'verify-email') {
-      return;
-    }
-
-    final token = uri.queryParameters['token'];
-    if (token == null || token.isEmpty) {
-      _showMessage('Link xác thực thiếu token');
-      return;
-    }
-
-    try {
-      await AuthRepository.instance.verifyEmailByToken(token);
-      if (!mounted) return;
-      _showMessage('Xác thực thành công');
-    } catch (error) {
-      _showMessage(error.toString().replaceFirst('StateError: ', ''));
-    }
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
   }
 
-  void _showMessage(String message) {
-    rootScaffoldMessengerKey.currentState?.showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+  Future<void> _bootstrap() async {
+    final previousUserId = AuthSession.instance.currentUserId.value;
+    final syncedUserId = await AuthRepository.instance.syncVerifiedFirebaseUser();
+    if (mounted) {
+      setState(() {
+        _bootstrapping = false;
+      });
+
+      if (previousUserId == null && syncedUserId != null) {
+        _showVerificationSuccessMessage();
+      }
+    }
   }
 
   @override

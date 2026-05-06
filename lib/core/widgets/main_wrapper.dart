@@ -5,18 +5,28 @@ import '../../features/home/pages/pet_list_page.dart';
 import '../../features/home/pages/shop_list_page.dart';
 import '../../features/notifications/pages/notification_page.dart';
 import '../../features/profile/pages/profile_page.dart';
+import '../../features/auth/pages/login_page.dart';
+import '../../features/auth/services/auth_session.dart';
 import '../constants/app_colors.dart';
 import 'app_header.dart';
 
 class MainWrapper extends StatefulWidget {
-  const MainWrapper({super.key});
+  const MainWrapper({super.key, this.initialIndex = 0});
+
+  final int initialIndex;
 
   @override
   State<MainWrapper> createState() => _MainWrapperState();
 }
 
 class _MainWrapperState extends State<MainWrapper> {
-  int _selectedIndex = 0;
+  late int _selectedIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIndex = widget.initialIndex;
+  }
 
   final List<Widget> _pages = [
     const HomePage(),
@@ -70,7 +80,15 @@ class _MainWrapperState extends State<MainWrapper> {
       body: _pages[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
-        onTap: (index) {
+        onTap: (index) async {
+          if (index == 5 && AuthSession.instance.currentUserId.value == null) {
+            await Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const LoginPage()),
+            );
+            return;
+          }
+
           setState(() {
             _selectedIndex = index;
           });

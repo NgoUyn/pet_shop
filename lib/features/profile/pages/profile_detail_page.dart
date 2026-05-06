@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../auth/services/auth_session.dart';
+import '../../auth/services/auth_repository.dart';
+import '../../../core/widgets/main_wrapper.dart';
 
 class ProfileDetailPage extends StatefulWidget {
   const ProfileDetailPage({super.key});
@@ -45,7 +46,13 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
   }
 
   Future<void> _logout() async {
-    await AuthSession.instance.signOut();
+    await AuthRepository.instance.signOut();
+    if (!mounted) return;
+
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (_) => const MainWrapper(initialIndex: 0)),
+      (route) => false,
+    );
   }
 
   @override

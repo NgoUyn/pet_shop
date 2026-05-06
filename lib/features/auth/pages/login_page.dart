@@ -31,6 +31,9 @@ class _LoginPageState extends State<LoginPage> {
         password: _passCtrl.text,
       );
       if (!mounted) return;
+      if (Navigator.canPop(context)) {
+        Navigator.pop(context);
+      }
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

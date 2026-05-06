@@ -12,6 +12,7 @@ class UserListPage extends StatefulWidget {
 
 class _UserListPageState extends State<UserListPage> {
   late Future<List<Map<String, Object?>>> _usersFuture;
+  bool _deletingUser = false;
 
   @override
   void initState() {
@@ -41,6 +42,56 @@ class _UserListPageState extends State<UserListPage> {
       _usersFuture = _loadUsers();
     });
     await _usersFuture;
+  }
+
+  Future<void> _deleteUser(int userId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Xoá user'),
+          content: Text('Bạn có chắc muốn xoá user #$userId không? Hành động này không thể hoàn tác.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Huỷ'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('Xoá'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    setState(() {
+      _deletingUser = true;
+    });
+
+    try {
+      await AppDatabase.deleteUserById(userId);
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã xoá user')),
+      );
+      await _refreshUsers();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Xoá user thất bại: $e')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _deletingUser = false;
+        });
+      }
+    }
   }
 
   Color _roleColor(String role) {
@@ -187,6 +238,21 @@ class _UserListPageState extends State<UserListPage> {
                       Text(
                         'CreatedAt: ${createdAt ?? '-'}',
                         style: const TextStyle(color: AppColors.textLight, fontSize: 12),
+                      ),
+                      const SizedBox(height: 12),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: OutlinedButton.icon(
+                          onPressed: _deletingUser ? null : () => _deleteUser(user['UserID'] as int),
+                          icon: const Icon(Icons.delete_outline, color: Colors.red),
+                          label: const Text(
+                            'Xoá',
+                            style: TextStyle(color: Colors.red),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            side: const BorderSide(color: Colors.red),
+                          ),
+                        ),
                       ),
                     ],
                   ),

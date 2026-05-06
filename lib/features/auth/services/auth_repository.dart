@@ -1,10 +1,8 @@
-import 'dart:math';
-
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:sqflite/sqflite.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../../core/db/app_database.dart';
 import 'auth_session.dart';
+import 'pending_registration_store.dart';
 import 'verification_email_service.dart';
 
 class AuthRepository {
@@ -13,6 +11,64 @@ class AuthRepository {
   static final AuthRepository instance = AuthRepository._();
 
   String _normalizeEmail(String email) => email.trim().toLowerCase();
+
+  Future<int> _ensureLocalUserFromFirebase({
+    required User firebaseUser,
+    String? passwordHash,
+    String? displayName,
+  }) async {
+    final db = await AppDatabase.instance;
+    final normalizedEmail = _normalizeEmail(firebaseUser.email ?? '');
+
+    if (normalizedEmail.isEmpty) {
+      throw StateError('Firebase user không có email hợp lệ');
+    }
+
+    final rows = await db.query(
+      'User',
+      columns: ['UserID'],
+      where: 'lower(Email) = ?',
+      whereArgs: [normalizedEmail],
+      limit: 1,
+    );
+
+    if (rows.isNotEmpty) {
+      await PendingRegistrationStore.instance.removeByEmail(normalizedEmail);
+      return rows.first['UserID'] as int;
+    }
+
+    final pending = await PendingRegistrationStore.instance.findByEmail(normalizedEmail);
+    final now = DateTime.now().toIso8601String();
+    final userName = (displayName ?? pending?.name ?? firebaseUser.displayName ?? normalizedEmail.split('@').first).trim();
+    final localPassword = passwordHash ?? pending?.password ?? 'firebase:${firebaseUser.uid}';
+    final createdAt = pending?.createdAt ?? now;
+
+    final userId = await db.transaction((txn) async {
+      final insertedUserId = await txn.insert('User', {
+        'Role': 'customer',
+        'Email': normalizedEmail,
+        'PasswordHash': localPassword,
+        'FullName': userName,
+        'IsActive': 1,
+        'VerificationToken': null,
+        'VerifiedAt': now,
+        'CreatedAt': createdAt,
+        'UpdatedAt': now,
+      });
+
+      await txn.insert('Customer', {
+        'UserID': insertedUserId,
+        'Phone': null,
+        'Address': null,
+        'LoyaltyPoints': 0,
+      });
+
+      return insertedUserId;
+    });
+
+    await PendingRegistrationStore.instance.removeByEmail(normalizedEmail);
+    return userId;
+  }
 
   Future<bool> isEmailRegistered(String email) async {
     final db = await AppDatabase.instance;
@@ -25,7 +81,11 @@ class AuthRepository {
       limit: 1,
     );
 
-    return rows.isNotEmpty;
+    if (rows.isNotEmpty) {
+      return true;
+    }
+
+    return false;
   }
 
   Future<void> registerCustomer({
@@ -33,162 +93,190 @@ class AuthRepository {
     required String email,
     required String password,
   }) async {
-    final db = await AppDatabase.instance;
     final normalizedEmail = _normalizeEmail(email);
 
     if (await isEmailRegistered(normalizedEmail)) {
       throw StateError('Email đã được sử dụng');
     }
 
-    final verificationToken = _generateToken();
-    final now = DateTime.now().toIso8601String();
+    final firebaseAuth = FirebaseAuth.instance;
+    final pending = await PendingRegistrationStore.instance.findByEmail(normalizedEmail);
+    UserCredential credential;
 
-    await db.transaction((txn) async {
-      final userId = await txn.insert('User', {
-        'Role': 'customer',
-        'Email': normalizedEmail,
-        'PasswordHash': password,
-        'FullName': name.trim(),
-        'IsActive': 0,
-        'VerificationToken': verificationToken,
-        'VerifiedAt': null,
-        'CreatedAt': now,
-        'UpdatedAt': null,
-      });
+    if (pending != null) {
+      credential = await firebaseAuth.signInWithEmailAndPassword(
+        email: normalizedEmail,
+        password: pending.password,
+      );
 
-      await txn.insert('Customer', {
-        'UserID': userId,
-        'Phone': null,
-        'Address': null,
-        'LoyaltyPoints': 0,
-      });
-    });
+      await PendingRegistrationStore.instance.save(
+        PendingRegistration(
+          name: name.trim(),
+          email: normalizedEmail,
+          password: pending.password,
+          createdAt: pending.createdAt,
+        ),
+      );
+    } else {
+      try {
+        credential = await firebaseAuth.createUserWithEmailAndPassword(
+          email: normalizedEmail,
+          password: password,
+        );
+      } on FirebaseAuthException catch (error) {
+        if (error.code != 'email-already-in-use') {
+          throw StateError(error.message ?? 'Không thể tạo tài khoản Firebase');
+        }
 
-    final verificationUrl = Uri(
-      scheme: dotenv.env['APP_LINK_SCHEME'] ?? 'petshop',
-      host: dotenv.env['APP_LINK_HOST'] ?? 'verify-email',
-      queryParameters: {'token': verificationToken},
-    ).toString();
+        try {
+          credential = await firebaseAuth.signInWithEmailAndPassword(
+            email: normalizedEmail,
+            password: password,
+          );
+        } on FirebaseAuthException catch (_) {
+          final existingPending = await PendingRegistrationStore.instance.findByEmail(normalizedEmail);
+          if (existingPending == null) {
+            throw StateError('Email đã được sử dụng');
+          }
+
+          credential = await firebaseAuth.signInWithEmailAndPassword(
+            email: normalizedEmail,
+            password: existingPending.password,
+          );
+        }
+      }
+
+      await PendingRegistrationStore.instance.save(
+        PendingRegistration(
+          name: name.trim(),
+          email: normalizedEmail,
+          password: password,
+          createdAt: DateTime.now().toIso8601String(),
+        ),
+      );
+    }
+
+    final user = credential.user;
+    if (user == null) {
+      throw StateError('Không thể tạo phiên Firebase cho tài khoản');
+    }
 
     await VerificationEmailService.instance.sendVerificationEmail(
-      toEmail: normalizedEmail,
+      email: normalizedEmail,
       displayName: name.trim(),
-      verificationUrl: verificationUrl,
     );
   }
 
   Future<int> login({required String email, required String password}) async {
-    final db = await AppDatabase.instance;
     final normalizedEmail = _normalizeEmail(email);
 
-    final rows = await db.query(
-      'User',
-      columns: ['UserID', 'PasswordHash', 'IsActive'],
-      where: 'lower(Email) = ?',
-      whereArgs: [normalizedEmail],
-      limit: 1,
-    );
+    final firebaseAuth = FirebaseAuth.instance;
+    UserCredential credential;
 
-    if (rows.isEmpty) {
-      throw StateError('Tài khoản không tồn tại');
+    try {
+      credential = await firebaseAuth.signInWithEmailAndPassword(
+        email: normalizedEmail,
+        password: password,
+      );
+    } on FirebaseAuthException catch (error) {
+      if (error.code == 'user-not-found' || error.code == 'wrong-password' || error.code == 'invalid-credential') {
+        throw StateError('Tài khoản không tồn tại hoặc mật khẩu không đúng');
+      }
+
+      throw StateError(error.message ?? 'Không thể đăng nhập bằng Firebase');
     }
 
-    final row = rows.first;
-    if ((row['PasswordHash'] as String) != password) {
-      throw StateError('Mật khẩu không đúng');
+    final user = credential.user;
+    if (user == null) {
+      throw StateError('Không thể lấy phiên đăng nhập Firebase');
     }
 
-    if ((row['IsActive'] as int) != 1) {
+    await user.reload();
+    final refreshedUser = firebaseAuth.currentUser;
+    if (refreshedUser == null) {
+      throw StateError('Không thể xác minh trạng thái email');
+    }
+
+    if (!refreshedUser.emailVerified) {
       throw StateError('Tài khoản chưa được xác thực. Vui lòng kiểm tra email.');
     }
 
-    final userId = row['UserID'] as int;
+    final userId = await _ensureLocalUserFromFirebase(
+      firebaseUser: refreshedUser,
+      passwordHash: password,
+      displayName: refreshedUser.displayName,
+    );
     await AuthSession.instance.signIn(userId);
     return userId;
   }
 
-  Future<int> verifyEmailByToken(String token) async {
-    final db = await AppDatabase.instance;
-    final rows = await db.query(
-      'User',
-      columns: ['UserID', 'IsActive'],
-      where: 'VerificationToken = ?',
-      whereArgs: [token],
-      limit: 1,
-    );
-
-    if (rows.isEmpty) {
-      throw StateError('Link xác thực không hợp lệ hoặc đã hết hạn');
+  Future<int?> syncVerifiedFirebaseUser() async {
+    final firebaseAuth = FirebaseAuth.instance;
+    final currentUser = firebaseAuth.currentUser;
+    if (currentUser == null) {
+      return null;
     }
 
-    final userId = rows.first['UserID'] as int;
-    final now = DateTime.now().toIso8601String();
+    await currentUser.reload();
+    final refreshedUser = firebaseAuth.currentUser;
+    if (refreshedUser == null || !refreshedUser.emailVerified) {
+      return null;
+    }
 
-    await db.update(
-      'User',
-      {
-        'IsActive': 1,
-        'VerificationToken': null,
-        'VerifiedAt': now,
-        'UpdatedAt': now,
-      },
-      where: 'UserID = ?',
-      whereArgs: [userId],
-      conflictAlgorithm: ConflictAlgorithm.abort,
+    final userId = await _ensureLocalUserFromFirebase(
+      firebaseUser: refreshedUser,
+      displayName: refreshedUser.displayName,
     );
-
     await AuthSession.instance.signIn(userId);
     return userId;
   }
 
   Future<void> resendVerificationEmail(String email) async {
-    final db = await AppDatabase.instance;
     final normalizedEmail = _normalizeEmail(email);
-    final rows = await db.query(
-      'User',
-      columns: ['UserID', 'FullName', 'IsActive'],
-      where: 'lower(Email) = ?',
-      whereArgs: [normalizedEmail],
-      limit: 1,
-    );
+    final firebaseAuth = FirebaseAuth.instance;
+    final pending = await PendingRegistrationStore.instance.findByEmail(normalizedEmail);
 
-    if (rows.isEmpty) {
-      throw StateError('Không tìm thấy tài khoản');
+    if (pending == null) {
+      final currentUser = firebaseAuth.currentUser;
+      if (currentUser == null || currentUser.email?.trim().toLowerCase() != normalizedEmail) {
+        throw StateError('Không tìm thấy tài khoản chờ xác thực');
+      }
+
+      await currentUser.reload();
+      if (firebaseAuth.currentUser?.emailVerified == true) {
+        throw StateError('Tài khoản này đã được xác thực');
+      }
+
+      await VerificationEmailService.instance.sendVerificationEmail(
+        email: normalizedEmail,
+        displayName: currentUser.displayName ?? normalizedEmail.split('@').first,
+      );
+      return;
     }
 
-    final row = rows.first;
-    if ((row['IsActive'] as int) == 1) {
+    final credential = await firebaseAuth.signInWithEmailAndPassword(
+      email: normalizedEmail,
+      password: pending.password,
+    );
+
+    final user = credential.user;
+    if (user == null) {
+      throw StateError('Không thể tải phiên Firebase');
+    }
+
+    await user.reload();
+    if (firebaseAuth.currentUser?.emailVerified == true) {
       throw StateError('Tài khoản này đã được xác thực');
     }
 
-    final verificationToken = _generateToken();
-    final now = DateTime.now().toIso8601String();
-    await db.update(
-      'User',
-      {
-        'VerificationToken': verificationToken,
-        'UpdatedAt': now,
-      },
-      where: 'UserID = ?',
-      whereArgs: [row['UserID']],
-    );
-
-    final verificationUrl = Uri(
-      scheme: dotenv.env['APP_LINK_SCHEME'] ?? 'petshop',
-      host: dotenv.env['APP_LINK_HOST'] ?? 'verify-email',
-      queryParameters: {'token': verificationToken},
-    ).toString();
-
     await VerificationEmailService.instance.sendVerificationEmail(
-      toEmail: normalizedEmail,
-      displayName: row['FullName'] as String,
-      verificationUrl: verificationUrl,
+      email: normalizedEmail,
+      displayName: pending.name,
     );
   }
 
-  String _generateToken() {
-    final random = Random.secure();
-    final bytes = List<int>.generate(32, (_) => random.nextInt(256));
-    return bytes.map((byte) => byte.toRadixString(16).padLeft(2, '0')).join();
+  Future<void> signOut() async {
+    await FirebaseAuth.instance.signOut();
+    await AuthSession.instance.signOut();
   }
 }
