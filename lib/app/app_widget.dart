@@ -1,11 +1,11 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:uni_links/uni_links.dart';
+import 'package:app_links/app_links.dart';
 
 import '../core/constants/app_colors.dart';
 import '../features/auth/services/auth_repository.dart';
-import '../features/admin/pages/user_list_page.dart';
+import '../core/widgets/main_wrapper.dart';
 
 final GlobalKey<ScaffoldMessengerState> rootScaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
 
@@ -17,6 +17,8 @@ class AppWidget extends StatefulWidget {
 }
 
 class _AppWidgetState extends State<AppWidget> {
+  final AppLinks _appLinks = AppLinks();
+
   StreamSubscription<Uri?>? _linkSubscription;
   bool _bootstrapping = true;
 
@@ -34,24 +36,24 @@ class _AppWidgetState extends State<AppWidget> {
 
   Future<void> _initLinkHandling() async {
     try {
-      final initialUri = await getInitialUri();
+      final initialUri = await _appLinks.getInitialLink();
+
       if (initialUri != null) {
         await _handleIncomingUri(initialUri);
       }
-    } catch (_) {
-      // Ignore malformed initial links and keep the app running.
-    }
+    } catch (_) {}
 
-    try {
-      _linkSubscription = uriLinkStream.listen((uri) {
-        if (uri != null) {
-          _handleIncomingUri(uri);
-        }
-      }, onError: (_) {});
-    } finally {
-      if (mounted) {
-        setState(() => _bootstrapping = false);
-      }
+    _linkSubscription = _appLinks.uriLinkStream.listen(
+          (uri) {
+        _handleIncomingUri(uri);
+      },
+      onError: (_) {},
+    );
+
+    if (mounted) {
+      setState(() {
+        _bootstrapping = false;
+      });
     }
   }
 
@@ -94,7 +96,7 @@ class _AppWidgetState extends State<AppWidget> {
         useMaterial3: true,
         scaffoldBackgroundColor: AppColors.background,
       ),
-      home: _bootstrapping ? const _StartupScreen() : const UserListPage(),
+      home: _bootstrapping ? const _StartupScreen() : const MainWrapper(),
     );
   }
 }

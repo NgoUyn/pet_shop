@@ -12,14 +12,12 @@ class AuthRepository {
 
   static final AuthRepository instance = AuthRepository._();
 
-  Future<void> registerCustomer({
-    required String name,
-    required String email,
-    required String password,
-  }) async {
+  String _normalizeEmail(String email) => email.trim().toLowerCase();
+
+  Future<bool> isEmailRegistered(String email) async {
     final db = await AppDatabase.instance;
-    final normalizedEmail = email.trim().toLowerCase();
-    final existing = await db.query(
+    final normalizedEmail = _normalizeEmail(email);
+    final rows = await db.query(
       'User',
       columns: ['UserID'],
       where: 'lower(Email) = ?',
@@ -27,7 +25,18 @@ class AuthRepository {
       limit: 1,
     );
 
-    if (existing.isNotEmpty) {
+    return rows.isNotEmpty;
+  }
+
+  Future<void> registerCustomer({
+    required String name,
+    required String email,
+    required String password,
+  }) async {
+    final db = await AppDatabase.instance;
+    final normalizedEmail = _normalizeEmail(email);
+
+    if (await isEmailRegistered(normalizedEmail)) {
       throw StateError('Email đã được sử dụng');
     }
 
@@ -70,7 +79,7 @@ class AuthRepository {
 
   Future<int> login({required String email, required String password}) async {
     final db = await AppDatabase.instance;
-    final normalizedEmail = email.trim().toLowerCase();
+    final normalizedEmail = _normalizeEmail(email);
 
     final rows = await db.query(
       'User',
@@ -134,7 +143,7 @@ class AuthRepository {
 
   Future<void> resendVerificationEmail(String email) async {
     final db = await AppDatabase.instance;
-    final normalizedEmail = email.trim().toLowerCase();
+    final normalizedEmail = _normalizeEmail(email);
     final rows = await db.query(
       'User',
       columns: ['UserID', 'FullName', 'IsActive'],
