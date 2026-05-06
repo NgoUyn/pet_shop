@@ -26,15 +26,54 @@ class AuthRepository {
 
     final rows = await db.query(
       'User',
-      columns: ['UserID'],
+      columns: ['UserID', 'Email', 'FullName'],
       where: 'lower(Email) = ?',
       whereArgs: [normalizedEmail],
       limit: 1,
     );
 
     if (rows.isNotEmpty) {
+      final existingUserId = rows.first['UserID'] as int;
+      final existingEmail = (rows.first['Email'] as String?)?.trim().toLowerCase();
+      final existingFullName = (rows.first['FullName'] as String?) ?? '';
+      final resolvedName = (displayName ?? firebaseUser.displayName ?? existingFullName).trim();
+
+      final updates = <String, Object?>{};
+      if (existingEmail != normalizedEmail) {
+        updates['Email'] = normalizedEmail;
+      }
+      if (resolvedName.isNotEmpty && resolvedName != existingFullName) {
+        updates['FullName'] = resolvedName;
+      }
+      if (updates.isNotEmpty) {
+        updates['UpdatedAt'] = DateTime.now().toIso8601String();
+        await db.update(
+          'User',
+          updates,
+          where: 'UserID = ?',
+          whereArgs: [existingUserId],
+        );
+      }
+
+      final customerRows = await db.query(
+        'Customer',
+        columns: ['CustomerID'],
+        where: 'UserID = ?',
+        whereArgs: [existingUserId],
+        limit: 1,
+      );
+
+      if (customerRows.isEmpty) {
+        await db.insert('Customer', {
+          'UserID': existingUserId,
+          'Phone': null,
+          'Address': null,
+          'LoyaltyPoints': 0,
+        });
+      }
+
       await PendingRegistrationStore.instance.removeByEmail(normalizedEmail);
-      return rows.first['UserID'] as int;
+      return existingUserId;
     }
 
     final pending = await PendingRegistrationStore.instance.findByEmail(normalizedEmail);

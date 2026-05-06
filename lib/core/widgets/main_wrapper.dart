@@ -4,6 +4,7 @@ import '../../features/favorites/pages/favorites_page.dart';
 import '../../features/home/pages/pet_list_page.dart';
 import '../../features/home/pages/shop_list_page.dart';
 import '../../features/notifications/pages/notification_page.dart';
+import '../../features/notifications/services/notification_repository.dart';
 import '../../features/profile/pages/profile_page.dart';
 import '../../features/auth/pages/login_page.dart';
 import '../../features/auth/services/auth_session.dart';
@@ -21,11 +22,28 @@ class MainWrapper extends StatefulWidget {
 
 class _MainWrapperState extends State<MainWrapper> {
   late int _selectedIndex;
+  int _notificationCount = 0;
 
   @override
   void initState() {
     super.initState();
     _selectedIndex = widget.initialIndex;
+    AuthSession.instance.currentUserId.addListener(_loadNotificationCount);
+    _loadNotificationCount();
+  }
+
+  @override
+  void dispose() {
+    AuthSession.instance.currentUserId.removeListener(_loadNotificationCount);
+    super.dispose();
+  }
+
+  Future<void> _loadNotificationCount() async {
+    final count = await NotificationRepository.instance.unreadCountForCurrentUser();
+    if (!mounted) return;
+    setState(() {
+      _notificationCount = count;
+    });
   }
 
   final List<Widget> _pages = [
@@ -33,7 +51,6 @@ class _MainWrapperState extends State<MainWrapper> {
     const FavoritesPage(),
     const PetListPage(),
     const ShopListPage(),
-    const NotificationPage(),
     const ProfilePage(),
   ];
 
@@ -73,15 +90,25 @@ class _MainWrapperState extends State<MainWrapper> {
                 ),
               );
             },
+            onNotificationsPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const NotificationPage()),
+              );
+              if (mounted) {
+                await _loadNotificationCount();
+              }
+            },
             onCartPressed: () => ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Mở giỏ hàng (chưa triển khai)'))),
             cartCount: 0,
+            notificationCount: _notificationCount,
         ),
       ),
       body: _pages[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: _selectedIndex,
         onTap: (index) async {
-          if (index == 5 && AuthSession.instance.currentUserId.value == null) {
+          if (index == 4 && AuthSession.instance.currentUserId.value == null) {
             await Navigator.push(
               context,
               MaterialPageRoute(builder: (_) => const LoginPage()),
@@ -117,11 +144,6 @@ class _MainWrapperState extends State<MainWrapper> {
             icon: Icon(Icons.storefront_outlined),
             activeIcon: Icon(Icons.storefront),
             label: 'Cửa hàng',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.notifications_outlined),
-            activeIcon: Icon(Icons.notifications),
-            label: 'Thông báo',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person_outline),

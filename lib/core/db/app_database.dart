@@ -16,7 +16,7 @@ class AppDatabase {
 
     return openDatabase(
       path,
-      version: 2,
+      version: 5,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON;');
       },
@@ -144,6 +144,19 @@ class AppDatabase {
           );
           ''',
           '''
+          CREATE TABLE AppNotification (
+            NotificationID INTEGER PRIMARY KEY AUTOINCREMENT,
+            UserID INTEGER NOT NULL,
+            Type TEXT NOT NULL DEFAULT 'general',
+            Title TEXT NOT NULL,
+            Content TEXT NOT NULL,
+            CreatedAt TEXT NOT NULL,
+            IsRead INTEGER NOT NULL DEFAULT 0 CHECK (IsRead IN (0, 1)),
+            ReadAt TEXT,
+            FOREIGN KEY (UserID) REFERENCES User(UserID) ON DELETE CASCADE
+          );
+          ''',
+          '''
           CREATE INDEX idx_user_email ON User(Email);
           ''',
           '''
@@ -188,6 +201,16 @@ class AppDatabase {
           ON CartItem(CartID, PetID)
           WHERE PetID IS NOT NULL;
           ''',
+          '''
+          CREATE INDEX idx_appnotification_user ON AppNotification(UserID);
+          ''',
+          '''
+          CREATE INDEX idx_appnotification_created_at ON AppNotification(CreatedAt);
+          ''',
+          '''
+          CREATE INDEX idx_appnotification_user_read_created_at
+          ON AppNotification(UserID, IsRead, CreatedAt);
+          ''',
         ];
 
         for (final sql in statements) {
@@ -205,6 +228,262 @@ class AppDatabase {
           'CreatedAt': DateTime.now().toIso8601String(),
           'UpdatedAt': null,
         });
+        // Thêm đoạn này vào cuối onCreate(), sau phần insert User mặc định
+
+        // Lấy CustomerID mẫu để gán cho Pet
+        await db.insert('Customer', {
+          'UserID': 1,
+          'Phone': '0123456789',
+          'Address': 'Ho Chi Minh City',
+          'LoyaltyPoints': 100,
+        });
+
+        // Tạo Category mẫu
+        await db.insert('Category', {
+          'CategoryName': 'Thức ăn thú cưng',
+          'Description': 'Các loại thức ăn cho chó mèo',
+          'ParentCategoryID': null,
+        });
+
+        await db.insert('Category', {
+          'CategoryName': 'Phụ kiện',
+          'Description': 'Phụ kiện cho thú cưng',
+          'ParentCategoryID': null,
+        });
+
+        // ======================
+        // INSERT 10 PRODUCTS
+        // ======================
+
+        final now = DateTime.now().toIso8601String();
+
+        final products = [
+          {
+            'CategoryID': 1,
+            'ProductName': 'Hạt cho chó Royal Canin',
+            'Price': 250000.0,
+            'StockQuantity': 20,
+            'Description': 'Thức ăn cao cấp cho chó',
+            'ImageURL': '',
+            'IsActive': 1,
+            'CreatedAt': now,
+            'UpdatedAt': null,
+          },
+          {
+            'CategoryID': 1,
+            'ProductName': 'Pate cho mèo Whiskas',
+            'Price': 35000.0,
+            'StockQuantity': 50,
+            'Description': 'Pate vị cá ngừ',
+            'ImageURL': '',
+            'IsActive': 1,
+            'CreatedAt': now,
+            'UpdatedAt': null,
+          },
+          {
+            'CategoryID': 2,
+            'ProductName': 'Vòng cổ chó',
+            'Price': 80000.0,
+            'StockQuantity': 30,
+            'Description': 'Vòng cổ da mềm',
+            'ImageURL': '',
+            'IsActive': 1,
+            'CreatedAt': now,
+            'UpdatedAt': null,
+          },
+          {
+            'CategoryID': 2,
+            'ProductName': 'Dây dắt thú cưng',
+            'Price': 120000.0,
+            'StockQuantity': 25,
+            'Description': 'Dây dắt chắc chắn',
+            'ImageURL': '',
+            'IsActive': 1,
+            'CreatedAt': now,
+            'UpdatedAt': null,
+          },
+          {
+            'CategoryID': 1,
+            'ProductName': 'Sữa tắm chó mèo',
+            'Price': 95000.0,
+            'StockQuantity': 40,
+            'Description': 'Sữa tắm khử mùi',
+            'ImageURL': '',
+            'IsActive': 1,
+            'CreatedAt': now,
+            'UpdatedAt': null,
+          },
+          {
+            'CategoryID': 2,
+            'ProductName': 'Khay vệ sinh mèo',
+            'Price': 180000.0,
+            'StockQuantity': 15,
+            'Description': 'Khay vệ sinh chống bắn cát',
+            'ImageURL': '',
+            'IsActive': 1,
+            'CreatedAt': now,
+            'UpdatedAt': null,
+          },
+          {
+            'CategoryID': 1,
+            'ProductName': 'Cát vệ sinh mèo',
+            'Price': 70000.0,
+            'StockQuantity': 60,
+            'Description': 'Cát khử mùi hương lavender',
+            'ImageURL': '',
+            'IsActive': 1,
+            'CreatedAt': now,
+            'UpdatedAt': null,
+          },
+          {
+            'CategoryID': 2,
+            'ProductName': 'Nhà ngủ cho mèo',
+            'Price': 320000.0,
+            'StockQuantity': 10,
+            'Description': 'Nhà ngủ mềm mại',
+            'ImageURL': '',
+            'IsActive': 1,
+            'CreatedAt': now,
+            'UpdatedAt': null,
+          },
+          {
+            'CategoryID': 2,
+            'ProductName': 'Bát ăn inox',
+            'Price': 45000.0,
+            'StockQuantity': 70,
+            'Description': 'Bát ăn chống gỉ',
+            'ImageURL': '',
+            'IsActive': 1,
+            'CreatedAt': now,
+            'UpdatedAt': null,
+          },
+          {
+            'CategoryID': 1,
+            'ProductName': 'Vitamin cho chó mèo',
+            'Price': 150000.0,
+            'StockQuantity': 18,
+            'Description': 'Vitamin tăng sức đề kháng',
+            'ImageURL': '',
+            'IsActive': 1,
+            'CreatedAt': now,
+            'UpdatedAt': null,
+          },
+        ];
+
+        for (final product in products) {
+          await db.insert('Product', product);
+        }
+
+        // ======================
+        // INSERT 10 PETS
+        // ======================
+
+        final pets = [
+          {
+            'CustomerID': 1,
+            'PetName': 'Milu',
+            'Species': 'Chó Poodle',
+            'Description': 'Poodle trắng, 2 tháng tuổi',
+            'Price': 3500000.0,
+            'IsActive': 1,
+            'CreatedAt': now,
+            'UpdatedAt': null,
+          },
+          {
+            'CustomerID': 1,
+            'PetName': 'Tom',
+            'Species': 'Mèo Anh lông ngắn',
+            'Description': 'Mèo xám dễ thương',
+            'Price': 4200000.0,
+            'IsActive': 1,
+            'CreatedAt': now,
+            'UpdatedAt': null,
+          },
+          {
+            'CustomerID': 1,
+            'PetName': 'Bibi',
+            'Species': 'Chó Corgi',
+            'Description': 'Corgi chân ngắn',
+            'Price': 7000000.0,
+            'IsActive': 1,
+            'CreatedAt': now,
+            'UpdatedAt': null,
+          },
+          {
+            'CustomerID': 1,
+            'PetName': 'Luna',
+            'Species': 'Mèo Ba Tư',
+            'Description': 'Lông dài trắng',
+            'Price': 5500000.0,
+            'IsActive': 1,
+            'CreatedAt': now,
+            'UpdatedAt': null,
+          },
+          {
+            'CustomerID': 1,
+            'PetName': 'Max',
+            'Species': 'Chó Husky',
+            'Description': 'Mắt xanh cực đẹp',
+            'Price': 8000000.0,
+            'IsActive': 1,
+            'CreatedAt': now,
+            'UpdatedAt': null,
+          },
+          {
+            'CustomerID': 1,
+            'PetName': 'Nabi',
+            'Species': 'Mèo Scottish',
+            'Description': 'Tai cụp đáng yêu',
+            'Price': 6000000.0,
+            'IsActive': 1,
+            'CreatedAt': now,
+            'UpdatedAt': null,
+          },
+          {
+            'CustomerID': 1,
+            'PetName': 'Coco',
+            'Species': 'Chó Chihuahua',
+            'Description': 'Nhỏ nhắn lanh lợi',
+            'Price': 2800000.0,
+            'IsActive': 1,
+            'CreatedAt': now,
+            'UpdatedAt': null,
+          },
+          {
+            'CustomerID': 1,
+            'PetName': 'Mimi',
+            'Species': 'Mèo Munchkin',
+            'Description': 'Chân ngắn siêu cute',
+            'Price': 7500000.0,
+            'IsActive': 1,
+            'CreatedAt': now,
+            'UpdatedAt': null,
+          },
+          {
+            'CustomerID': 1,
+            'PetName': 'Rocky',
+            'Species': 'Chó Golden',
+            'Description': 'Hiền lành thân thiện',
+            'Price': 6500000.0,
+            'IsActive': 1,
+            'CreatedAt': now,
+            'UpdatedAt': null,
+          },
+          {
+            'CustomerID': 1,
+            'PetName': 'Snow',
+            'Species': 'Mèo Ragdoll',
+            'Description': 'Lông trắng xanh mắt',
+            'Price': 9000000.0,
+            'IsActive': 1,
+            'CreatedAt': now,
+            'UpdatedAt': null,
+          },
+        ];
+
+        for (final pet in pets) {
+          await db.insert('Pet', pet);
+        }
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         await db.execute('PRAGMA foreign_keys = ON;');
@@ -213,6 +492,254 @@ class AppDatabase {
           await db.execute('ALTER TABLE User ADD COLUMN VerificationToken TEXT;');
           await db.execute('ALTER TABLE User ADD COLUMN VerifiedAt TEXT;');
           await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_user_verification_token ON User(VerificationToken) WHERE VerificationToken IS NOT NULL;');
+        }
+
+        if (oldVersion < 3) {
+          await db.execute(
+            '''
+            CREATE TABLE IF NOT EXISTS AppNotification (
+              NotificationID INTEGER PRIMARY KEY AUTOINCREMENT,
+              UserID INTEGER,
+              Title TEXT NOT NULL,
+              Content TEXT NOT NULL,
+              CreatedAt TEXT NOT NULL,
+              IsRead INTEGER NOT NULL DEFAULT 0 CHECK (IsRead IN (0, 1)),
+              ReadAt TEXT,
+              FOREIGN KEY (UserID) REFERENCES User(UserID) ON DELETE CASCADE
+            );
+            ''',
+          );
+
+          await db.execute('CREATE INDEX IF NOT EXISTS idx_appnotification_user ON AppNotification(UserID);');
+          await db.execute('CREATE INDEX IF NOT EXISTS idx_appnotification_created_at ON AppNotification(CreatedAt);');
+          await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_appnotification_user_read_created_at ON AppNotification(UserID, IsRead, CreatedAt);',
+          );
+        }
+
+        if (oldVersion < 4) {
+          final existingTable = await db.rawQuery(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'AppNotification' LIMIT 1;",
+          );
+
+          if (existingTable.isEmpty) {
+            await db.execute(
+              '''
+              CREATE TABLE IF NOT EXISTS AppNotification (
+                NotificationID INTEGER PRIMARY KEY AUTOINCREMENT,
+                UserID INTEGER NOT NULL,
+                Type TEXT NOT NULL DEFAULT 'general',
+                Title TEXT NOT NULL,
+                Content TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                IsRead INTEGER NOT NULL DEFAULT 0 CHECK (IsRead IN (0, 1)),
+                ReadAt TEXT,
+                FOREIGN KEY (UserID) REFERENCES User(UserID) ON DELETE CASCADE
+              );
+              ''',
+            );
+          } else {
+            // Drop any old "broadcast" notifications to satisfy the new NOT NULL constraint.
+            await db.execute('DELETE FROM AppNotification WHERE UserID IS NULL;');
+
+            final tableInfo = await db.rawQuery("PRAGMA table_info('AppNotification');");
+            final existingColumns = tableInfo
+                .map((e) => (e['name'] as String?) ?? '')
+                .where((e) => e.isNotEmpty)
+                .toSet();
+
+            final hasTypeColumn = existingColumns.contains('Type');
+
+            await db.execute('ALTER TABLE AppNotification RENAME TO AppNotification_old;');
+            await db.execute(
+              '''
+              CREATE TABLE AppNotification (
+                NotificationID INTEGER PRIMARY KEY AUTOINCREMENT,
+                UserID INTEGER NOT NULL,
+                Type TEXT NOT NULL DEFAULT 'general',
+                Title TEXT NOT NULL,
+                Content TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                IsRead INTEGER NOT NULL DEFAULT 0 CHECK (IsRead IN (0, 1)),
+                ReadAt TEXT,
+                FOREIGN KEY (UserID) REFERENCES User(UserID) ON DELETE CASCADE
+              );
+              ''',
+            );
+
+            if (hasTypeColumn) {
+              await db.execute(
+                '''
+                INSERT INTO AppNotification (NotificationID, UserID, Type, Title, Content, CreatedAt, IsRead, ReadAt)
+                SELECT NotificationID, UserID, Type, Title, Content, CreatedAt, IsRead, ReadAt
+                FROM AppNotification_old;
+                ''',
+              );
+            } else {
+              await db.execute(
+                '''
+                INSERT INTO AppNotification (NotificationID, UserID, Type, Title, Content, CreatedAt, IsRead, ReadAt)
+                SELECT NotificationID, UserID, 'general', Title, Content, CreatedAt, IsRead, ReadAt
+                FROM AppNotification_old;
+                ''',
+              );
+            }
+
+            await db.execute('DROP TABLE AppNotification_old;');
+          }
+
+          await db.execute('CREATE INDEX IF NOT EXISTS idx_appnotification_user ON AppNotification(UserID);');
+          await db.execute('CREATE INDEX IF NOT EXISTS idx_appnotification_created_at ON AppNotification(CreatedAt);');
+          await db.execute(
+            'CREATE INDEX IF NOT EXISTS idx_appnotification_user_read_created_at ON AppNotification(UserID, IsRead, CreatedAt);',
+          );
+        }
+
+        if (oldVersion < 5) {
+          // Seed some sample catalog/pets for existing databases that were created
+          // before we added the initial data in onCreate(). Only seed when empty.
+          final productCountRows = await db.rawQuery('SELECT COUNT(*) AS Cnt FROM Product;');
+          final petCountRows = await db.rawQuery('SELECT COUNT(*) AS Cnt FROM Pet;');
+
+          final productCount = (productCountRows.first['Cnt'] as int?) ?? 0;
+          final petCount = (petCountRows.first['Cnt'] as int?) ?? 0;
+
+          if (productCount == 0) {
+            await db.insert(
+              'Category',
+              {
+                'CategoryName': 'Thức ăn thú cưng',
+                'Description': 'Các loại thức ăn cho chó mèo',
+                'ParentCategoryID': null,
+              },
+              conflictAlgorithm: ConflictAlgorithm.ignore,
+            );
+            await db.insert(
+              'Category',
+              {
+                'CategoryName': 'Phụ kiện',
+                'Description': 'Phụ kiện cho thú cưng',
+                'ParentCategoryID': null,
+              },
+              conflictAlgorithm: ConflictAlgorithm.ignore,
+            );
+
+            final categoryRows = await db.query(
+              'Category',
+              columns: ['CategoryID', 'CategoryName'],
+              where: 'CategoryName IN (?, ?)',
+              whereArgs: ['Thức ăn thú cưng', 'Phụ kiện'],
+            );
+
+            int? foodCategoryId;
+            int? accessoryCategoryId;
+            for (final row in categoryRows) {
+              final name = row['CategoryName'] as String?;
+              final id = row['CategoryID'] as int?;
+              if (name == 'Thức ăn thú cưng') foodCategoryId = id;
+              if (name == 'Phụ kiện') accessoryCategoryId = id;
+            }
+
+            final now = DateTime.now().toIso8601String();
+
+            final products = [
+              {
+                'CategoryID': foodCategoryId ?? 1,
+                'ProductName': 'Hạt cho chó Royal Canin',
+                'Price': 250000.0,
+                'StockQuantity': 20,
+                'Description': 'Thức ăn cao cấp cho chó',
+                'ImageURL': '',
+                'IsActive': 1,
+                'CreatedAt': now,
+                'UpdatedAt': null,
+              },
+              {
+                'CategoryID': foodCategoryId ?? 1,
+                'ProductName': 'Pate cho mèo Whiskas',
+                'Price': 35000.0,
+                'StockQuantity': 50,
+                'Description': 'Pate vị cá ngừ',
+                'ImageURL': '',
+                'IsActive': 1,
+                'CreatedAt': now,
+                'UpdatedAt': null,
+              },
+              {
+                'CategoryID': accessoryCategoryId ?? 2,
+                'ProductName': 'Vòng cổ chó',
+                'Price': 80000.0,
+                'StockQuantity': 30,
+                'Description': 'Vòng cổ da mềm',
+                'ImageURL': '',
+                'IsActive': 1,
+                'CreatedAt': now,
+                'UpdatedAt': null,
+              },
+              {
+                'CategoryID': accessoryCategoryId ?? 2,
+                'ProductName': 'Dây dắt thú cưng',
+                'Price': 120000.0,
+                'StockQuantity': 25,
+                'Description': 'Dây dắt chắc chắn',
+                'ImageURL': '',
+                'IsActive': 1,
+                'CreatedAt': now,
+                'UpdatedAt': null,
+              },
+            ];
+
+            for (final product in products) {
+              await db.insert('Product', product);
+            }
+          }
+
+          if (petCount == 0) {
+            final customerRows = await db.query(
+              'Customer',
+              columns: ['CustomerID'],
+              limit: 1,
+            );
+            final customerId = customerRows.isEmpty ? null : customerRows.first['CustomerID'] as int?;
+            final now = DateTime.now().toIso8601String();
+
+            final pets = [
+              {
+                'CustomerID': customerId,
+                'PetName': 'Milu',
+                'Species': 'Chó Poodle',
+                'Description': 'Poodle trắng, 2 tháng tuổi',
+                'Price': 3500000.0,
+                'IsActive': 1,
+                'CreatedAt': now,
+                'UpdatedAt': null,
+              },
+              {
+                'CustomerID': customerId,
+                'PetName': 'Tom',
+                'Species': 'Mèo Anh lông ngắn',
+                'Description': 'Mèo xám dễ thương',
+                'Price': 4200000.0,
+                'IsActive': 1,
+                'CreatedAt': now,
+                'UpdatedAt': null,
+              },
+              {
+                'CustomerID': customerId,
+                'PetName': 'Max',
+                'Species': 'Chó Husky',
+                'Description': 'Mắt xanh cực đẹp',
+                'Price': 8000000.0,
+                'IsActive': 1,
+                'CreatedAt': now,
+                'UpdatedAt': null,
+              },
+            ];
+
+            for (final pet in pets) {
+              await db.insert('Pet', pet);
+            }
+          }
         }
       },
     );

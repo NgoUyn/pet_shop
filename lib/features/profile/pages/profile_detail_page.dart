@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+
 import '../../../core/constants/app_colors.dart';
-import '../../auth/services/auth_repository.dart';
 import '../../../core/widgets/main_wrapper.dart';
+import '../../auth/services/auth_repository.dart';
+import '../services/profile_repository.dart';
 
 class ProfileDetailPage extends StatefulWidget {
   const ProfileDetailPage({super.key});
@@ -12,37 +14,106 @@ class ProfileDetailPage extends StatefulWidget {
 
 class _ProfileDetailPageState extends State<ProfileDetailPage> {
   final _formKey = GlobalKey<FormState>();
-  bool _isEditing = false;
 
-  final TextEditingController _nameController = TextEditingController(text: 'Username_Petshop');
-  final TextEditingController _emailController = TextEditingController(text: 'user@email.com');
-  final TextEditingController _receiverController = TextEditingController(text: 'Nguyen Van A');
-  final TextEditingController _phoneController = TextEditingController(text: '0901234567');
-  final TextEditingController _addressController = TextEditingController(text: '123 Duong ABC, Quan 1, TP.HCM');
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _phoneController = TextEditingController();
+  final TextEditingController _addressController = TextEditingController();
+
+  bool _loading = true;
+  bool _saving = false;
+  bool _isEditing = false;
+  ProfileData? _profile;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadProfile();
+  }
 
   @override
   void dispose() {
     _nameController.dispose();
     _emailController.dispose();
-    _receiverController.dispose();
     _phoneController.dispose();
     _addressController.dispose();
     super.dispose();
   }
 
-  void _toggleEdit() {
+  Future<void> _loadProfile() async {
+    final profile = await ProfileRepository.instance.getCurrentProfile();
+    if (!mounted) return;
+
     setState(() {
-      _isEditing = !_isEditing;
+      _profile = profile;
+      _loading = false;
+      if (profile != null) {
+        _nameController.text = profile.fullName;
+        _emailController.text = profile.email;
+        _phoneController.text = profile.phone ?? '';
+        _addressController.text = profile.address ?? '';
+      }
     });
   }
 
-  void _saveProfile() {
-    if (!_formKey.currentState!.validate()) return;
+  Future<void> _saveProfile() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
     FocusScope.of(context).unfocus();
     setState(() {
-      _isEditing = false;
+      _saving = true;
     });
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Da cap nhat ho so')));
+
+    try {
+      final changed = await ProfileRepository.instance.updateCurrentProfile(
+        fullName: _nameController.text,
+        phone: _phoneController.text,
+        address: _addressController.text,
+      );
+
+      if (!mounted) return;
+
+      if (!changed) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Chưa có thay đổi nào')),
+        );
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã cập nhật hồ sơ')),
+      );
+
+      final refreshed = await ProfileRepository.instance.getCurrentProfile();
+      if (!mounted) return;
+
+      setState(() {
+        _profile = refreshed;
+        if (refreshed != null) {
+          _nameController.text = refreshed.fullName;
+          _emailController.text = refreshed.email;
+          _phoneController.text = refreshed.phone ?? '';
+          _addressController.text = refreshed.address ?? '';
+        }
+        _isEditing = false;
+      });
+
+      Navigator.of(context).pop(true);
+
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('StateError: ', ''))),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+        });
+      }
+    }
   }
 
   Future<void> _logout() async {
@@ -57,18 +128,50 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(
+        backgroundColor: AppColors.background,
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (_profile == null) {
+      return Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          title: const Text('Hồ sơ cá nhân'),
+          backgroundColor: AppColors.white,
+          foregroundColor: AppColors.textDark,
+          elevation: 0,
+        ),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Không tìm thấy dữ liệu hồ sơ'),
+              const SizedBox(height: 12),
+              ElevatedButton(
+                onPressed: _logout,
+                child: const Text('Đăng xuất'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Ho so ca nhan'),
+        title: const Text('Hồ sơ cá nhân'),
         backgroundColor: AppColors.white,
         foregroundColor: AppColors.textDark,
         elevation: 0,
         actions: [
           TextButton(
-            onPressed: _isEditing ? _saveProfile : _toggleEdit,
+            onPressed: _saving ? null : (_isEditing ? _saveProfile : () => setState(() => _isEditing = true)),
             child: Text(
-              _isEditing ? 'Luu' : 'Chinh sua',
+              _saving ? 'Đang lưu...' : (_isEditing ? 'Lưu' : 'Chỉnh sửa'),
               style: const TextStyle(fontWeight: FontWeight.w600),
             ),
           ),
@@ -82,49 +185,88 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildSectionTitle('Thong tin ca nhan'),
+                _buildSectionTitle('Thông tin cá nhân'),
                 _buildTextField(
-                  label: 'Ho va ten',
+                  label: 'Họ và tên',
                   controller: _nameController,
                   enabled: _isEditing,
-                  validator: (value) => (value == null || value.trim().isEmpty) ? 'Vui long nhap ten' : null,
+                  validator: (value) {
+                    final normalized = value?.trim() ?? '';
+                    if (normalized.isEmpty) {
+                      return 'Vui lòng nhập tên';
+                    }
+                    if (normalized.length < 2) {
+                      return 'Tên phải có ít nhất 2 ký tự';
+                    }
+                    if (normalized.length > 80) {
+                      return 'Tên không được vượt quá 80 ký tự';
+                    }
+                    return null;
+                  },
                 ),
                 _buildTextField(
                   label: 'Email',
                   controller: _emailController,
-                  enabled: _isEditing,
+                  enabled: false,
                   keyboardType: TextInputType.emailAddress,
-                  validator: (value) => (value == null || value.trim().isEmpty) ? 'Vui long nhap email' : null,
                 ),
                 const SizedBox(height: 16),
-                _buildSectionTitle('Thong tin nhan hang'),
+                _buildSectionTitle('Thông tin nhận hàng'),
                 _buildTextField(
-                  label: 'Nguoi nhan',
-                  controller: _receiverController,
-                  enabled: _isEditing,
-                  validator: (value) => (value == null || value.trim().isEmpty) ? 'Vui long nhap nguoi nhan' : null,
-                ),
-                _buildTextField(
-                  label: 'So dien thoai',
+                  label: 'Số điện thoại',
                   controller: _phoneController,
                   enabled: _isEditing,
                   keyboardType: TextInputType.phone,
-                  validator: (value) => (value == null || value.trim().isEmpty) ? 'Vui long nhap so dien thoai' : null,
+                  validator: (value) {
+                    final normalized = value?.trim() ?? '';
+                    if (normalized.isEmpty) {
+                      return null;
+                    }
+
+                    if (!RegExp(r'^[0-9]+$').hasMatch(normalized)) {
+                      return 'Số điện thoại không được chứa chữ hoặc ký tự đặc biệt';
+                    }
+
+                    if (normalized.length < 8 || normalized.length > 15) {
+                      return 'Số điện thoại không hợp lệ';
+                    }
+                    return null;
+                  },
                 ),
                 _buildTextField(
-                  label: 'Dia chi',
+                  label: 'Địa chỉ',
                   controller: _addressController,
                   enabled: _isEditing,
                   maxLines: 2,
-                  validator: (value) => (value == null || value.trim().isEmpty) ? 'Vui long nhap dia chi' : null,
+                  validator: (value) {
+                    final normalized = value?.trim() ?? '';
+                    if (normalized.isEmpty) {
+                      return null;
+                    }
+                    if (normalized.length < 3) {
+                      return 'Địa chỉ phải có ít nhất 3 ký tự';
+                    }
+                    if (normalized.length > 120) {
+                      return 'Địa chỉ không được vượt quá 120 ký tự';
+                    }
+
+                    final allowed = RegExp(r'^[\p{L}\p{M}0-9 ]+$', unicode: true);
+                    if (!allowed.hasMatch(normalized)) {
+                      return 'Địa chỉ không được chứa ký tự đặc biệt';
+                    }
+
+                    return null;
+                  },
                 ),
+                const SizedBox(height: 8),
+
                 const SizedBox(height: 24),
                 SizedBox(
                   width: double.infinity,
                   child: OutlinedButton.icon(
                     onPressed: _logout,
                     icon: const Icon(Icons.logout, color: Colors.red),
-                    label: const Text('Dang xuat', style: TextStyle(color: Colors.red)),
+                    label: const Text('Đăng xuất', style: TextStyle(color: Colors.red)),
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: Colors.red),
                       padding: const EdgeInsets.symmetric(vertical: 12),

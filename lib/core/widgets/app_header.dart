@@ -9,7 +9,9 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback? onEditProfile;
   final ValueChanged<String>? onSearchText;
   final VoidCallback? onImageSearch;
+  final VoidCallback? onNotificationsPressed;
   final VoidCallback? onCartPressed;
+  final int notificationCount;
   final int cartCount;
   final double height;
 
@@ -22,7 +24,9 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
     this.onEditProfile,
     this.onSearchText,
     this.onImageSearch,
+    this.onNotificationsPressed,
     this.onCartPressed,
+    this.notificationCount = 0,
     this.cartCount = 0,
     this.height = kToolbarHeight,
   });
@@ -60,6 +64,34 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
               child: Center(
                 child: Text(
                   cartCount > 99 ? '99+' : cartCount.toString(),
+                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildNotifications(BuildContext context) {
+    return Stack(
+      alignment: Alignment.topRight,
+      children: [
+        IconButton(
+          onPressed: onNotificationsPressed,
+          icon: const Icon(Icons.notifications_outlined),
+        ),
+        if (notificationCount > 0)
+          Positioned(
+            right: 6,
+            top: 6,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+              constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+              child: Center(
+                child: Text(
+                  notificationCount > 99 ? '99+' : notificationCount.toString(),
                   style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
                 ),
               ),
@@ -133,6 +165,9 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
           ),
 
           const SizedBox(width: 8),
+          // Notifications
+          _buildNotifications(context),
+          const SizedBox(width: 2),
           // Cart
           _buildCart(context),
         ],
