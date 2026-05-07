@@ -11,6 +11,7 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback? onImageSearch;
   final VoidCallback? onNotificationsPressed;
   final VoidCallback? onCartPressed;
+  final VoidCallback? onFavoritesPressed;
   final int notificationCount;
   final int cartCount;
   final double height;
@@ -26,9 +27,10 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
     this.onImageSearch,
     this.onNotificationsPressed,
     this.onCartPressed,
+    this.onFavoritesPressed,
     this.notificationCount = 0,
     this.cartCount = 0,
-    this.height = kToolbarHeight,
+    this.height = kToolbarHeight + 10,
   });
 
   @override
@@ -45,140 +47,131 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
     );
   }
 
-  Widget _buildCart(BuildContext context) {
-    return Stack(
-      alignment: Alignment.topRight,
-      children: [
-        IconButton(
-          onPressed: onCartPressed,
-          icon: const Icon(Icons.shopping_cart_outlined),
-        ),
-        if (cartCount > 0)
-          Positioned(
-            right: 6,
-            top: 6,
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-              constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-              child: Center(
-                child: Text(
-                  cartCount > 99 ? '99+' : cartCount.toString(),
-                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
-  Widget _buildNotifications(BuildContext context) {
-    return Stack(
-      alignment: Alignment.topRight,
-      children: [
-        IconButton(
-          onPressed: onNotificationsPressed,
-          icon: const Icon(Icons.notifications_outlined),
-        ),
-        if (notificationCount > 0)
-          Positioned(
-            right: 6,
-            top: 6,
-            child: Container(
-              padding: const EdgeInsets.all(4),
-              decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-              constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-              child: Center(
-                child: Text(
-                  notificationCount > 99 ? '99+' : notificationCount.toString(),
-                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return AppBar(
-      backgroundColor: AppColors.white,
+      backgroundColor: Colors.white,
       foregroundColor: AppColors.textDark,
       elevation: 0,
       automaticallyImplyLeading: false,
-      title: Row(
-        children: [
-          if (!profileMode) ...[
-            IconButton(
-              icon: const Icon(Icons.menu, color: AppColors.textDark),
-              onPressed: () {},
-            ),
-            const SizedBox(width: 4),
-          ],
+      titleSpacing: 0,
+      title: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8.0),
+        child: Row(
+          children: [
+            if (!profileMode)
+              IconButton(
+                icon: const Icon(Icons.menu, color: Colors.black54),
+                onPressed: () {},
+              ),
 
-          // Search box
-          Expanded(
-            child: GestureDetector(
-                      onTap: () => _showSearchDialog(context),
-              child: Container(
-                height: 44,
-                decoration: BoxDecoration(
-                  color: AppColors.background,
-                  borderRadius: BorderRadius.circular(28),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Row(
-                  children: [
-                    const Icon(Icons.search, size: 20, color: AppColors.textLight),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        title != null && title!.isNotEmpty ? title! : 'Tìm kiếm ...',
-                        style: const TextStyle(color: AppColors.textLight),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    InkWell(
-                      onTap: () {
-                        if (onImageSearch != null) onImageSearch!();
-                      },
-                      borderRadius: BorderRadius.circular(20),
-                      child: Padding(
-                        padding: const EdgeInsets.all(6.0),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: AppColors.white,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          padding: const EdgeInsets.all(6),
-                          child: const Icon(Icons.camera_alt, size: 20, color: AppColors.textDark),
+            // Search box
+            Expanded(
+              child: GestureDetector(
+                onTap: () => _showSearchDialog(context),
+                child: Container(
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF3F4F6),
+                    borderRadius: BorderRadius.circular(22),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.search, size: 22, color: Colors.black45),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          title != null && title!.isNotEmpty ? title! : 'Tìm kiếm ...',
+                          style: const TextStyle(color: Colors.black45, fontSize: 16),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(width: 8),
+                      // Camera Button inside search
+                      Material(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        elevation: 1,
+                        child: InkWell(
+                          onTap: onImageSearch,
+                          borderRadius: BorderRadius.circular(16),
+                          child: const Padding(
+                            padding: EdgeInsets.all(6.0),
+                            child: Icon(Icons.camera_alt, size: 20, color: Colors.black87),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
 
-          const SizedBox(width: 8),
-          // Notifications
-          _buildNotifications(context),
-          const SizedBox(width: 2),
-          // Cart
-          _buildCart(context),
-        ],
+            const SizedBox(width: 4),
+
+            // Favorites (Heart)
+            IconButton(
+              icon: const Icon(Icons.favorite_outline, color: Colors.black54),
+              onPressed: onFavoritesPressed,
+            ),
+
+            // Notifications
+            Stack(
+              alignment: Alignment.topRight,
+              children: [
+                IconButton(
+                  onPressed: onNotificationsPressed,
+                  icon: const Icon(Icons.notifications_outlined, color: Colors.black54),
+                ),
+                if (notificationCount > 0)
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                      child: Center(
+                        child: Text(
+                          notificationCount > 99 ? '99+' : notificationCount.toString(),
+                          style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+
+            // Cart
+            Stack(
+              alignment: Alignment.topRight,
+              children: [
+                IconButton(
+                  onPressed: onCartPressed,
+                  icon: const Icon(Icons.shopping_cart_outlined, color: Colors.black54),
+                ),
+                if (cartCount > 0)
+                  Positioned(
+                    right: 8,
+                    top: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(2),
+                      decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
+                      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                      child: Center(
+                        child: Text(
+                          cartCount > 99 ? '99+' : cartCount.toString(),
+                          style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ],
+        ),
       ),
-      // Profile mode top-right extras
-      bottom: profileMode
-          ? PreferredSize(
-              preferredSize: const Size.fromHeight(0),
-              child: Container(),
-            )
-          : null,
     );
   }
 }
@@ -198,11 +191,9 @@ class _ProductSearchDelegate extends SearchDelegate<String?> {
       IconButton(
         icon: const Icon(Icons.camera_alt),
         onPressed: () {
-          // Close search and trigger image search handler
           close(context, null);
           if (onImageSearch != null) onImageSearch!();
         },
-        tooltip: 'Tìm bằng ảnh',
       ),
       if (query.isNotEmpty)
         IconButton(
@@ -234,15 +225,11 @@ class _ProductSearchDelegate extends SearchDelegate<String?> {
     return Container(
       padding: const EdgeInsets.all(16),
       child: query.isEmpty
-          ? const Text('Nhập tên, mô tả sản phẩm để tìm...')
-          : ListView(
-              children: [
-                ListTile(
-                  title: Text('Tìm "$query"'),
-                  leading: const Icon(Icons.search),
-                  onTap: () => showResults(context),
-                ),
-              ],
+          ? const Text('Nhập tên để tìm kiếm...')
+          : ListTile(
+              title: Text('Tìm "$query"'),
+              leading: const Icon(Icons.search),
+              onTap: () => showResults(context),
             ),
     );
   }
