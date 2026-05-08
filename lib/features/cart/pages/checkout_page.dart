@@ -14,6 +14,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
   ProfileData? _profile;
   List<CartProductEntry> _items = [];
   String _paymentMethod = 'COD';
+  bool _useLoyaltyPoints = false;
   final TextEditingController _addressCtrl = TextEditingController();
   bool _isProcessing = false;
 
@@ -47,6 +48,21 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   double get _total => _items.fold(0.0, (s, e) => s + e.lineTotal);
 
+  int get _loyaltyPoints => _profile?.loyaltyPoints ?? 0;
+
+  double get _maxRedeemableDiscount {
+    if (_loyaltyPoints < 50) return 0;
+    final redeemableBlocks = _loyaltyPoints ~/ 50;
+    final maxBlocksByAmount = (_total / 5000).floor();
+    final blocksToUse = redeemableBlocks > maxBlocksByAmount ? maxBlocksByAmount : redeemableBlocks;
+    return blocksToUse * 5000.0;
+  }
+
+  double get _finalTotal {
+    if (!_useLoyaltyPoints) return _total;
+    return (_total - _maxRedeemableDiscount).clamp(0, double.infinity);
+  }
+
   Future<void> _confirm() async {
     if (_items.isEmpty) return;
     setState(() => _isProcessing = true);
@@ -54,6 +70,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
       final result = await CartRepository.instance.checkoutCurrentUser(
         paymentMethod: _paymentMethod,
         shippingAddress: _addressCtrl.text.trim().isEmpty ? null : _addressCtrl.text.trim(),
+        useLoyaltyPoints: _useLoyaltyPoints,
       );
       if (!mounted) return;
       // Return success to caller
@@ -123,9 +140,29 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text('Điểm tích luỹ', style: Theme.of(context).textTheme.titleMedium),
-                      Text('${_profile!.loyaltyPoints} điểm', style: const TextStyle(color: AppColors.primary)),
+                      Text('$_loyaltyPoints điểm', style: const TextStyle(color: AppColors.primary)),
                     ],
                   ),
+
+                  if (_maxRedeemableDiscount > 0) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Bạn có muốn sử dụng điểm tích luỹ để giảm ${_formatPrice(_maxRedeemableDiscount)} không?',
+                      style: const TextStyle(color: AppColors.textDark),
+                    ),
+                    RadioListTile<bool>(
+                      value: true,
+                      groupValue: _useLoyaltyPoints,
+                      title: const Text('Có'),
+                      onChanged: (v) => setState(() => _useLoyaltyPoints = v ?? false),
+                    ),
+                    RadioListTile<bool>(
+                      value: false,
+                      groupValue: _useLoyaltyPoints,
+                      title: const Text('Không'),
+                      onChanged: (v) => setState(() => _useLoyaltyPoints = v ?? false),
+                    ),
+                  ],
 
                   const SizedBox(height: 12),
                   Text('Phương thức thanh toán', style: Theme.of(context).textTheme.titleMedium),
@@ -157,9 +194,20 @@ class _CheckoutPageState extends State<CheckoutPage> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       const Text('Tổng thanh toán', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                      Text(_formatPrice(_total), style: const TextStyle(fontSize: 16, color: AppColors.primary, fontWeight: FontWeight.bold)),
+                      Text(_formatPrice(_finalTotal), style: const TextStyle(fontSize: 16, color: AppColors.primary, fontWeight: FontWeight.bold)),
                     ],
                   ),
+
+                  if (_useLoyaltyPoints && _maxRedeemableDiscount > 0) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Giảm từ điểm', style: TextStyle(color: Colors.green)),
+                        Text('-${_formatPrice(_maxRedeemableDiscount)}', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ],
 
                   const SizedBox(height: 20),
                   SizedBox(

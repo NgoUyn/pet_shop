@@ -46,12 +46,16 @@ class CheckoutResult {
     required this.invoiceId,
     required this.totalItems,
     required this.totalAmount,
+    required this.discountAmount,
+    required this.usedPoints,
     required this.earnedPoints,
   });
 
   final int invoiceId;
   final int totalItems;
   final double totalAmount;
+  final double discountAmount;
+  final int usedPoints;
   final int earnedPoints;
 }
 
@@ -287,6 +291,7 @@ class CartRepository {
     String paymentMethod = 'COD',
     String? shippingAddress,
     String? notes,
+    bool useLoyaltyPoints = false,
   }) async {
     final userId = AuthSession.instance.currentUserId.value;
     if (userId == null) {
@@ -299,6 +304,8 @@ class CartRepository {
     var invoiceId = 0;
     var totalItems = 0;
     var totalAmount = 0.0;
+    var discountAmount = 0.0;
+    var usedPoints = 0;
     var earnedPoints = 0;
 
     try {
@@ -365,6 +372,28 @@ class CartRepository {
         totalAmount += (quantity * unitPrice);
       }
 
+      final customerRows = await txn.query(
+        'Customer',
+        columns: ['LoyaltyPoints'],
+        where: 'CustomerID = ?',
+        whereArgs: [customerId],
+        limit: 1,
+      );
+      final currentLoyaltyPoints = customerRows.isNotEmpty
+          ? ((customerRows.first['LoyaltyPoints'] as int?) ?? 0)
+          : 0;
+
+      if (useLoyaltyPoints && currentLoyaltyPoints >= 50) {
+        final redeemableBlocks = currentLoyaltyPoints ~/ 50;
+        final maxBlocksByAmount = (totalAmount / 5000).floor();
+        final blocksToUse = redeemableBlocks > maxBlocksByAmount
+            ? maxBlocksByAmount
+            : redeemableBlocks;
+        usedPoints = blocksToUse * 50;
+        discountAmount = blocksToUse * 5000.0;
+        totalAmount = totalAmount - discountAmount;
+      }
+
       final now = DateTime.now().toIso8601String();
 
       // Insert invoice with computed total amount
@@ -379,7 +408,7 @@ class CartRepository {
         'UpdatedAt': null,
       });
 
-      print('Created Invoice id=$invoiceId totalAmount=$totalAmount totalItems=$totalItems');
+      print('Created Invoice id=$invoiceId totalAmount=$totalAmount totalItems=$totalItems discountAmount=$discountAmount usedPoints=$usedPoints');
 
       if (invoiceId <= 0) {
         throw StateError('Không thể tạo đơn hàng, invoiceId không hợp lệ');
@@ -436,6 +465,17 @@ class CartRepository {
         print('Failed to award loyalty points: $e');
       }
 
+      if (usedPoints > 0) {
+        await txn.rawUpdate(
+          '''
+          UPDATE Customer
+          SET LoyaltyPoints = COALESCE(LoyaltyPoints, 0) - ?
+          WHERE CustomerID = ?
+          ''',
+          [usedPoints, customerId],
+        );
+      }
+
       await txn.delete(
         'CartItem',
         where: 'CartID = ? AND ProductID IS NOT NULL',
@@ -483,6 +523,8 @@ class CartRepository {
       invoiceId: invoiceId,
       totalItems: totalItems,
       totalAmount: totalAmount,
+      discountAmount: discountAmount,
+      usedPoints: usedPoints,
       earnedPoints: earnedPoints,
     );
   }
