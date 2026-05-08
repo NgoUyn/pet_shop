@@ -1,182 +1,6 @@
-// import 'package:flutter/material.dart';
-// import '../../../core/constants/app_colors.dart';
-// import '../../../core/utils/cloudinary_helper.dart';
-// import '../../../core/widgets/app_header.dart';
-//
-// class HomePage extends StatelessWidget {
-//   const HomePage({super.key});
-//
-//   @override
-//   Widget build(BuildContext context) {
-//     return Scaffold(
-//       backgroundColor: AppColors.background,
-//
-//       // Thay AppBar cũ bằng AppHeader
-//       appBar: const PreferredSize(
-//         preferredSize: Size.fromHeight(70),
-//         child: AppHeader(),
-//       ),
-//
-//       body: SingleChildScrollView(
-//         child: Column(
-//           crossAxisAlignment: CrossAxisAlignment.start,
-//           children: [
-//             // Banner từ Cloudinary
-//             Container(
-//               margin: const EdgeInsets.all(16),
-//               height: 180,
-//               width: double.infinity,
-//               decoration: BoxDecoration(
-//                 borderRadius: BorderRadius.circular(15),
-//                 image: DecorationImage(
-//                   image: NetworkImage(
-//                     CloudinaryHelper.getBannerImage('banner1'),
-//                   ),
-//                   fit: BoxFit.cover,
-//                 ),
-//               ),
-//             ),
-//
-//             // Categories Section
-//             const Padding(
-//               padding: EdgeInsets.symmetric(horizontal: 16),
-//               child: Text(
-//                 'Danh mục nổi bật',
-//                 style: TextStyle(
-//                   fontSize: 18,
-//                   fontWeight: FontWeight.bold,
-//                 ),
-//               ),
-//             ),
-//
-//             const SizedBox(height: 10),
-//
-//             SizedBox(
-//               height: 100,
-//               child: ListView(
-//                 scrollDirection: Axis.horizontal,
-//                 padding: const EdgeInsets.symmetric(horizontal: 16),
-//                 children: [
-//                   _buildCategoryItem('Chó', 'dog_icon'),
-//                   _buildCategoryItem('Mèo', 'cat_icon'),
-//                 ],
-//               ),
-//             ),
-//
-//             // Recommended Section
-//             Padding(
-//               padding: const EdgeInsets.all(16),
-//               child: Row(
-//                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-//                 children: [
-//                   const Text(
-//                     'Gợi ý cho bạn',
-//                     style: TextStyle(
-//                       fontSize: 18,
-//                       fontWeight: FontWeight.bold,
-//                     ),
-//                   ),
-//                   TextButton(
-//                     onPressed: () {},
-//                     child: const Text('Xem tất cả'),
-//                   ),
-//                 ],
-//               ),
-//             ),
-//
-//             GridView.builder(
-//               padding: const EdgeInsets.symmetric(horizontal: 16),
-//               shrinkWrap: true,
-//               physics: const NeverScrollableScrollPhysics(),
-//               gridDelegate:
-//               const SliverGridDelegateWithFixedCrossAxisCount(
-//                 crossAxisCount: 2,
-//                 childAspectRatio: 0.75,
-//                 crossAxisSpacing: 10,
-//                 mainAxisSpacing: 10,
-//               ),
-//               itemCount: 4,
-//               itemBuilder: (context, index) {
-//                 return _buildProductCard();
-//               },
-//             ),
-//           ],
-//         ),
-//       ),
-//     );
-//   }
-//
-//   static Widget _buildCategoryItem(String name, String publicId) {
-//     return Padding(
-//       padding: const EdgeInsets.only(right: 20),
-//       child: Column(
-//         children: [
-//           CircleAvatar(
-//             radius: 30,
-//             backgroundColor: AppColors.white,
-//             backgroundImage: NetworkImage(
-//               CloudinaryHelper.getThumbnail(publicId),
-//             ),
-//           ),
-//           const SizedBox(height: 5),
-//           Text(
-//             name,
-//             style: const TextStyle(fontSize: 12),
-//           ),
-//         ],
-//       ),
-//     );
-//   }
-//
-//   static Widget _buildProductCard() {
-//     return Container(
-//       decoration: BoxDecoration(
-//         color: AppColors.white,
-//         borderRadius: BorderRadius.circular(12),
-//       ),
-//       child: Column(
-//         crossAxisAlignment: CrossAxisAlignment.start,
-//         children: [
-//           Expanded(
-//             child: ClipRRect(
-//               borderRadius: const BorderRadius.vertical(
-//                 top: Radius.circular(12),
-//               ),
-//               child: Image.network(
-//                 CloudinaryHelper.getProductImage('sample_product'),
-//                 fit: BoxFit.cover,
-//                 width: double.infinity,
-//               ),
-//             ),
-//           ),
-//           const Padding(
-//             padding: EdgeInsets.all(8.0),
-//             child: Column(
-//               crossAxisAlignment: CrossAxisAlignment.start,
-//               children: [
-//                 Text(
-//                   'Thức ăn mèo cao cấp',
-//                   maxLines: 2,
-//                   overflow: TextOverflow.ellipsis,
-//                 ),
-//                 SizedBox(height: 5),
-//                 Text(
-//                   '250.000đ',
-//                   style: TextStyle(
-//                     color: AppColors.secondary,
-//                     fontWeight: FontWeight.bold,
-//                   ),
-//                 ),
-//               ],
-//             ),
-//           ),
-//         ],
-//       ),
-//     );
-//   }
-// }
-
+import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/cloudinary_helper.dart';
 import '../../auth/pages/login_page.dart';
@@ -185,7 +9,9 @@ import '../../cart/pages/cart_page.dart';
 import '../../cart/services/cart_repository.dart';
 import '../services/pet_repository.dart';
 import '../services/product_repository.dart';
+import 'pet_list_page.dart';
 import 'product_detail_page.dart';
+import 'shop_list_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -195,227 +21,258 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  late Future<List<_RecommendedItem>> _recommendedFuture;
+  late Future<_HomeData> _homeDataFuture;
+  String _selectedPetFilter = 'Tất cả';
+  String _selectedProductFilter = 'Thức ăn';
 
   @override
   void initState() {
     super.initState();
-    _recommendedFuture = _loadRecommended();
+    _homeDataFuture = _loadHomeData();
   }
 
-  Future<List<_RecommendedItem>> _loadRecommended() async {
+  Future<_HomeData> _loadHomeData() async {
     final results = await Future.wait([
-      ProductRepository.instance.listActiveProducts(limit: 200),
-      PetRepository.instance.listActivePets(limit: 200),
+      ProductRepository.instance.listActiveProducts(limit: 50),
+      PetRepository.instance.listActivePets(limit: 50),
     ]);
-
-    final products = results[0] as List<ProductItem>;
-    final pets = results[1] as List<PetItem>;
-
-    return [
-      ...products.map(_RecommendedItem.product),
-      ...pets.map(_RecommendedItem.pet),
-    ];
+    return _HomeData(
+      products: results[0] as List<ProductItem>,
+      pets: results[1] as List<PetItem>,
+    );
   }
 
   String _formatPrice(double value) {
-    final formatted = value.toStringAsFixed(0);
-    final buffer = StringBuffer();
-    for (var i = 0; i < formatted.length; i++) {
-      final fromEnd = formatted.length - i;
-      buffer.write(formatted[i]);
-      if (fromEnd > 1 && fromEnd % 3 == 1) {
-        buffer.write('.');
-      }
+    if (value >= 1000000) {
+      return '${(value / 1000000).toStringAsFixed(1).replaceFirst('.0', '')}tr';
     }
-    return '$bufferđ';
+    return '${value.toStringAsFixed(0).replaceAllMapped(RegExp(r"(\d{1,3})(?=(\d{3})+(?!\d))"), (Match m) => "${m[1]}.")}đ';
   }
 
-  Widget _buildImage(String? url, {IconData fallbackIcon = Icons.image_outlined}) {
-    final normalized = (url ?? '').trim();
-    if (normalized.isEmpty) {
-      return Container(
-        color: AppColors.background,
-        alignment: Alignment.center,
-        child: Icon(fallbackIcon, color: AppColors.textLight, size: 44),
-      );
-    }
-
-    return Image.network(
-      normalized,
-      width: double.infinity,
-      fit: BoxFit.cover,
-      errorBuilder: (context, error, stackTrace) {
-        return Container(
-          color: AppColors.background,
-          alignment: Alignment.center,
-          child: Icon(Icons.broken_image_outlined, color: AppColors.textLight, size: 44),
-        );
+  @override
+  Widget build(BuildContext context) {
+    return RefreshIndicator(
+      onRefresh: () async {
+        setState(() {
+          _homeDataFuture = _loadHomeData();
+        });
       },
-    );
-  }
-
-  Future<void> _addProductToCart(ProductItem product) async {
-    final userId = AuthSession.instance.currentUserId.value;
-    if (userId == null) {
-      await Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const LoginPage()),
-      );
-      if (!mounted) return;
-      if (AuthSession.instance.currentUserId.value == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Vui lòng đăng nhập để thêm vào giỏ hàng')),
-        );
-        return;
-      }
-    }
-
-    try {
-      await CartRepository.instance.addProductToCart(productId: product.productId);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Đã thêm vào giỏ hàng'),
-          action: SnackBarAction(
-            label: 'Xem giỏ',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const CartPage()),
-              );
-            },
-          ),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString())),
-      );
-    }
-  }
-
-  void _openRecommendedItem(_RecommendedItem item) {
-    if (item.kind != _RecommendedKind.product) return;
-    final product = item.product!;
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => ProductDetailPage(product: product)),
-    );
-  }
-
-  Widget _buildCard(_RecommendedItem item) {
-    if (item.kind == _RecommendedKind.product) {
-      final product = item.product!;
-      return Container(
-        decoration: BoxDecoration(
-          color: AppColors.white,
-          borderRadius: BorderRadius.circular(14),
-        ),
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
+            // 1. BANNER
+            Container(
+              margin: const EdgeInsets.all(16),
+              height: 160,
+              width: double.infinity,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(16),
+                color: const Color(0xFFF3F4F6),
+              ),
               child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    _buildImage(product.imageUrl),
-                    Positioned(
-                      right: 6,
-                      top: 6,
-                      child: Material(
-                        color: AppColors.white,
-                        borderRadius: BorderRadius.circular(999),
-                        child: InkWell(
-                          borderRadius: BorderRadius.circular(999),
-                          onTap: () => _addProductToCart(product),
-                          child: const Padding(
-                            padding: EdgeInsets.all(8),
-                            child: Icon(
-                              Icons.add_shopping_cart_outlined,
-                              color: AppColors.textDark,
-                              size: 20,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                borderRadius: BorderRadius.circular(16),
+                child: CachedNetworkImage(
+                  imageUrl: CloudinaryHelper.getBannerImage('banner1'),
+                  fit: BoxFit.cover,
+                  placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+                  errorWidget: (context, url, error) => Container(
+                    color: const Color(0xFFFFF9C4),
+                    child: const Center(child: Icon(Icons.image, size: 50, color: Colors.orange)),
+                  ),
                 ),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    product.productName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: AppColors.textDark),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _formatPrice(product.price),
-                    style: const TextStyle(
-                      color: AppColors.secondary,
-                      fontWeight: FontWeight.bold,
+
+            FutureBuilder<_HomeData>(
+              future: _homeDataFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()));
+                }
+                final data = snapshot.data;
+                if (data == null) return const SizedBox();
+
+                final suggestedItems = _buildSuggestedItems(data.products, data.pets);
+                final filteredPets = _filterPets(data.pets, _selectedPetFilter);
+                final filteredProducts = _filterProducts(data.products, _selectedProductFilter);
+
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Gợi ý Section
+                    _buildSectionHeader(
+                      'Gợi ý cho bạn',
+                      onAction: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ShopListPage())),
                     ),
-                  ),
-                ],
-              ),
+                    SizedBox(
+                      height: 220,
+                      child: ListView.separated(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        scrollDirection: Axis.horizontal,
+                        itemCount: suggestedItems.length,
+                        separatorBuilder: (_, __) => const SizedBox(width: 12),
+                        itemBuilder: (context, index) => SizedBox(width: 165, child: _buildSuggestionCard(suggestedItems[index])),
+                      ),
+                    ),
+
+                    const SizedBox(height: 24),
+
+                    // Thú cưng nổi bật Section
+                    _buildSectionHeader(
+                      'Thú cưng nổi bật',
+                      onAction: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const PetListPage())),
+                    ),
+                    _buildPetFilterRow(),
+                    const SizedBox(height: 16),
+                    if (filteredPets.isNotEmpty)
+                      ...filteredPets.take(3).map(_buildPetRow)
+                    else
+                      const Center(child: Padding(padding: EdgeInsets.all(32), child: Text('Chưa có thú cưng phù hợp'))),
+
+                    const SizedBox(height: 24),
+
+                    // Sản phẩm gợi ý Section (3 cột như ảnh mẫu)
+                    _buildSectionHeader(
+                      'Sản phẩm gợi ý',
+                      onAction: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ShopListPage())),
+                    ),
+                    _buildProductFilterRow(),
+                    const SizedBox(height: 16),
+                    if (filteredProducts.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: min(6, filteredProducts.length),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 3,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 24,
+                            childAspectRatio: 0.7,
+                          ),
+                          itemBuilder: (context, index) => _buildProductTile(filteredProducts[index]),
+                        ),
+                      )
+                    else
+                      const Center(child: Padding(padding: EdgeInsets.all(32), child: Text('Chưa có sản phẩm phù hợp'))),
+                    
+                    const SizedBox(height: 32),
+                  ],
+                );
+              },
             ),
           ],
         ),
-      );
-    }
-
-    final pet = item.pet!;
-    final price = pet.price;
-
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(14),
       ),
-      child: Column(
+    );
+  }
+
+  List<_RecommendedItem> _buildSuggestedItems(List<ProductItem> products, List<PetItem> pets) {
+    final items = <_RecommendedItem>[
+      ...products.map(_RecommendedItem.product),
+      ...pets.map(_RecommendedItem.pet),
+    ]..shuffle();
+    return items.take(min(5, items.length)).toList();
+  }
+
+  Widget _buildSectionHeader(String title, {required VoidCallback onAction}) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, fontFamily: 'Times New Roman')),
+          TextButton(onPressed: onAction, child: const Text('Xem tất cả', style: TextStyle(color: Color(0xFF5BAA7C), fontSize: 16, fontFamily: 'Times New Roman'))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPetFilterRow() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          _buildChip(_selectedPetFilter, 'Tất cả', (v) => setState(() => _selectedPetFilter = v)),
+          _buildChip(_selectedPetFilter, 'Chó', (v) => setState(() => _selectedPetFilter = v)),
+          _buildChip(_selectedPetFilter, 'Mèo', (v) => setState(() => _selectedPetFilter = v)),
+          _buildChip(_selectedPetFilter, 'Hamster', (v) => setState(() => _selectedPetFilter = v)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProductFilterRow() {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Row(
+        children: [
+          _buildChip(_selectedProductFilter, 'Thức ăn', (v) => setState(() => _selectedProductFilter = v)),
+          _buildChip(_selectedProductFilter, 'Phụ kiện', (v) => setState(() => _selectedProductFilter = v)),
+          _buildChip(_selectedProductFilter, 'Thuốc', (v) => setState(() => _selectedProductFilter = v)),
+          _buildChip(_selectedProductFilter, 'Vệ sinh', (v) => setState(() => _selectedProductFilter = v)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChip(String selected, String label, ValueChanged<String> onTap) {
+    final isSelected = selected == label;
+    return Padding(
+      padding: const EdgeInsets.only(right: 12),
+      child: InkWell(
+        onTap: () => onTap(label),
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFF5BAA7C) : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(label, style: TextStyle(color: isSelected ? Colors.white : const Color(0xFF666666), fontSize: 16, fontFamily: 'Times New Roman')),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPetRow(PetItem item) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-              child: _buildImage(null, fallbackIcon: Icons.pets),
-            ),
+          Container(
+            width: 72, height: 72,
+            decoration: const BoxDecoration(color: Colors.transparent, shape: BoxShape.circle),
+            child: const Center(child: Text('🐕', style: TextStyle(fontSize: 32))),
           ),
-          Padding(
-            padding: const EdgeInsets.all(10),
+          const SizedBox(width: 12),
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  pet.petName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.textDark),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(child: Text('${item.petName} — ${item.description?.contains('đực') == true ? "đực" : "cái"}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500, fontFamily: 'Times New Roman'))),
+                    Text(item.price != null ? _formatPrice(item.price!) : '-', style: const TextStyle(fontSize: 18, color: Color(0xFF5BAA7C), fontFamily: 'Times New Roman')),
+                  ],
                 ),
                 const SizedBox(height: 4),
-                Text(
-                  pet.species,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.textLight, fontSize: 12),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  price == null ? '-' : _formatPrice(price),
-                  style: const TextStyle(
-                    color: AppColors.secondary,
-                    fontWeight: FontWeight.bold,
-                  ),
+                Text('3 tháng · Tiêm phòng đủ · Sổ y bạ', style: const TextStyle(color: Color(0xFF666666), fontSize: 14, fontFamily: 'Times New Roman')),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8, runSpacing: 8,
+                  children: const [
+                    _TagPill(label: 'Thân thiện', color: Color(0xFFD8EEE4), textColor: Color(0xFF3E7C63)),
+                    _TagPill(label: 'Đã tẩy giun', color: Color(0xFFD8EEE4), textColor: Color(0xFF3E7C63)),
+                    _TagPill(label: 'Còn 2 con', color: Color(0xFFF5E8C9), textColor: Color(0xFF8A6A23)),
+                  ],
                 ),
               ],
             ),
@@ -425,166 +282,121 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.only(bottom: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            /// Banner
-            Container(
-              margin: const EdgeInsets.all(16),
-              height: 180,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(16),
-                image: DecorationImage(
-                  image: NetworkImage(
-                    CloudinaryHelper.getBannerImage('banner1'),
-                  ),
-                  fit: BoxFit.cover,
-                ),
-              ),
+  Widget _buildProductTile(ProductItem item) {
+    return InkWell(
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ProductDetailPage(product: item))),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+              alignment: Alignment.center,
+              child: item.imageUrl != null && item.imageUrl!.isNotEmpty
+                  ? CachedNetworkImage(imageUrl: item.imageUrl!, errorWidget: (context, url, error) => const Icon(Icons.image, size: 40))
+                  : Text(_productEmoji(item.productName), style: const TextStyle(fontSize: 40)),
             ),
-
-            /// Danh mục nổi bật
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 16),
-              child: Text(
-                'Danh mục nổi bật',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 12),
-
-            SizedBox(
-              height: 95,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                children: [
-                  _buildCategoryItem('Chó', 'dog_icon'),
-                  _buildCategoryItem('Mèo', 'cat_icon'),
-                ],
-              ),
-            ),
-
-            /// Gợi ý cho bạn
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Gợi ý cho bạn',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  TextButton(
-                    onPressed: () {},
-                    child: const Text('Xem tất cả'),
-                  ),
-                ],
-              ),
-            ),
-
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: FutureBuilder<List<_RecommendedItem>>(
-                future: _recommendedFuture,
-                builder: (context, snapshot) {
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-
-                  if (snapshot.hasError) {
-                    return const Center(child: Text('Không thể tải dữ liệu'));
-                  }
-
-                  final items = snapshot.data ?? [];
-                  if (items.isEmpty) {
-                    return const Center(child: Text('Chưa có dữ liệu'));
-                  }
-
-                  return GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    itemCount: items.length,
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      childAspectRatio: 0.72,
-                      crossAxisSpacing: 12,
-                      mainAxisSpacing: 12,
-                    ),
-                    itemBuilder: (context, i) {
-                      final item = items[i];
-                      return InkWell(
-                        borderRadius: BorderRadius.circular(14),
-                        onTap: () => _openRecommendedItem(item),
-                        child: _buildCard(item),
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 8),
+          Text(item.productName, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontFamily: 'Times New Roman')),
+          const SizedBox(height: 4),
+          Text(_formatPrice(item.price), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF5BAA7C), fontFamily: 'Times New Roman')),
+        ],
       ),
     );
   }
 
-  static Widget _buildCategoryItem(
-      String name,
-      String publicId,
-      ) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 18),
+  String _productEmoji(String name) {
+    final value = name.toLowerCase();
+    if (value.contains('pate') || value.contains('hạt')) return '🥩';
+    if (value.contains('vòng') || value.contains('dây')) return '🦴';
+    if (value.contains('tắm') || value.contains('vệ sinh')) return '🛁';
+    return '🧸';
+  }
+
+  Widget _buildSuggestionCard(_RecommendedItem item) {
+    String name = '';
+    String priceStr = '-';
+    String? imageUrl;
+    bool isPet = item.kind == _RecommendedKind.pet;
+
+    if (isPet) {
+      name = item.pet!.petName;
+      priceStr = item.pet!.price != null ? _formatPrice(item.pet!.price!) : '-';
+    } else {
+      name = item.product!.productName;
+      priceStr = _formatPrice(item.product!.price);
+      imageUrl = item.product!.imageUrl;
+    }
+
+    return Container(
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)]),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          CircleAvatar(
-            radius: 28,
-            backgroundColor: AppColors.white,
-            backgroundImage: NetworkImage(
-              CloudinaryHelper.getThumbnail(publicId),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+              child: isPet 
+                ? Container(color: const Color(0xFFF9FAFB), alignment: Alignment.center, child: const Text('🐶', style: TextStyle(fontSize: 44)))
+                : CachedNetworkImage(imageUrl: imageUrl ?? '', fit: BoxFit.cover, width: double.infinity, errorWidget: (_,__,___) => const Icon(Icons.image)),
             ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            name,
-            style: const TextStyle(fontSize: 13),
+          Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontFamily: 'Times New Roman')),
+                const SizedBox(height: 4),
+                Text(priceStr, style: const TextStyle(fontSize: 15, color: Color(0xFF5BAA7C), fontWeight: FontWeight.bold, fontFamily: 'Times New Roman')),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
+  List<PetItem> _filterPets(List<PetItem> items, String filter) {
+    if (filter == 'Tất cả') return items;
+    return items.where((item) => item.species.toLowerCase().contains(filter.toLowerCase())).toList();
+  }
+
+  List<ProductItem> _filterProducts(List<ProductItem> items, String filter) {
+    if (filter == 'Thức ăn') return items.where((item) => item.productName.toLowerCase().contains('hạt') || item.productName.toLowerCase().contains('pate')).toList();
+    if (filter == 'Phụ kiện') return items.where((item) => item.productName.toLowerCase().contains('vòng') || item.productName.toLowerCase().contains('dây')).toList();
+    if (filter == 'Thuốc') return items.where((item) => item.productName.toLowerCase().contains('thuốc') || item.productName.toLowerCase().contains('vitamin')).toList();
+    if (filter == 'Vệ sinh') return items.where((item) => item.productName.toLowerCase().contains('tắm') || item.productName.toLowerCase().contains('vệ sinh')).toList();
+    return items;
+  }
+}
+
+class _TagPill extends StatelessWidget {
+  const _TagPill({required this.label, required this.color, required this.textColor});
+  final String label; final Color color; final Color textColor;
+  @override Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(6)),
+      child: Text(label, style: TextStyle(color: textColor, fontSize: 12, fontWeight: FontWeight.w500, fontFamily: 'Times New Roman')),
+    );
+  }
 }
 
 enum _RecommendedKind { product, pet }
 
 class _RecommendedItem {
   _RecommendedItem._(this.kind, {this.product, this.pet});
-
   final _RecommendedKind kind;
   final ProductItem? product;
   final PetItem? pet;
+  factory _RecommendedItem.product(ProductItem product) => _RecommendedItem._(_RecommendedKind.product, product: product);
+  factory _RecommendedItem.pet(PetItem pet) => _RecommendedItem._(_RecommendedKind.pet, pet: pet);
+}
 
-  factory _RecommendedItem.product(ProductItem product) => _RecommendedItem._(
-        _RecommendedKind.product,
-        product: product,
-      );
-
-  factory _RecommendedItem.pet(PetItem pet) => _RecommendedItem._(
-        _RecommendedKind.pet,
-        pet: pet,
-      );
+class _HomeData {
+  final List<ProductItem> products;
+  final List<PetItem> pets;
+  _HomeData({required this.products, required this.pets});
 }

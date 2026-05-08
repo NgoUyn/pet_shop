@@ -47,7 +47,12 @@ class _MainWrapperState extends State<MainWrapper> {
   }
 
   Future<void> _loadNotificationCount() async {
-    final count = await NotificationRepository.instance.unreadCountForCurrentUser();
+    int count = 0;
+    try {
+      count = await NotificationRepository.instance.unreadCountForCurrentUser();
+    } catch (_) {
+      count = 0;
+    }
     if (!mounted) return;
     setState(() {
       _notificationCount = count;
@@ -62,7 +67,14 @@ class _MainWrapperState extends State<MainWrapper> {
   }
 
   Future<void> _refreshCartCount() async {
-    await CartRepository.instance.refreshCountForCurrentUser();
+    try {
+      await CartRepository.instance.refreshCountForCurrentUser();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _cartCount = 0;
+      });
+    }
   }
 
   final List<Widget> _pages = [
@@ -117,6 +129,12 @@ class _MainWrapperState extends State<MainWrapper> {
               if (mounted) {
                 await _loadNotificationCount();
               }
+            },
+            onFavoritesPressed: () {
+              if (!mounted) return;
+              setState(() {
+                _selectedIndex = 1;
+              });
             },
             onCartPressed: () async {
               await Navigator.push(

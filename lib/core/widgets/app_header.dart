@@ -11,6 +11,7 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback? onImageSearch;
   final VoidCallback? onNotificationsPressed;
   final VoidCallback? onCartPressed;
+  final VoidCallback? onFavoritesPressed;
   final int notificationCount;
   final int cartCount;
   final double height;
@@ -26,6 +27,7 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
     this.onImageSearch,
     this.onNotificationsPressed,
     this.onCartPressed,
+    this.onFavoritesPressed,
     this.notificationCount = 0,
     this.cartCount = 0,
     this.height = kToolbarHeight,
@@ -165,6 +167,11 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
           ),
 
           const SizedBox(width: 8),
+          IconButton(
+            onPressed: onFavoritesPressed,
+            icon: const Icon(Icons.favorite_outline),
+          ),
+          const SizedBox(width: 2),
           // Notifications
           _buildNotifications(context),
           const SizedBox(width: 2),

@@ -41,6 +41,20 @@ class CartProductEntry {
   }
 }
 
+class CheckoutResult {
+  CheckoutResult({
+    required this.invoiceId,
+    required this.totalItems,
+    required this.totalAmount,
+    required this.earnedPoints,
+  });
+
+  final int invoiceId;
+  final int totalItems;
+  final double totalAmount;
+  final int earnedPoints;
+}
+
 class CartRepository {
   CartRepository._();
 
@@ -107,13 +121,13 @@ class CartRepository {
     final customerId = await _resolveCustomerId(userId);
     final cartId = await _ensureCartIdForCustomer(customerId, txnOrDb: db);
 
-    final rows = await db.rawQuery(
-      'SELECT COALESCE(SUM(Quantity), 0) AS Total FROM CartItem WHERE CartID = ?',
-      [cartId],
+    final rows = await db.query(
+      'CartItem',
+      columns: ['CartItemID'],
+      where: 'CartID = ? AND ProductID IS NOT NULL',
+      whereArgs: [cartId],
     );
-
-    final total = (rows.first['Total'] as int?) ?? 0;
-    cartCount.value = total;
+    cartCount.value = rows.length;
   }
 
   Future<void> addProductToCart({required int productId, int quantity = 1}) async {
@@ -267,5 +281,209 @@ class CartRepository {
     );
 
     return rows.map(CartProductEntry.fromRow).toList();
+  }
+
+  Future<CheckoutResult> checkoutCurrentUser({
+    String paymentMethod = 'COD',
+    String? shippingAddress,
+    String? notes,
+  }) async {
+    final userId = AuthSession.instance.currentUserId.value;
+    if (userId == null) {
+      throw StateError('Vui lòng đăng nhập để thanh toán');
+    }
+
+    final db = await AppDatabase.instance;
+    final customerId = await _resolveCustomerId(userId);
+
+    var invoiceId = 0;
+    var totalItems = 0;
+    var totalAmount = 0.0;
+    var earnedPoints = 0;
+
+    try {
+      // Diagnostic: print existing tables and schema for Invoice/InvoiceDetail
+      try {
+        final tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table';");
+        print('DB Tables: ${tables.map((r) => r['name']).toList()}');
+        final invInfo = await db.rawQuery("PRAGMA table_info('Invoice');");
+        print('Invoice schema: $invInfo');
+        final detInfo = await db.rawQuery("PRAGMA table_info('InvoiceDetail');");
+        print('InvoiceDetail schema: $detInfo');
+      } catch (e) {
+        print('Failed to read DB schema for diagnostics: $e');
+      }
+
+      await db.transaction((txn) async {
+      final cartId = await _ensureCartIdForCustomer(customerId, txnOrDb: txn);
+
+      final cartItems = await txn.rawQuery(
+        '''
+        SELECT
+          ci.CartItemID,
+          ci.ProductID,
+          ci.Quantity,
+          ci.UnitPrice,
+          p.ProductName,
+          p.StockQuantity
+        FROM CartItem ci
+        JOIN Product p ON p.ProductID = ci.ProductID
+        WHERE ci.CartID = ? AND ci.ProductID IS NOT NULL
+        ORDER BY ci.AddedAt DESC, ci.CartItemID DESC
+        ''',
+        [cartId],
+      );
+
+      print('Checkout: cartItems rows count=${cartItems.length}');
+      for (final r in cartItems) {
+        print('cartItem: $r');
+      }
+
+      if (cartItems.isEmpty) {
+        throw StateError('Giỏ hàng đang trống');
+      }
+
+      // Validate items and compute totals before creating the Invoice
+      for (final row in cartItems) {
+        if (row['ProductID'] == null) throw StateError('Một mục giỏ hàng thiếu ProductID');
+        if (row['Quantity'] == null) throw StateError('Một mục giỏ hàng thiếu Quantity');
+
+        final stock = (row['StockQuantity'] as int?) ?? 0;
+        final quantity = (row['Quantity'] as int?) ?? 0;
+        final productName = (row['ProductName'] as String?) ?? 'Sản phẩm';
+
+        if (quantity <= 0) {
+          throw StateError('Dữ liệu giỏ hàng không hợp lệ');
+        }
+
+        if (stock < quantity) {
+          throw StateError('Sản phẩm "$productName" không đủ tồn kho');
+        }
+
+        final unitPrice = (row['UnitPrice'] as num).toDouble();
+        totalItems += quantity;
+        totalAmount += (quantity * unitPrice);
+      }
+
+      final now = DateTime.now().toIso8601String();
+
+      // Insert invoice with computed total amount
+      invoiceId = await txn.insert('Invoice', {
+        'CustomerID': customerId,
+        'ShippingAddress': shippingAddress,
+        'PaymentMethod': paymentMethod,
+        'PaymentStatus': 'Pending',
+        'TotalAmount': totalAmount,
+        'Notes': notes,
+        'CreatedAt': now,
+        'UpdatedAt': null,
+      });
+
+      print('Created Invoice id=$invoiceId totalAmount=$totalAmount totalItems=$totalItems');
+
+      if (invoiceId <= 0) {
+        throw StateError('Không thể tạo đơn hàng, invoiceId không hợp lệ');
+      }
+
+      // Insert invoice details and decrement stock
+      for (final row in cartItems) {
+        final productId = row['ProductID'] as int?;
+        final quantity = (row['Quantity'] as int?) ?? 1;
+        final unitPrice = (row['UnitPrice'] as num).toDouble();
+
+        if (productId == null) {
+          throw StateError('ProductID null khi tạo InvoiceDetail');
+        }
+
+        await txn.insert('InvoiceDetail', {
+          'InvoiceID': invoiceId,
+          'ProductID': productId,
+          'PetID': null,
+          'Quantity': quantity,
+          'UnitPrice': unitPrice,
+        });
+
+        print('Inserted InvoiceDetail for productId=$productId qty=$quantity');
+
+        final affected = await txn.rawUpdate(
+          '''
+          UPDATE Product
+          SET StockQuantity = StockQuantity - ?
+          WHERE ProductID = ? AND StockQuantity >= ?
+          ''',
+          [quantity, productId, quantity],
+        );
+
+        if (affected == 0) {
+          throw StateError('Không thể cập nhật tồn kho, vui lòng thử lại');
+        }
+      }
+
+      // Compute and award loyalty points (1 point per 10,000 units)
+      try {
+        earnedPoints = (totalAmount / 10000).floor();
+        if (earnedPoints > 0) {
+          await txn.rawUpdate(
+            '''
+            UPDATE Customer
+            SET LoyaltyPoints = COALESCE(LoyaltyPoints, 0) + ?
+            WHERE CustomerID = ?
+            ''',
+            [earnedPoints, customerId],
+          );
+        }
+      } catch (e) {
+        print('Failed to award loyalty points: $e');
+      }
+
+      await txn.delete(
+        'CartItem',
+        where: 'CartID = ? AND ProductID IS NOT NULL',
+        whereArgs: [cartId],
+      );
+
+      await txn.update(
+        'Cart',
+        {'UpdatedAt': now},
+        where: 'CartID = ?',
+        whereArgs: [cartId],
+      );
+    });
+    } catch (e, st) {
+      print('checkoutCurrentUser failed: $e');
+      print(st.toString());
+      // Additional diagnostics
+      try {
+        final refs = await db.rawQuery("SELECT name, type, sql FROM sqlite_master WHERE sql LIKE '%Invoice_old%';");
+        print('sqlite_master refs to Invoice_old: $refs');
+      } catch (e2) {
+        print('failed to query sqlite_master for Invoice_old: $e2');
+      }
+
+      try {
+        final triggers = await db.rawQuery("SELECT name, type, sql FROM sqlite_master WHERE type IN ('trigger','view');");
+        print('All triggers/views: $triggers');
+      } catch (e3) {
+        print('failed to list triggers/views: $e3');
+      }
+
+      try {
+        final fk = await db.rawQuery("PRAGMA foreign_key_list('InvoiceDetail');");
+        print('InvoiceDetail foreign keys: $fk');
+      } catch (e4) {
+        print('failed to get foreign_key_list for InvoiceDetail: $e4');
+      }
+
+      rethrow;
+    }
+
+    await refreshCountForCurrentUser();
+
+    return CheckoutResult(
+      invoiceId: invoiceId,
+      totalItems: totalItems,
+      totalAmount: totalAmount,
+      earnedPoints: earnedPoints,
+    );
   }
 }

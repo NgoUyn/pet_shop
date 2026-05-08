@@ -1,0 +1,178 @@
+import 'package:flutter/material.dart';
+import '../../../core/constants/app_colors.dart';
+import '../../profile/services/profile_repository.dart';
+import '../../cart/services/cart_repository.dart';
+
+class CheckoutPage extends StatefulWidget {
+  const CheckoutPage({super.key});
+
+  @override
+  State<CheckoutPage> createState() => _CheckoutPageState();
+}
+
+class _CheckoutPageState extends State<CheckoutPage> {
+  ProfileData? _profile;
+  List<CartProductEntry> _items = [];
+  String _paymentMethod = 'COD';
+  final TextEditingController _addressCtrl = TextEditingController();
+  bool _isProcessing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final profile = await ProfileRepository.instance.getCurrentProfile();
+    final items = await CartRepository.instance.listProductEntriesForCurrentUser();
+    if (!mounted) return;
+    setState(() {
+      _profile = profile;
+      _items = items;
+      _addressCtrl.text = profile?.address ?? '';
+    });
+  }
+
+  String _formatPrice(double value) {
+    final formatted = value.toStringAsFixed(0);
+    final buffer = StringBuffer();
+    for (var i = 0; i < formatted.length; i++) {
+      final fromEnd = formatted.length - i;
+      buffer.write(formatted[i]);
+      if (fromEnd > 1 && fromEnd % 3 == 1) buffer.write('.');
+    }
+    return '${buffer.toString()}đ';
+  }
+
+  double get _total => _items.fold(0.0, (s, e) => s + e.lineTotal);
+
+  Future<void> _confirm() async {
+    if (_items.isEmpty) return;
+    setState(() => _isProcessing = true);
+    try {
+      final result = await CartRepository.instance.checkoutCurrentUser(
+        paymentMethod: _paymentMethod,
+        shippingAddress: _addressCtrl.text.trim().isEmpty ? null : _addressCtrl.text.trim(),
+      );
+      if (!mounted) return;
+      // Return success to caller
+      Navigator.pop(context, result);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))));
+    } finally {
+      if (!mounted) return;
+      setState(() => _isProcessing = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _addressCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Xác nhận đặt hàng'),
+        backgroundColor: AppColors.white,
+        foregroundColor: AppColors.textDark,
+        elevation: 0,
+      ),
+      body: _profile == null
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Khách hàng', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(_profile!.fullName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 6),
+                            Text(_profile!.phone ?? '-', style: const TextStyle(color: Colors.black54)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+                  Text('Địa chỉ nhận hàng', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _addressCtrl,
+                    decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Địa chỉ giao hàng'),
+                    minLines: 2,
+                    maxLines: 4,
+                  ),
+
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Điểm tích luỹ', style: Theme.of(context).textTheme.titleMedium),
+                      Text('${_profile!.loyaltyPoints} điểm', style: const TextStyle(color: AppColors.primary)),
+                    ],
+                  ),
+
+                  const SizedBox(height: 12),
+                  Text('Phương thức thanh toán', style: Theme.of(context).textTheme.titleMedium),
+                  RadioListTile<String>(
+                    value: 'COD',
+                    groupValue: _paymentMethod,
+                    title: const Text('Thanh toán khi nhận hàng'),
+                    onChanged: (v) => setState(() => _paymentMethod = v ?? 'COD'),
+                  ),
+                  RadioListTile<String>(
+                    value: 'Bank Transfer',
+                    groupValue: _paymentMethod,
+                    title: const Text('Chuyển khoản ngân hàng'),
+                    onChanged: (v) => setState(() => _paymentMethod = v ?? 'Bank Transfer'),
+                  ),
+
+                  const SizedBox(height: 12),
+                  Text('Danh sách sản phẩm', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  ..._items.map((e) => ListTile(
+                        leading: SizedBox(width: 48, child: e.imageUrl == null || e.imageUrl!.isEmpty ? const Icon(Icons.image) : Image.network(e.imageUrl!, fit: BoxFit.cover)),
+                        title: Text(e.productName),
+                        subtitle: Text('${e.quantity} x ${_formatPrice(e.unitPrice)}'),
+                        trailing: Text(_formatPrice(e.lineTotal)),
+                      )),
+
+                  const Divider(),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Tổng thanh toán', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      Text(_formatPrice(_total), style: const TextStyle(fontSize: 16, color: AppColors.primary, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _isProcessing ? null : _confirm,
+                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.secondary),
+                      child: _isProcessing ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Text('Xác nhận và thanh toán'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+    );
+  }
+}
