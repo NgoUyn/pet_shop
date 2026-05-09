@@ -249,6 +249,24 @@ class AuthRepository {
     return userId;
   }
 
+  Future<int> signInWithGoogle() async {
+    final provider = GoogleAuthProvider()
+      ..setCustomParameters({'prompt': 'select_account'});
+
+    final userCredential = await FirebaseAuth.instance.signInWithProvider(provider);
+    final firebaseUser = userCredential.user;
+    if (firebaseUser == null) {
+      throw StateError('Không thể lấy thông tin tài khoản Google');
+    }
+
+    final userId = await _ensureLocalUserFromFirebase(
+      firebaseUser: firebaseUser,
+      displayName: firebaseUser.displayName,
+    );
+    await AuthSession.instance.signIn(userId);
+    return userId;
+  }
+
   Future<int?> syncVerifiedFirebaseUser() async {
     final firebaseAuth = FirebaseAuth.instance;
     final currentUser = firebaseAuth.currentUser;
