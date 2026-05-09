@@ -4,6 +4,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../auth/pages/login_page.dart';
 import '../../auth/services/auth_session.dart';
 import '../../favorites/pages/favorites_page.dart';
+import '../../orders/pages/order_history_page.dart';
 import '../services/profile_repository.dart';
 import 'profile_detail_page.dart';
 
@@ -148,31 +149,39 @@ class _ProfilePageState extends State<ProfilePage> {
                         ),
                         child: Column(
                           children: [
-                            const Padding(
-                              padding: EdgeInsets.symmetric(horizontal: 15),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Text('Đơn mua', style: TextStyle(fontWeight: FontWeight.bold)),
-                                  Text('Xem lịch sử >', style: TextStyle(color: AppColors.textLight, fontSize: 12)),
-                                ],
+                            InkWell(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (context) => const OrderHistoryPage()),
+                                );
+                              },
+                              child: const Padding(
+                                padding: EdgeInsets.symmetric(horizontal: 15),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Text('Đơn mua', style: TextStyle(fontWeight: FontWeight.bold)),
+                                    Text('Xem lịch sử >', style: TextStyle(color: AppColors.textLight, fontSize: 12)),
+                                  ],
+                                ),
                               ),
                             ),
                             const Divider(),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceAround,
                               children: [
-                                _buildStatusItem(Icons.payment, 'Chờ xác nhận'),
-                                _buildStatusItem(Icons.inventory_2_outlined, 'Chờ lấy hàng'),
-                                _buildStatusItem(Icons.local_shipping_outlined, 'Đang giao'),
-                                _buildStatusItem(Icons.star_outline, 'Đánh giá'),
+                                _buildStatusItem(Icons.payment, 'Chờ xác nhận', 'Unpaid'),
+                                _buildStatusItem(Icons.inventory_2_outlined, 'Chờ lấy hàng', 'Preparing'),
+                                _buildStatusItem(Icons.local_shipping_outlined, 'Đang giao', 'Shipping'),
+                                _buildStatusItem(Icons.star_outline, 'Đánh giá', 'Completed'),
                               ],
                             ),
                           ],
                         ),
                       ),
                       _buildMenuItem(context, Icons.favorite, 'Danh sách yêu thích', 'Sản phẩm bạn đã thích', destination: const FavoritesPage()),
-                      _buildMenuItem(context, Icons.history, 'Lịch sử mua hàng', '24 đơn hàng'),
+                      _buildMenuItem(context, Icons.history, 'Lịch sử mua hàng', 'Xem tất cả đơn hàng', destination: const OrderHistoryPage()),
                       _buildMenuItem(context, Icons.card_membership, 'Điểm tích lũy', '${profile.loyaltyPoints} điểm'),
                       _buildMenuItem(context, Icons.confirmation_number_outlined, 'Kho Voucher', '12 mã giảm giá'),
                       _buildMenuItem(context, Icons.storefront, 'Đăng ký thành người bán', 'Kiếm tiền ngay'),
@@ -254,13 +263,27 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _buildStatusItem(IconData icon, String label) {
-    return Column(
-      children: [
-        Icon(icon, color: AppColors.primary),
-        const SizedBox(height: 5),
-        Text(label, style: const TextStyle(fontSize: 11)),
-      ],
+  Widget _buildStatusItem(IconData icon, String label, String filter) {
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => OrderHistoryPage(initialFilter: filter),
+          ),
+        );
+      },
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Column(
+          children: [
+            Icon(icon, color: AppColors.primary),
+            const SizedBox(height: 5),
+            Text(label, style: const TextStyle(fontSize: 11)),
+          ],
+        ),
+      ),
     );
   }
 

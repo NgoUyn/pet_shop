@@ -2,6 +2,8 @@ import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'migrations/migration_v6_payment.dart';
 import 'migrations/migration_v7_unpaid_status.dart';
+import 'migrations/migration_v8_order_status.dart';
+import 'migrations/migration_v9_fix_unpaid_check.dart';
 
 class AppDatabase {
   static Database? _db;
@@ -18,7 +20,7 @@ class AppDatabase {
 
     return openDatabase(
       path,
-      version: 7,
+      version: 9,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON;');
       },
@@ -244,11 +246,12 @@ class AppDatabase {
             CustomerID INTEGER NOT NULL,
             ShippingAddress TEXT,
             PaymentMethod TEXT,
-            PaymentStatus TEXT NOT NULL CHECK (PaymentStatus IN ('Pending', 'Paid', 'Cancelled', 'Processing', 'Shipping', 'Completed')),
+            PaymentStatus TEXT NOT NULL CHECK (PaymentStatus IN ('Pending', 'Unpaid', 'Paid', 'Cancelled', 'Processing', 'Shipping', 'Completed')),
             TotalAmount REAL NOT NULL DEFAULT 0.0,
             Notes TEXT,
             CreatedAt TEXT NOT NULL,
             UpdatedAt TEXT,
+            OrderStatus TEXT NOT NULL DEFAULT 'Unpaid' CHECK (OrderStatus IN ('Unpaid', 'Preparing', 'Shipping', 'Completed', 'Cancelled')),
             FOREIGN KEY (CustomerID) REFERENCES Customer(CustomerID)
           );
           ''',
@@ -876,6 +879,16 @@ class AppDatabase {
         if (oldVersion < 7) {
           // Run migration to add 'Unpaid' status to Invoice
           await migrateV7UnpaidStatus(db);
+        }
+
+        if (oldVersion < 8) {
+          // Run migration to add OrderStatus column
+          await migrateV8OrderStatus(db);
+        }
+
+        if (oldVersion < 9) {
+          // Run migration to fix PaymentStatus CHECK constraint and ensure OrderStatus column
+          await migrateV9FixUnpaidCheck(db);
         }
       },
     );
