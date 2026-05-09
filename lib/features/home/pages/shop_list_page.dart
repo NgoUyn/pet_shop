@@ -68,35 +68,36 @@ class _ShopListPageState extends State<ShopListPage> {
 
   Future<void> _addToCart(ProductItem item) async {
     final userId = AuthSession.instance.currentUserId.value;
-    if (userId == null) {
+      if (userId == null) {
       await Navigator.push(
         context,
         MaterialPageRoute(builder: (_) => const LoginPage()),
       );
       if (!mounted) return;
       if (AuthSession.instance.currentUserId.value == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Vui lòng đăng nhập để thêm vào giỏ hàng')),
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.clearSnackBars();
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Vui lòng đăng nhập để thêm vào giỏ hàng'),
+            duration: Duration(seconds: 1),
+            behavior: SnackBarBehavior.floating,
+          ),
         );
         return;
       }
     }
 
-    try {
+      try {
       await CartRepository.instance.addProductToCart(productId: item.productId);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.clearSnackBars();
+      messenger.showSnackBar(
         SnackBar(
           content: const Text('Đã thêm vào giỏ hàng'),
-          action: SnackBarAction(
-            label: 'Xem giỏ',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const CartPage()),
-              );
-            },
-          ),
+          duration: const Duration(seconds: 1),
+          behavior: SnackBarBehavior.floating,
         ),
       );
     } catch (e) {

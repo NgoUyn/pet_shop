@@ -4,6 +4,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../auth/pages/login_page.dart';
 import '../../auth/services/auth_session.dart';
 import '../services/cart_repository.dart';
+import 'checkout_page.dart';
 
 class CartPage extends StatefulWidget {
   const CartPage({super.key});
@@ -15,6 +16,7 @@ class CartPage extends StatefulWidget {
 class _CartPageState extends State<CartPage> {
   List<CartProductEntry> _items = [];
   bool _isLoading = true;
+  bool _isCheckingOut = false;
 
   @override
   void initState() {
@@ -413,9 +415,9 @@ class _CartPageState extends State<CartPage> {
             ],
           ),
           ElevatedButton(
-            onPressed: _items.isEmpty
-                ? null
-                : () {},
+            onPressed: (_items.isEmpty || _isCheckingOut)
+              ? null
+              : _checkout,
             style: ElevatedButton
                 .styleFrom(
               backgroundColor:
@@ -548,6 +550,56 @@ class _CartPageState extends State<CartPage> {
           userId == null
               ? null
               : _buildBottomBar(),
+    );
+  }
+
+  Future<void> _checkout() async {
+    // Navigate to dedicated checkout page for full confirmation
+    final result = await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const CheckoutPage(),
+      ),
+    );
+
+    if (result == null) return;
+
+    if (!mounted) return;
+    await _loadCart();
+
+    // result can be CheckoutResult (COD) or Map (Bank Transfer)
+    String dialogTitle;
+    String dialogContent;
+
+    if (result is CheckoutResult) {
+      dialogTitle = 'Đặt hàng thành công';
+      dialogContent = 'Mã đơn hàng: #${result.invoiceId}\nSố lượng: ${result.totalItems}\nTổng tiền: ${_formatPrice(result.totalAmount)}\nTích luỹ: +${result.earnedPoints} điểm';
+    } else if (result is Map) {
+      final invoiceId = result['invoiceId'];
+      final status = result['status'];
+      if (status == 'Paid') {
+        dialogTitle = 'Thanh toán thành công';
+        dialogContent = 'Mã đơn hàng: #$invoiceId\nCảm ơn bạn đã mua hàng!';
+      } else {
+        dialogTitle = 'Đơn hàng đã tạo';
+        dialogContent = 'Mã đơn hàng: #$invoiceId\nĐơn hàng đang chờ thanh toán. Vui lòng thanh toán trong vòng 24h.';
+      }
+    } else {
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text(dialogTitle),
+        content: Text(dialogContent),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Đóng'),
+          ),
+        ],
+      ),
     );
   }
 }

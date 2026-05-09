@@ -1,10 +1,13 @@
 import 'package:flutter/material.dart';
 import '../../features/home/pages/home_page.dart';
+import '../../features/favorites/pages/favorites_page.dart';
 import '../../features/home/pages/pet_list_page.dart';
 import '../../features/home/pages/shop_list_page.dart';
+import '../../features/cart/pages/cart_page.dart';
+import '../../features/cart/services/cart_repository.dart';
 import '../../features/notifications/pages/notification_page.dart';
+import '../../features/notifications/services/notification_repository.dart';
 import '../../features/profile/pages/profile_page.dart';
-import '../../features/favorites/pages/favorites_page.dart';
 import '../../features/auth/pages/login_page.dart';
 import '../../features/auth/services/auth_session.dart';
 import '../constants/app_colors.dart';
@@ -21,39 +24,130 @@ class MainWrapper extends StatefulWidget {
 
 class _MainWrapperState extends State<MainWrapper> {
   late int _selectedIndex;
+  int _notificationCount = 0;
+  int _cartCount = 0;
 
   @override
   void initState() {
     super.initState();
     _selectedIndex = widget.initialIndex;
+    AuthSession.instance.currentUserId.addListener(_loadNotificationCount);
+    AuthSession.instance.currentUserId.addListener(_refreshCartCount);
+    CartRepository.instance.cartCount.addListener(_onCartCountChanged);
+    _loadNotificationCount();
+    _refreshCartCount();
+  }
+
+  @override
+  void dispose() {
+    AuthSession.instance.currentUserId.removeListener(_loadNotificationCount);
+    AuthSession.instance.currentUserId.removeListener(_refreshCartCount);
+    CartRepository.instance.cartCount.removeListener(_onCartCountChanged);
+    super.dispose();
+  }
+
+  Future<void> _loadNotificationCount() async {
+    int count = 0;
+    try {
+      count = await NotificationRepository.instance.unreadCountForCurrentUser();
+    } catch (_) {
+      count = 0;
+    }
+    if (!mounted) return;
+    setState(() {
+      _notificationCount = count;
+    });
+  }
+
+  void _onCartCountChanged() {
+    if (!mounted) return;
+    setState(() {
+      _cartCount = CartRepository.instance.cartCount.value;
+    });
+  }
+
+  Future<void> _refreshCartCount() async {
+    try {
+      await CartRepository.instance.refreshCountForCurrentUser();
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _cartCount = 0;
+      });
+    }
   }
 
   final List<Widget> _pages = [
     const HomePage(),
+    const FavoritesPage(),
     const PetListPage(),
     const ShopListPage(),
-    const NotificationPage(),
     const ProfilePage(),
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppHeader(
-        onFavoritesPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (_) => const FavoritesPage()),
-          );
-        },
-        onNotificationsPressed: () {
-          setState(() {
-            _selectedIndex = 3;
-          });
-        },
-        onCartPressed: () {
-          // Xử lý mở giỏ hàng
-        },
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(kToolbarHeight),
+        child: AppHeader(
+            onSearchText: (q) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Tìm: "$q"'))),
+            onImageSearch: () {
+              showModalBottomSheet<void>(
+                context: context,
+                builder: (ctx) => SafeArea(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.camera_alt),
+                        title: const Text('Chụp ảnh'),
+                        onTap: () {
+                          Navigator.of(ctx).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chụp ảnh (chưa triển khai)')));
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.photo_library),
+                        title: const Text('Chọn từ thư viện'),
+                        onTap: () {
+                          Navigator.of(ctx).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chọn ảnh (chưa triển khai)')));
+                        },
+                      ),
+                      const SizedBox(height: 8),
+                    ],
+                  ),
+                ),
+              );
+            },
+            onNotificationsPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const NotificationPage()),
+              );
+              if (mounted) {
+                await _loadNotificationCount();
+              }
+            },
+            onFavoritesPressed: () {
+              if (!mounted) return;
+              setState(() {
+                _selectedIndex = 1;
+              });
+            },
+            onCartPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const CartPage()),
+              );
+              if (mounted) {
+                await _refreshCartCount();
+              }
+            },
+            cartCount: _cartCount,
+            notificationCount: _notificationCount,
+        ),
       ),
       body: _pages[_selectedIndex],
       bottomNavigationBar: BottomNavigationBar(
@@ -66,6 +160,7 @@ class _MainWrapperState extends State<MainWrapper> {
             );
             return;
           }
+
           setState(() {
             _selectedIndex = index;
           });
@@ -81,6 +176,11 @@ class _MainWrapperState extends State<MainWrapper> {
             label: 'Trang chủ',
           ),
           BottomNavigationBarItem(
+            icon: Icon(Icons.favorite_outline),
+            activeIcon: Icon(Icons.favorite),
+            label: 'Yêu thích',
+          ),
+          BottomNavigationBarItem(
             icon: Icon(Icons.pets_outlined),
             activeIcon: Icon(Icons.pets),
             label: 'Mua thú cưng',
@@ -89,11 +189,6 @@ class _MainWrapperState extends State<MainWrapper> {
             icon: Icon(Icons.storefront_outlined),
             activeIcon: Icon(Icons.storefront),
             label: 'Cửa hàng',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.notifications_outlined),
-            activeIcon: Icon(Icons.notifications),
-            label: 'Thông báo',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person_outline),
