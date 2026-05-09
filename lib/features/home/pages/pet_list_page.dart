@@ -1,8 +1,8 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
+
 import '../../../core/constants/app_colors.dart';
 import '../services/pet_repository.dart';
+import '../widgets/pet_card.dart';
 
 class PetListPage extends StatefulWidget {
   const PetListPage({super.key});
@@ -41,118 +41,17 @@ class _PetListPageState extends State<PetListPage> {
   }
 
   String _formatPrice(double value) {
-    final formatted = value.toStringAsFixed(0);
-    final buffer = StringBuffer();
-    for (var i = 0; i < formatted.length; i++) {
-      final fromEnd = formatted.length - i;
-      buffer.write(formatted[i]);
-      if (fromEnd > 1 && fromEnd % 3 == 1) {
-        buffer.write('.');
-      }
+    if (value >= 1000000) {
+      return '${(value / 1000000).toStringAsFixed(1).replaceFirst('.0', '')}tr';
     }
-    return '$bufferđ';
-  }
-
-  Widget _buildPetImage(String? imageUrl) {
-    final normalized = (imageUrl ?? '').trim();
-    if (normalized.isEmpty) {
-      return Container(
-        color: AppColors.background,
-        alignment: Alignment.center,
-        child: const Icon(Icons.pets, color: AppColors.textLight, size: 44),
-      );
-    }
-
-    final image = normalized.startsWith('http://') || normalized.startsWith('https://')
-        ? Image.network(
-            normalized,
-            width: double.infinity,
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => Container(
-              color: AppColors.background,
-              alignment: Alignment.center,
-              child: const Icon(Icons.broken_image_outlined, color: AppColors.textLight, size: 44),
-            ),
-          )
-        : Image.file(
-            File(normalized),
-            width: double.infinity,
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => Container(
-              color: AppColors.background,
-              alignment: Alignment.center,
-              child: const Icon(Icons.broken_image_outlined, color: AppColors.textLight, size: 44),
-            ),
-          );
-
-    return image;
+    return '${value.toStringAsFixed(0).replaceAllMapped(RegExp(r"(\d{1,3})(?=(\d{3})+(?!\d))"), (Match m) => "${m[1]}.")}đ';
   }
 
   Widget _buildPetCard(PetItem item) {
-    final price = item.price;
-    final ageText = item.age == null ? 'Chưa cập nhật tuổi' : '${item.age} tháng tuổi';
-
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-              child: _buildPetImage(item.imageUrl),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.petName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.textDark),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  item.species,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.textLight, fontSize: 12),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  ageText,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.textDark, fontSize: 12, fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 6),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: [
-                    _StatusChip(label: item.isDewormed ? 'Đã tẩy giun' : 'Chưa tẩy giun'),
-                    _StatusChip(label: item.isVaccinated ? 'Đã tiêm phòng' : 'Chưa tiêm phòng'),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  price == null ? '-' : _formatPrice(price),
-                  style: const TextStyle(
-                    color: AppColors.secondary,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+    return PetCard(
+      item: item,
+      formatPrice: _formatPrice,
+      onTap: () => showPetDetailSheet(context, item, _formatPrice),
     );
   }
 
@@ -204,35 +103,10 @@ class _PetListPageState extends State<PetListPage> {
             ),
             itemBuilder: (context, index) {
               final item = items[index];
-              return InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: () {},
-                child: _buildPetCard(item),
-              );
+              return _buildPetCard(item);
             },
           );
         },
-      ),
-    );
-  }
-}
-
-class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF3F7F5),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(fontSize: 11, color: Color(0xFF3E7C63), fontWeight: FontWeight.w600),
       ),
     );
   }

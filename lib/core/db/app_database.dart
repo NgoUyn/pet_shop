@@ -6,6 +6,7 @@ import 'migrations/migration_v8_order_status.dart';
 import 'migrations/migration_v9_fix_unpaid_check.dart';
 import 'migrations/migration_v10_add_admin.dart';
 import 'migrations/migration_v11_pet_details.dart';
+import 'migrations/migration_v12_pet_gender.dart';
 
 class AppDatabase {
   static Database? _db;
@@ -22,7 +23,7 @@ class AppDatabase {
 
     return openDatabase(
       path,
-      version: 11,
+      version: 12,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON;');
       },
@@ -207,6 +208,7 @@ class AppDatabase {
             CustomerID INTEGER,
             PetName TEXT NOT NULL,
             Species TEXT NOT NULL,
+            Gender TEXT,
             Description TEXT,
             Price REAL CHECK (Price > 0),
             Age INTEGER,

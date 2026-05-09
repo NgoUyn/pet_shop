@@ -8,6 +8,7 @@ import '../services/product_repository.dart';
 import 'pet_list_page.dart';
 import 'product_detail_page.dart';
 import 'shop_list_page.dart';
+import '../widgets/pet_card.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -108,7 +109,6 @@ class _HomePageState extends State<HomePage> {
 
                 final suggestedItems = _buildSuggestedItems(data.products, data.pets);
                 final filteredPets = _filterPets(data.pets, _selectedPetFilter);
-                final filteredProducts = _filterProducts(data.products, _selectedProductFilter);
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -119,13 +119,16 @@ class _HomePageState extends State<HomePage> {
                       onAction: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ShopListPage())),
                     ),
                     SizedBox(
-                      height: 220,
+                      height: 248,
                       child: ListView.separated(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         scrollDirection: Axis.horizontal,
                         itemCount: suggestedItems.length,
-                        separatorBuilder: (_, __) => const SizedBox(width: 12),
-                        itemBuilder: (context, index) => SizedBox(width: 165, child: _buildSuggestionCard(suggestedItems[index])),
+                        separatorBuilder: (context, index) => const SizedBox(width: 12),
+                        itemBuilder: (context, index) => SizedBox(
+                          width: 172,
+                          child: _buildHomeItemCard(suggestedItems[index]),
+                        ),
                       ),
                     ),
 
@@ -139,33 +142,47 @@ class _HomePageState extends State<HomePage> {
                     _buildPetFilterRow(),
                     const SizedBox(height: 16),
                     if (filteredPets.isNotEmpty)
-                      ...filteredPets.take(3).map(_buildPetRow)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: min(4, filteredPets.length),
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            crossAxisSpacing: 12,
+                            mainAxisSpacing: 12,
+                            childAspectRatio: 0.74,
+                          ),
+                          itemBuilder: (context, index) => _buildPetCard(filteredPets[index]),
+                        ),
+                      )
                     else
                       const Center(child: Padding(padding: EdgeInsets.all(32), child: Text('Chưa có thú cưng phù hợp'))),
 
                     const SizedBox(height: 24),
 
-                    // Sản phẩm gợi ý Section (3 cột như ảnh mẫu)
+                    // Sản phẩm gợi ý Section
                     _buildSectionHeader(
                       'Sản phẩm gợi ý',
                       onAction: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ShopListPage())),
                     ),
                     _buildProductFilterRow(),
                     const SizedBox(height: 16),
-                    if (filteredProducts.isNotEmpty)
+                    if (data.products.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: GridView.builder(
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
-                          itemCount: min(6, filteredProducts.length),
+                          itemCount: min(6, data.products.length),
                           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                             crossAxisCount: 3,
                             crossAxisSpacing: 12,
                             mainAxisSpacing: 24,
                             childAspectRatio: 0.7,
                           ),
-                          itemBuilder: (context, index) => _buildProductTile(filteredProducts[index]),
+                          itemBuilder: (context, index) => _buildProductTile(data.products[index]),
                         ),
                       )
                     else
@@ -252,71 +269,25 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildPetRow(PetItem item) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildPetMedia(item.imageUrl),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Expanded(child: Text('${item.petName} — ${item.species}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500, fontFamily: 'Times New Roman'))),
-                    Text(item.price != null ? _formatPrice(item.price!) : '-', style: const TextStyle(fontSize: 18, color: Color(0xFF5BAA7C), fontFamily: 'Times New Roman')),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  [
-                    if (item.age != null) '${item.age} tháng tuổi',
-                    if (item.personality != null && item.personality!.trim().isNotEmpty) item.personality!.trim(),
-                  ].join(' · '),
-                  style: const TextStyle(color: Color(0xFF666666), fontSize: 14, fontFamily: 'Times New Roman'),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8, runSpacing: 8,
-                  children: [
-                    _TagPill(label: item.isDewormed ? 'Đã tẩy giun' : 'Chưa tẩy giun', color: const Color(0xFFD8EEE4), textColor: const Color(0xFF3E7C63)),
-                    _TagPill(label: item.isVaccinated ? 'Đã tiêm phòng' : 'Chưa tiêm phòng', color: const Color(0xFFD8EEE4), textColor: const Color(0xFF3E7C63)),
-                    if (item.personality != null && item.personality!.trim().isNotEmpty)
-                      _TagPill(label: item.personality!.trim(), color: const Color(0xFFF5E8C9), textColor: const Color(0xFF8A6A23)),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+  Widget _buildPetCard(PetItem item) {
+    return PetCard(
+      item: item,
+      formatPrice: _formatPrice,
+      onTap: () => showPetDetailSheet(context, item, _formatPrice),
     );
   }
 
   Widget _buildProductTile(ProductItem item) {
     return InkWell(
       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ProductDetailPage(product: item))),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-              alignment: Alignment.center,
-              child: item.imageUrl != null && item.imageUrl!.isNotEmpty
-                  ? CachedNetworkImage(imageUrl: item.imageUrl!, errorWidget: (context, url, error) => const Icon(Icons.image, size: 40))
-                  : Text(_productEmoji(item.productName), style: const TextStyle(fontSize: 40)),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(item.productName, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontFamily: 'Times New Roman')),
-          const SizedBox(height: 4),
-          Text(_formatPrice(item.price), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF5BAA7C), fontFamily: 'Times New Roman')),
-        ],
+      child: _SquareHomeCard(
+        image: item.imageUrl != null && item.imageUrl!.isNotEmpty
+            ? CachedNetworkImage(imageUrl: item.imageUrl!, errorWidget: (context, url, error) => const Icon(Icons.image, size: 40))
+            : Text(_productEmoji(item.productName), style: const TextStyle(fontSize: 40)),
+        title: item.productName,
+        subtitle: '',
+        price: _formatPrice(item.price),
+        badges: const [],
       ),
     );
   }
@@ -329,64 +300,36 @@ class _HomePageState extends State<HomePage> {
     return '🧸';
   }
 
-  Widget _buildSuggestionCard(_RecommendedItem item) {
+  Widget _buildHomeItemCard(_RecommendedItem item) {
     String name = '';
     String priceStr = '-';
     String? imageUrl;
     bool isPet = item.kind == _RecommendedKind.pet;
+    List<_CardBadge> badges = const [];
 
     if (isPet) {
       name = item.pet!.petName;
       priceStr = item.pet!.price != null ? _formatPrice(item.pet!.price!) : '-';
       imageUrl = item.pet!.imageUrl;
+      badges = [
+        _CardBadge(label: item.pet!.age != null ? '${item.pet!.age} tháng' : 'Chưa có tuổi', isPrimary: true),
+        _CardBadge(label: item.pet!.isDewormed ? 'Đã tẩy giun' : 'Chưa tẩy giun'),
+        _CardBadge(label: item.pet!.isVaccinated ? 'Đã tiêm phòng' : 'Chưa tiêm phòng'),
+      ];
     } else {
       name = item.product!.productName;
       priceStr = _formatPrice(item.product!.price);
       imageUrl = item.product!.imageUrl;
     }
 
-    return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)]),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-              child: isPet
-                ? _buildPreviewImage(imageUrl, fallback: const Center(child: Text('🐶', style: TextStyle(fontSize: 44))))
-                : _buildPreviewImage(imageUrl, fallback: const Icon(Icons.image)),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontFamily: 'Times New Roman')),
-                const SizedBox(height: 4),
-                Text(priceStr, style: const TextStyle(fontSize: 15, color: Color(0xFF5BAA7C), fontWeight: FontWeight.bold, fontFamily: 'Times New Roman')),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPetMedia(String? imageUrl) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(36),
-      child: _buildPreviewImage(
-        imageUrl,
-        width: 72,
-        height: 72,
-        fallback: Container(
-          color: Colors.transparent,
-          alignment: Alignment.center,
-          child: const Text('🐕', style: TextStyle(fontSize: 32)),
-        ),
-      ),
+    return _SquareHomeCard(
+      image: isPet
+          ? _buildPreviewImage(imageUrl, fallback: const Center(child: Text('🐶', style: TextStyle(fontSize: 44))))
+          : _buildPreviewImage(imageUrl, fallback: const Icon(Icons.image)),
+      title: name,
+      subtitle: isPet && item.pet!.species.isNotEmpty ? item.pet!.species : 'Phụ kiện',
+      price: priceStr,
+      badges: badges,
     );
   }
 
@@ -435,14 +378,94 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-class _TagPill extends StatelessWidget {
-  const _TagPill({required this.label, required this.color, required this.textColor});
-  final String label; final Color color; final Color textColor;
-  @override Widget build(BuildContext context) {
+class _SquareHomeCard extends StatelessWidget {
+  const _SquareHomeCard({required this.image, required this.title, required this.subtitle, required this.price, required this.badges});
+
+  final Widget image;
+  final String title;
+  final String subtitle;
+  final String price;
+  final List<_CardBadge> badges;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Color(0xFFF9FAFB),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+              ),
+              alignment: Alignment.center,
+              child: FittedBox(fit: BoxFit.scaleDown, child: image),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 15, fontFamily: 'Times New Roman'),
+                ),
+                if (subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF666666), fontFamily: 'Times New Roman'),
+                  ),
+                ],
+                const SizedBox(height: 6),
+                Text(
+                  price,
+                  style: const TextStyle(fontSize: 15, color: Color(0xFF5BAA7C), fontWeight: FontWeight.bold, fontFamily: 'Times New Roman'),
+                ),
+                if (badges.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: badges,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CardBadge extends StatelessWidget {
+  const _CardBadge({required this.label, this.accent, this.textColor, this.isPrimary = false});
+
+  final String label;
+  final Color? accent;
+  final Color? textColor;
+  final bool isPrimary;
+
+  @override
+  Widget build(BuildContext context) {
+    final background = accent ?? (isPrimary ? const Color(0xFFD8EEE4) : const Color(0xFFF5E8C9));
+    final foreground = textColor ?? (isPrimary ? const Color(0xFF3E7C63) : const Color(0xFF8A6A23));
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(6)),
-      child: Text(label, style: TextStyle(color: textColor, fontSize: 12, fontWeight: FontWeight.w500, fontFamily: 'Times New Roman')),
+      decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(8)),
+      child: Text(label, style: TextStyle(color: foreground, fontSize: 12, fontWeight: FontWeight.w500, fontFamily: 'Times New Roman')),
     );
   }
 }

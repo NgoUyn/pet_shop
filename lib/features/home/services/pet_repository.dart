@@ -7,6 +7,7 @@ class PetItem {
     required this.petId,
     required this.petName,
     required this.species,
+    required this.gender,
     required this.isActive,
     required this.createdAt,
     this.description,
@@ -21,6 +22,7 @@ class PetItem {
   final int petId;
   final String petName;
   final String species;
+  final String? gender;
   final String? description;
   final double? price;
   final int? age;
@@ -37,6 +39,7 @@ class PetItem {
       petId: row['PetID'] as int,
       petName: (row['PetName'] as String?) ?? '',
       species: (row['Species'] as String?) ?? '',
+      gender: row['Gender'] as String?,
       description: row['Description'] as String?,
       price: rawPrice?.toDouble(),
       age: row['Age'] as int?,
@@ -75,6 +78,7 @@ class PetRepository {
     int? customerId,
     required String petName,
     required String species,
+    required String gender,
     required double price,
     String? description,
     int? age,
@@ -89,6 +93,7 @@ class PetRepository {
       'CustomerID': customerId,
       'PetName': petName,
       'Species': species,
+      'Gender': gender,
       'Description': description,
       'Price': price,
       'Age': age,
