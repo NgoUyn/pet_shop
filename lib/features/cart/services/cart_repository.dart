@@ -503,11 +503,12 @@ class CartRepository {
         }
       }
 
-      // Update invoice status to Paid
+      // Update invoice status to Paid and OrderStatus to Preparing
       await txn.update(
         'Invoice',
         {
           'PaymentStatus': 'Paid',
+          'OrderStatus': 'Preparing',
           'UpdatedAt': now,
         },
         where: 'InvoiceID = ?',

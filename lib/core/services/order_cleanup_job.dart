@@ -23,7 +23,7 @@ class OrderCleanupJob {
     _runCleanup();
 
     // Then run every 5 minutes
-    _timer = Timer.periodic(const Duration(minutes: 5), (_) {
+    _timer = Timer.periodic(const Duration(minutes: 1), (_) {
       _runCleanup();
     });
   }
@@ -79,6 +79,7 @@ class OrderCleanupJob {
             'Invoice',
             {
               'PaymentStatus': 'Cancelled',
+              'OrderStatus': 'Cancelled',
               'UpdatedAt': now,
             },
             where: 'InvoiceID = ?',
