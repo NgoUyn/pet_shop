@@ -1,0 +1,1322 @@
+﻿import 'dart:convert';
+import 'package:http/http.dart' as http;
+import 'package:url_launcher/url_launcher.dart';
+
+class PaymentService {
+  static const String _baseUrl = "http://10.0.2.2:3000/api/payment";
+
+  /// Táº¡o link thanh toÃ¡n PayOS
+  static Future<PaymentLinkResponse> createPaymentLink({
+    required double amount,
+    String? description,
+    String? orderId,
+    List<OrderItem>? items,
+  }) async {
+    try {
+      final response = await http.post(
+        Uri.parse("$_baseUrl/create"),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: jsonEncode({
+          "amount": amount,
+          "description": description ?? "Thanh toÃ¡n Ä‘Æ¡n hÃ ng",
+          "orderId": orderId ?? DateTime.now().millisecondsSinceEpoch,
+          "items": items?.map((e) => e.toJson()).toList() ?? [],
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return PaymentLinkResponse.fromJson(data);
+      } else {
+        throw Exception("Lá»—i táº¡o link thanh toÃ¡n: ${response.body}");
+      }
+    } catch (e) {
+      throw Exception("Lá»—i thanh toÃ¡n: $e");
+    }
+  }
+
+  /// Má»Ÿ link thanh toÃ¡n PayOS
+  static Future<bool> openPaymentLink(String checkoutUrl) async {
+    try {
+      return await launchUrl(
+        Uri.parse(checkoutUrl),
+        mode: LaunchMode.externalApplication,
+      );
+    } catch (e) {
+      throw Exception("KhÃ´ng thá»ƒ má»Ÿ link thanh toÃ¡n: $e");
+    }
+  }
+
+  /// Kiá»ƒm tra tráº¡ng thÃ¡i thanh toÃ¡n
+  static Future<PaymentStatus> getPaymentStatus(dynamic orderId) async {
+    try {
+      final response = await http.get(
+        Uri.parse("$_baseUrl/status/$orderId"),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        return PaymentStatus.fromJson(data);
+      } else {
+        throw Exception("Lá»—i kiá»ƒm tra tráº¡ng thÃ¡i: ${response.body}");
+      }
+    } catch (e) {
+      throw Exception("Lá»—i kiá»ƒm tra tráº¡ng thÃ¡i: $e");
+    }
+  }
+
+  /// Há»§y link thanh toÃ¡n
+  static Future<void> cancelPayment(dynamic orderId) async {
+    try {
+      final response = await http.post(
+        Uri.parse("$_baseUrl/cancel/$orderId"),
+        headers: {
+          "Content-Type": "application/json",
+        },
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception("Lá»—i há»§y thanh toÃ¡n: ${response.body}");
+      }
+    } catch (e) {
+      throw Exception("Lá»—i há»§y thanh toÃ¡n: $e");
+    }
+  }
+}
+
+class OrderItem {
+  final String name;
+  final int quantity;
+  final double price;
+
+  OrderItem({
+    required this.name,
+    required this.quantity,
+    required this.price,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'name': name,
+      'quantity': quantity,
+      'price': price.toInt(),
+    };
+  }
+}
+
+class PaymentLinkResponse {
+  final String checkoutUrl;
+  final dynamic orderCode;
+  final double amount;
+  final String description;
+  final String status;
+
+  PaymentLinkResponse({
+    required this.checkoutUrl,
+    required this.orderCode,
+    required this.amount,
+    required this.description,
+    required this.status,
+  });
+
+  factory PaymentLinkResponse.fromJson(Map<String, dynamic> json) {
+    return PaymentLinkResponse(
+      checkoutUrl: json['checkoutUrl'] ?? '',
+      orderCode: json['orderCode'],
+      amount: (json['amount'] as num).toDouble(),
+      description: json['description'] ?? '',
+      status: json['status'] ?? 'PENDING',
+    );
+  }
+}
+
+class PaymentStatus {
+  final dynamic orderCode;
+  final String status; // PENDING, PAID, CANCELLED, FAILED
+  final double amount;
+  final String? transactionId;
+
+  PaymentStatus({
+    required this.orderCode,
+    required this.status,
+    required this.amount,
+    this.transactionId,
+  });
+
+  factory PaymentStatus.fromJson(Map<String, dynamic> json) {
+    return PaymentStatus(
+      orderCode: json['orderCode'],
+      status: json['status'] ?? 'PENDING',
+      amount: (json['amount'] as num).toDouble(),
+      transactionId: json['transactionId'],
+    );
+  }
+
+  bool get isPaid => status == 'PAID';
+  bool get isCancelled => status == 'CANCELLED';
+  bool get isFailed => status == 'FAILED';
+  bool get isPending => status == 'PENDING';
+}
+import 'package:flutter/material.dart';
+import 'dart:async';
+import '../../../core/constants/app_colors.dart';
+import '../services/payment_service.dart';
+import '../services/cart_repository.dart';
+
+class OnlinePaymentPage extends StatefulWidget {
+  final double subtotalAmount;
+  final double discountAmount;
+  final double payableAmount;
+  final String? shippingAddress;
+  final bool useLoyaltyPoints;
+
+  const OnlinePaymentPage({
+    super.key,
+    required this.subtotalAmount,
+    required this.discountAmount,
+    required this.payableAmount,
+    this.shippingAddress,
+    required this.useLoyaltyPoints,
+  });
+
+  @override
+  State<OnlinePaymentPage> createState() => _OnlinePaymentPageState();
+}
+
+class _OnlinePaymentPageState extends State<OnlinePaymentPage> {
+  late PaymentLinkResponse? _paymentLink;
+  bool _isLoading = true;
+  String? _errorMessage;
+  dynamic _orderId;
+  Timer? _statusCheckTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializePayment();
+  }
+
+  Future<void> _initializePayment() async {
+    try {
+      setState(() => _isLoading = true);
+
+      _orderId = DateTime.now().millisecondsSinceEpoch;
+
+      final items = await CartRepository.instance.listProductEntriesForCurrentUser();
+
+      final orderItems = items
+          .map((item) => OrderItem(
+                name: item.productName,
+                quantity: item.quantity,
+                price: item.unitPrice,
+              ))
+          .toList();
+
+      _paymentLink = await PaymentService.createPaymentLink(
+        amount: widget.payableAmount,
+        orderId: _orderId.toString(),
+        description: 'Pet Shop Order',
+        items: orderItems,
+      );
+
+      if (mounted) {
+        setState(() => _isLoading = false);
+
+        // Má»Ÿ link thanh toÃ¡n
+        await PaymentService.openPaymentLink(_paymentLink!.checkoutUrl);
+
+        // Báº¯t Ä‘áº§u kiá»ƒm tra tráº¡ng thÃ¡i
+        _startStatusCheck();
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _errorMessage = e.toString().replaceAll('Exception: ', '');
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  void _startStatusCheck() {
+    _statusCheckTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+      try {
+        final status = await PaymentService.getPaymentStatus(_orderId);
+
+        if (status.isPaid) {
+          if (mounted) {
+            timer.cancel();
+            _statusCheckTimer = null;
+
+            // Xá»­ lÃ½ thanh toÃ¡n thÃ nh cÃ´ng
+            await _handlePaymentSuccess();
+          }
+        } else if (status.isCancelled || status.isFailed) {
+          if (mounted) {
+            timer.cancel();
+            _statusCheckTimer = null;
+
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Thanh toÃ¡n bá»‹ há»§y hoáº·c tháº¥t báº¡i'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          }
+        }
+      } catch (e) {
+        print('Error checking payment status: $e');
+      }
+    });
+  }
+
+  Future<void> _handlePaymentSuccess() async {
+    try {
+      // Táº¡o Ä‘Æ¡n hÃ ng trong database
+      final result = await CartRepository.instance.checkoutCurrentUser(
+        paymentMethod: 'Bank Transfer',
+        shippingAddress: widget.shippingAddress,
+        useLoyaltyPoints: widget.useLoyaltyPoints,
+      );
+
+      if (mounted) {
+        _statusCheckTimer?.cancel();
+        _statusCheckTimer = null;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Thanh toÃ¡n thÃ nh cÃ´ng!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        await Future.delayed(const Duration(seconds: 2));
+
+        if (mounted) {
+          Navigator.pop(context, result);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lá»—i: ${e.toString().replaceAll('StateError: ', '')}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _retryPayment() async {
+    _initializePayment();
+  }
+
+  Future<void> _cancelPayment() async {
+    try {
+      if (_orderId != null) {
+        await PaymentService.cancelPayment(_orderId);
+      }
+    } catch (e) {
+      print('Error canceling payment: $e');
+    }
+
+    if (mounted) {
+      _statusCheckTimer?.cancel();
+      _statusCheckTimer = null;
+      Navigator.pop(context);
+    }
+  }
+
+  String _formatPrice(double value) {
+    final formatted = value.toStringAsFixed(0);
+    final buffer = StringBuffer();
+    for (var i = 0; i < formatted.length; i++) {
+      final fromEnd = formatted.length - i;
+      buffer.write(formatted[i]);
+      if (fromEnd > 1 && fromEnd % 3 == 1) buffer.write('.');
+    }
+    return '${buffer.toString()}Ä‘';
+  }
+
+  @override
+  void dispose() {
+    _statusCheckTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return WillPopScope(
+      onWillPop: () async {
+        await _cancelPayment();
+        return false;
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Thanh toÃ¡n PayOS'),
+          backgroundColor: AppColors.white,
+          foregroundColor: AppColors.textDark,
+          elevation: 0,
+          automaticallyImplyLeading: false,
+        ),
+        body: _isLoading
+            ? const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Äang táº¡o link thanh toÃ¡n...'),
+                  ],
+                ),
+              )
+            : _errorMessage != null
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                          const SizedBox(height: 16),
+                          Text(
+                            _errorMessage!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 16),
+                          ),
+                          const SizedBox(height: 24),
+                          ElevatedButton(
+                            onPressed: _retryPayment,
+                            child: const Text('Thá»­ láº¡i'),
+                          ),
+                          const SizedBox(height: 8),
+                          TextButton(
+                            onPressed: _cancelPayment,
+                            child: const Text('Há»§y'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : SingleChildScrollView(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Card(
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Chi tiáº¿t thanh toÃ¡n',
+                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text('Táº¡m tÃ­nh:'),
+                                    Text(_formatPrice(widget.subtotalAmount)),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                if (widget.discountAmount > 0) ...[
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text('Giáº£m giÃ¡:'),
+                                      Text(
+                                        '- ${_formatPrice(widget.discountAmount)}',
+                                        style: const TextStyle(color: Colors.green),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                ],
+                                const Divider(),
+                                const SizedBox(height: 8),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    const Text(
+                                      'Tá»•ng cá»™ng:',
+                                      style: TextStyle(fontWeight: FontWeight.bold),
+                                    ),
+                                    Text(
+                                      _formatPrice(widget.payableAmount),
+                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        if (widget.shippingAddress != null) ...[
+                          Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Äá»‹a chá»‰ giao hÃ ng',
+                                    style: TextStyle(fontWeight: FontWeight.bold),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(widget.shippingAddress!),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                        Card(
+                          color: Colors.blue.shade50,
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.info_outline, color: Colors.blue),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: const [
+                                      Text(
+                                        'Link PayOS Ä‘Ã£ Ä‘Æ°á»£c má»Ÿ',
+                                        style: TextStyle(fontWeight: FontWeight.bold),
+                                      ),
+                                      SizedBox(height: 4),
+                                      Text(
+                                        'Vui lÃ²ng hoÃ n thÃ nh thanh toÃ¡n trong trÃ¬nh duyá»‡t. ChÃºng tÃ´i sáº½ tá»± Ä‘á»™ng xÃ¡c nháº­n khi thanh toÃ¡n thÃ nh cÃ´ng.',
+                                        style: TextStyle(fontSize: 12),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        SizedBox(
+                          width: double.infinity,
+                          child: Column(
+                            children: [
+                              TextButton(
+                                onPressed: _cancelPayment,
+                                child: const Text('Há»§y thanh toÃ¡n'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+      ),
+    );
+  }
+}
+import 'package:flutter/material.dart';
+import '../../../core/constants/app_colors.dart';
+import '../../profile/services/profile_repository.dart';
+import '../../cart/services/cart_repository.dart';
+import 'online_payment_page.dart';
+
+class CheckoutPage extends StatefulWidget {
+  const CheckoutPage({super.key});
+
+  @override
+  State<CheckoutPage> createState() => _CheckoutPageState();
+}
+
+class _CheckoutPageState extends State<CheckoutPage> {
+  ProfileData? _profile;
+  List<CartProductEntry> _items = [];
+  String _paymentMethod = 'COD';
+  bool _useLoyaltyPoints = false;
+  final TextEditingController _addressCtrl = TextEditingController();
+  bool _isProcessing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final profile = await ProfileRepository.instance.getCurrentProfile();
+    final items = await CartRepository.instance.listProductEntriesForCurrentUser();
+    if (!mounted) return;
+    setState(() {
+      _profile = profile;
+      _items = items;
+      _addressCtrl.text = profile?.address ?? '';
+    });
+  }
+
+  String _formatPrice(double value) {
+    final formatted = value.toStringAsFixed(0);
+    final buffer = StringBuffer();
+    for (var i = 0; i < formatted.length; i++) {
+      final fromEnd = formatted.length - i;
+      buffer.write(formatted[i]);
+      if (fromEnd > 1 && fromEnd % 3 == 1) buffer.write('.');
+    }
+    return '${buffer.toString()}Ä‘';
+  }
+
+  double get _total => _items.fold(0.0, (s, e) => s + e.lineTotal);
+
+  int get _loyaltyPoints => _profile?.loyaltyPoints ?? 0;
+
+  double get _maxRedeemableDiscount {
+    if (_loyaltyPoints < 50) return 0;
+    final redeemableBlocks = _loyaltyPoints ~/ 50;
+    final maxBlocksByAmount = (_total / 5000).floor();
+    final blocksToUse = redeemableBlocks > maxBlocksByAmount ? maxBlocksByAmount : redeemableBlocks;
+    return blocksToUse * 5000.0;
+  }
+
+  double get _finalTotal {
+    if (!_useLoyaltyPoints) return _total;
+    return (_total - _maxRedeemableDiscount).clamp(0, double.infinity);
+  }
+
+  Future<void> _confirm() async {
+    if (_items.isEmpty) return;
+    setState(() => _isProcessing = true);
+    try {
+      if (_paymentMethod == 'Bank Transfer') {
+        final result = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => OnlinePaymentPage(
+              subtotalAmount: _total,
+              discountAmount: _useLoyaltyPoints ? _maxRedeemableDiscount : 0,
+              payableAmount: _finalTotal,
+              shippingAddress: _addressCtrl.text.trim().isEmpty ? null : _addressCtrl.text.trim(),
+              useLoyaltyPoints: _useLoyaltyPoints,
+            ),
+          ),
+        );
+
+        if (!mounted) return;
+        if (result != null) {
+          Navigator.pop(context, result);
+        }
+        return;
+      }
+
+      final result = await CartRepository.instance.checkoutCurrentUser(
+        paymentMethod: _paymentMethod,
+        shippingAddress: _addressCtrl.text.trim().isEmpty ? null : _addressCtrl.text.trim(),
+        useLoyaltyPoints: _useLoyaltyPoints,
+      );
+      if (!mounted) return;
+      // Return success to caller
+      Navigator.pop(context, result);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))));
+    } finally {
+      if (!mounted) return;
+      setState(() => _isProcessing = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _addressCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('XÃ¡c nháº­n Ä‘áº·t hÃ ng'),
+        backgroundColor: AppColors.white,
+        foregroundColor: AppColors.textDark,
+        elevation: 0,
+      ),
+      body: _profile == null
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('KhÃ¡ch hÃ ng', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(_profile!.fullName, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 6),
+                            Text(_profile!.phone ?? '-', style: const TextStyle(color: Colors.black54)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+                  Text('Äá»‹a chá»‰ nháº­n hÃ ng', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  TextField(
+                    controller: _addressCtrl,
+                    decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'Äá»‹a chá»‰ giao hÃ ng'),
+                    minLines: 2,
+                    maxLines: 4,
+                  ),
+
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('Äiá»ƒm tÃ­ch luá»¹', style: Theme.of(context).textTheme.titleMedium),
+                      Text('$_loyaltyPoints Ä‘iá»ƒm', style: const TextStyle(color: AppColors.primary)),
+                    ],
+                  ),
+
+                  if (_maxRedeemableDiscount > 0) ...[
+                    const SizedBox(height: 8),
+                    Text(
+                      'Báº¡n cÃ³ muá»‘n sá»­ dá»¥ng Ä‘iá»ƒm tÃ­ch luá»¹ Ä‘á»ƒ giáº£m ${_formatPrice(_maxRedeemableDiscount)} khÃ´ng?',
+                      style: const TextStyle(color: AppColors.textDark),
+                    ),
+                    RadioListTile<bool>(
+                      value: true,
+                      groupValue: _useLoyaltyPoints,
+                      title: const Text('CÃ³'),
+                      onChanged: (v) => setState(() => _useLoyaltyPoints = v ?? false),
+                    ),
+                    RadioListTile<bool>(
+                      value: false,
+                      groupValue: _useLoyaltyPoints,
+                      title: const Text('KhÃ´ng'),
+                      onChanged: (v) => setState(() => _useLoyaltyPoints = v ?? false),
+                    ),
+                  ],
+
+                  const SizedBox(height: 12),
+                  Text('PhÆ°Æ¡ng thá»©c thanh toÃ¡n', style: Theme.of(context).textTheme.titleMedium),
+                  RadioListTile<String>(
+                    value: 'COD',
+                    groupValue: _paymentMethod,
+                    title: const Text('Thanh toÃ¡n khi nháº­n hÃ ng'),
+                    onChanged: (v) => setState(() => _paymentMethod = v ?? 'COD'),
+                  ),
+                  RadioListTile<String>(
+                    value: 'Bank Transfer',
+                    groupValue: _paymentMethod,
+                    title: const Text('Thanh toÃ¡n trá»±c tuyáº¿n (QR)'),
+                    onChanged: (v) => setState(() => _paymentMethod = v ?? 'Bank Transfer'),
+                  ),
+
+                  const SizedBox(height: 12),
+                  Text('Danh sÃ¡ch sáº£n pháº©m', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  ..._items.map((e) => ListTile(
+                        leading: SizedBox(width: 48, child: e.imageUrl == null || e.imageUrl!.isEmpty ? const Icon(Icons.image) : Image.network(e.imageUrl!, fit: BoxFit.cover)),
+                        title: Text(e.productName),
+                        subtitle: Text('${e.quantity} x ${_formatPrice(e.unitPrice)}'),
+                        trailing: Text(_formatPrice(e.lineTotal)),
+                      )),
+
+                  const Divider(),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text('Tá»•ng thanh toÃ¡n', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      Text(_formatPrice(_finalTotal), style: const TextStyle(fontSize: 16, color: AppColors.primary, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+
+                  if (_useLoyaltyPoints && _maxRedeemableDiscount > 0) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text('Giáº£m tá»« Ä‘iá»ƒm', style: TextStyle(color: Colors.green)),
+                        Text('-${_formatPrice(_maxRedeemableDiscount)}', style: const TextStyle(color: Colors.green, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ],
+
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: _isProcessing ? null : _confirm,
+                      style: ElevatedButton.styleFrom(backgroundColor: AppColors.secondary),
+                      child: _isProcessing ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)) : const Text('XÃ¡c nháº­n vÃ  thanh toÃ¡n'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+    );
+  }
+}
+import 'package:flutter/foundation.dart';
+import 'package:sqflite/sqflite.dart';
+
+import '../../../core/db/app_database.dart';
+import '../../auth/services/auth_session.dart';
+
+class CartProductEntry {
+  CartProductEntry({
+    required this.cartItemId,
+    required this.productId,
+    required this.productName,
+    required this.imageUrl,
+    required this.unitPrice,
+    required this.quantity,
+    required this.addedAt,
+    this.stockQuantity = 0,
+  });
+
+  final int cartItemId;
+  final int productId;
+  final String productName;
+  final String? imageUrl;
+  final double unitPrice;
+  final int quantity;
+  final DateTime addedAt;
+  final int stockQuantity;
+
+  double get lineTotal => unitPrice * quantity;
+
+  static CartProductEntry fromRow(Map<String, Object?> row) {
+    return CartProductEntry(
+      cartItemId: row['CartItemID'] as int,
+      productId: row['ProductID'] as int,
+      productName: (row['ProductName'] as String?) ?? '',
+      imageUrl: row['ImageURL'] as String?,
+      unitPrice: (row['UnitPrice'] as num).toDouble(),
+      quantity: (row['Quantity'] as int?) ?? 1,
+      addedAt: DateTime.parse(row['AddedAt'] as String),
+      stockQuantity: (row['StockQuantity'] as int?) ?? 0,
+    );
+  }
+}
+
+class CheckoutResult {
+  CheckoutResult({
+    required this.invoiceId,
+    required this.totalItems,
+    required this.totalAmount,
+    required this.discountAmount,
+    required this.usedPoints,
+    required this.earnedPoints,
+  });
+
+  final int invoiceId;
+  final int totalItems;
+  final double totalAmount;
+  final double discountAmount;
+  final int usedPoints;
+  final int earnedPoints;
+}
+
+sk-c371a24153d1465a930f96549769f29dclass CartRepository {
+  CartRepository._();
+
+  static final CartRepository instance = CartRepository._();
+
+  final ValueNotifier<int> cartCount = ValueNotifier<int>(0);
+
+  Future<int> _resolveCustomerId(int userId) async {
+    final db = await AppDatabase.instance;
+
+    final rows = await db.query(
+      'Customer',
+      columns: ['CustomerID'],
+      where: 'UserID = ?',
+      whereArgs: [userId],
+      limit: 1,
+    );
+
+    if (rows.isNotEmpty) {
+      return rows.first['CustomerID'] as int;
+    }
+
+    final inserted = await db.insert('Customer', {
+      'UserID': userId,
+      'Phone': null,
+      'Address': null,
+      'LoyaltyPoints': 0,
+    });
+
+    return inserted;
+  }
+
+  Future<int> _ensureCartIdForCustomer(int customerId, {required DatabaseExecutor txnOrDb}) async {
+    final rows = await txnOrDb.query(
+      'Cart',
+      columns: ['CartID'],
+      where: 'CustomerID = ?',
+      whereArgs: [customerId],
+      limit: 1,
+    );
+
+    if (rows.isNotEmpty) {
+      return rows.first['CartID'] as int;
+    }
+
+    final now = DateTime.now().toIso8601String();
+    final cartId = await txnOrDb.insert('Cart', {
+      'CustomerID': customerId,
+      'CreatedAt': now,
+      'UpdatedAt': now,
+    });
+
+    return cartId;
+  }
+
+  Future<void> refreshCountForCurrentUser() async {
+    final userId = AuthSession.instance.currentUserId.value;
+    if (userId == null) {
+      cartCount.value = 0;
+      return;
+    }
+
+    final db = await AppDatabase.instance;
+    final customerId = await _resolveCustomerId(userId);
+    final cartId = await _ensureCartIdForCustomer(customerId, txnOrDb: db);
+
+    final rows = await db.query(
+      'CartItem',
+      columns: ['CartItemID'],
+      where: 'CartID = ? AND ProductID IS NOT NULL',
+      whereArgs: [cartId],
+    );
+    cartCount.value = rows.length;
+  }
+
+  Future<void> addProductToCart({required int productId, int quantity = 1}) async {
+    final userId = AuthSession.instance.currentUserId.value;
+    if (userId == null) {
+      throw StateError('Vui lÃ²ng Ä‘Äƒng nháº­p Ä‘á»ƒ thÃªm vÃ o giá» hÃ ng');
+    }
+
+    if (quantity <= 0) {
+      throw ArgumentError.value(quantity, 'quantity', 'Quantity pháº£i > 0');
+    }
+
+    final db = await AppDatabase.instance;
+    final customerId = await _resolveCustomerId(userId);
+
+    await db.transaction((txn) async {
+      final cartId = await _ensureCartIdForCustomer(customerId, txnOrDb: txn);
+
+      final productRows = await txn.query(
+        'Product',
+        columns: ['Price', 'StockQuantity'],
+        where: 'ProductID = ?',
+        whereArgs: [productId],
+        limit: 1,
+      );
+
+      if (productRows.isEmpty) {
+        throw StateError('KhÃ´ng tÃ¬m tháº¥y sáº£n pháº©m Ä‘á»ƒ thÃªm vÃ o giá» hÃ ng');
+      }
+
+      final unitPrice = (productRows.first['Price'] as num).toDouble();
+      final stock = (productRows.first['StockQuantity'] as int?) ?? 0;
+
+      final existingRows = await txn.query(
+        'CartItem',
+        columns: ['CartItemID', 'Quantity'],
+        where: 'CartID = ? AND ProductID = ?',
+        whereArgs: [cartId, productId],
+        limit: 1,
+      );
+
+      final now = DateTime.now().toIso8601String();
+
+      if (existingRows.isNotEmpty) {
+        final cartItemId = existingRows.first['CartItemID'] as int;
+        final currentQty = (existingRows.first['Quantity'] as int?) ?? 1;
+        final newQty = currentQty + quantity;
+
+        if (newQty > stock) {
+          throw StateError('Sá»‘ lÆ°á»£ng vÆ°á»£t quÃ¡ tá»“n kho (Hiá»‡n cÃ³: $stock)');
+        }
+
+        await txn.update(
+          'CartItem',
+          {
+            'Quantity': newQty,
+          },
+          where: 'CartItemID = ?',
+          whereArgs: [cartItemId],
+        );
+      } else {
+        if (quantity > stock) {
+          throw StateError('Sá»‘ lÆ°á»£ng vÆ°á»£t quÃ¡ tá»“n kho (Hiá»‡n cÃ³: $stock)');
+        }
+        await txn.insert('CartItem', {
+          'CartID': cartId,
+          'ProductID': productId,
+          'PetID': null,
+          'Quantity': quantity,
+          'UnitPrice': unitPrice,
+          'AddedAt': now,
+        });
+      }
+
+      await txn.update(
+        'Cart',
+        {'UpdatedAt': now},
+        where: 'CartID = ?',
+        whereArgs: [cartId],
+      );
+    });
+
+    await refreshCountForCurrentUser();
+  }
+
+  Future<void> updateQuantity(int cartItemId, int newQuantity) async {
+    if (newQuantity <= 0) {
+      await removeFromCart(cartItemId);
+      return;
+    }
+
+    final db = await AppDatabase.instance;
+    await db.transaction((txn) async {
+      final itemRows = await txn.rawQuery('''
+        SELECT ci.ProductID, p.StockQuantity 
+        FROM CartItem ci 
+        JOIN Product p ON ci.ProductID = p.ProductID 
+        WHERE ci.CartItemID = ?
+      ''', [cartItemId]);
+
+      if (itemRows.isEmpty) throw StateError('KhÃ´ng tÃ¬m tháº¥y sáº£n pháº©m trong giá»');
+
+      final stock = (itemRows.first['StockQuantity'] as int?) ?? 0;
+      if (newQuantity > stock) {
+        throw StateError('Sá»‘ lÆ°á»£ng tá»“n kho khÃ´ng Ä‘á»§ (Hiá»‡n cÃ³: $stock)');
+      }
+
+      await txn.update(
+        'CartItem',
+        {'Quantity': newQuantity},
+        where: 'CartItemID = ?',
+        whereArgs: [cartItemId],
+      );
+    });
+    await refreshCountForCurrentUser();
+  }
+
+  Future<void> removeFromCart(int cartItemId) async {
+    final db = await AppDatabase.instance;
+    await db.delete('CartItem', where: 'CartItemID = ?', whereArgs: [cartItemId]);
+    await refreshCountForCurrentUser();
+  }
+
+  Future<List<CartProductEntry>> listProductEntriesForCurrentUser() async {
+    final userId = AuthSession.instance.currentUserId.value;
+    if (userId == null) {
+      return [];
+    }
+
+    final db = await AppDatabase.instance;
+    final customerId = await _resolveCustomerId(userId);
+    final cartId = await _ensureCartIdForCustomer(customerId, txnOrDb: db);
+
+    final rows = await db.rawQuery(
+      '''
+      SELECT
+        ci.CartItemID,
+        ci.ProductID,
+        p.ProductName,
+        p.ImageURL,
+        p.StockQuantity,
+        ci.UnitPrice,
+        ci.Quantity,
+        ci.AddedAt
+      FROM CartItem ci
+      JOIN Product p ON p.ProductID = ci.ProductID
+      WHERE ci.CartID = ? AND ci.ProductID IS NOT NULL
+      ORDER BY ci.AddedAt DESC, ci.CartItemID DESC
+      ''',
+      [cartId],
+    );
+
+    return rows.map(CartProductEntry.fromRow).toList();
+  }
+
+  Future<CheckoutResult> checkoutCurrentUser({
+    String paymentMethod = 'COD',
+    String? shippingAddress,
+    String? notes,
+    bool useLoyaltyPoints = false,
+    String? transactionCode,
+  }) async {
+    final userId = AuthSession.instance.currentUserId.value;
+    if (userId == null) {
+      throw StateError('Vui lÃ²ng Ä‘Äƒng nháº­p Ä‘á»ƒ thanh toÃ¡n');
+    }
+
+    final db = await AppDatabase.instance;
+    final customerId = await _resolveCustomerId(userId);
+
+    var invoiceId = 0;
+    var totalItems = 0;
+    var totalAmount = 0.0;
+    var discountAmount = 0.0;
+    var usedPoints = 0;
+    var earnedPoints = 0;
+
+    try {
+      // Diagnostic: print existing tables and schema for Invoice/InvoiceDetail
+      try {
+        final tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table';");
+        print('DB Tables: ${tables.map((r) => r['name']).toList()}');
+        final invInfo = await db.rawQuery("PRAGMA table_info('Invoice');");
+        print('Invoice schema: $invInfo');
+        final detInfo = await db.rawQuery("PRAGMA table_info('InvoiceDetail');");
+        print('InvoiceDetail schema: $detInfo');
+      } catch (e) {
+        print('Failed to read DB schema for diagnostics: $e');
+      }
+
+      await db.transaction((txn) async {
+      final cartId = await _ensureCartIdForCustomer(customerId, txnOrDb: txn);
+
+      final cartItems = await txn.rawQuery(
+        '''
+        SELECT
+          ci.CartItemID,
+          ci.ProductID,
+          ci.Quantity,
+          ci.UnitPrice,
+          p.ProductName,
+          p.StockQuantity
+        FROM CartItem ci
+        JOIN Product p ON p.ProductID = ci.ProductID
+        WHERE ci.CartID = ? AND ci.ProductID IS NOT NULL
+        ORDER BY ci.AddedAt DESC, ci.CartItemID DESC
+        ''',
+        [cartId],
+      );
+
+      print('Checkout: cartItems rows count=${cartItems.length}');
+      for (final r in cartItems) {
+        print('cartItem: $r');
+      }
+
+      if (cartItems.isEmpty) {
+        throw StateError('Giá» hÃ ng Ä‘ang trá»‘ng');
+      }
+
+      // Validate items and compute totals before creating the Invoice
+      for (final row in cartItems) {
+        if (row['ProductID'] == null) throw StateError('Má»™t má»¥c giá» hÃ ng thiáº¿u ProductID');
+        if (row['Quantity'] == null) throw StateError('Má»™t má»¥c giá» hÃ ng thiáº¿u Quantity');
+
+        final stock = (row['StockQuantity'] as int?) ?? 0;
+        final quantity = (row['Quantity'] as int?) ?? 0;
+        final productName = (row['ProductName'] as String?) ?? 'Sáº£n pháº©m';
+
+        if (quantity <= 0) {
+          throw StateError('Dá»¯ liá»‡u giá» hÃ ng khÃ´ng há»£p lá»‡');
+        }
+
+        if (stock < quantity) {
+          throw StateError('Sáº£n pháº©m "$productName" khÃ´ng Ä‘á»§ tá»“n kho');
+        }
+
+        final unitPrice = (row['UnitPrice'] as num).toDouble();
+        totalItems += quantity;
+        totalAmount += (quantity * unitPrice);
+      }
+
+      final customerRows = await txn.query(
+        'Customer',
+        columns: ['LoyaltyPoints'],
+        where: 'CustomerID = ?',
+        whereArgs: [customerId],
+        limit: 1,
+      );
+      final currentLoyaltyPoints = customerRows.isNotEmpty
+          ? ((customerRows.first['LoyaltyPoints'] as int?) ?? 0)
+          : 0;
+
+      if (useLoyaltyPoints && currentLoyaltyPoints >= 50) {
+        final redeemableBlocks = currentLoyaltyPoints ~/ 50;
+        final maxBlocksByAmount = (totalAmount / 5000).floor();
+        final blocksToUse = redeemableBlocks > maxBlocksByAmount
+            ? maxBlocksByAmount
+            : redeemableBlocks;
+        usedPoints = blocksToUse * 50;
+        discountAmount = blocksToUse * 5000.0;
+        totalAmount = totalAmount - discountAmount;
+      }
+
+      final now = DateTime.now().toIso8601String();
+      final isOnlinePayment = paymentMethod == 'Bank Transfer';
+      final invoicePaymentStatus = isOnlinePayment ? 'Paid' : 'Pending';
+
+      // Insert invoice with computed total amount
+      invoiceId = await txn.insert('Invoice', {
+        'CustomerID': customerId,
+        'ShippingAddress': shippingAddress,
+        'PaymentMethod': paymentMethod,
+        'PaymentStatus': invoicePaymentStatus,
+        'TotalAmount': totalAmount,
+        'Notes': notes,
+        'CreatedAt': now,
+        'UpdatedAt': null,
+      });
+
+      print('Created Invoice id=$invoiceId totalAmount=$totalAmount totalItems=$totalItems discountAmount=$discountAmount usedPoints=$usedPoints');
+
+      if (invoiceId <= 0) {
+        throw StateError('KhÃ´ng thá»ƒ táº¡o Ä‘Æ¡n hÃ ng, invoiceId khÃ´ng há»£p lá»‡');
+      }
+
+      // Insert invoice details and decrement stock
+      for (final row in cartItems) {
+        final productId = row['ProductID'] as int?;
+        final quantity = (row['Quantity'] as int?) ?? 1;
+        final unitPrice = (row['UnitPrice'] as num).toDouble();
+
+        if (productId == null) {
+          throw StateError('ProductID null khi táº¡o InvoiceDetail');
+        }
+
+        await txn.insert('InvoiceDetail', {
+          'InvoiceID': invoiceId,
+          'ProductID': productId,
+          'PetID': null,
+          'Quantity': quantity,
+          'UnitPrice': unitPrice,
+        });
+
+        print('Inserted InvoiceDetail for productId=$productId qty=$quantity');
+
+        final affected = await txn.rawUpdate(
+          '''
+          UPDATE Product
+          SET StockQuantity = StockQuantity - ?
+          WHERE ProductID = ? AND StockQuantity >= ?
+          ''',
+          [quantity, productId, quantity],
+        );
+
+        if (affected == 0) {
+          throw StateError('KhÃ´ng thá»ƒ cáº­p nháº­t tá»“n kho, vui lÃ²ng thá»­ láº¡i');
+        }
+      }
+
+      await txn.insert('Payment', {
+        'InvoiceID': invoiceId,
+        'Amount': totalAmount,
+        'Method': paymentMethod,
+        'Status': isOnlinePayment ? 'Paid' : 'Pending',
+        'TransactionCode': isOnlinePayment ? (transactionCode ?? 'QR-$invoiceId') : null,
+        'PaidAt': isOnlinePayment ? now : null,
+      });
+
+      // Compute and award loyalty points (1 point per 10,000 units)
+      try {
+        earnedPoints = (totalAmount / 10000).floor();
+        if (earnedPoints > 0) {
+          await txn.rawUpdate(
+            '''
+            UPDATE Customer
+            SET LoyaltyPoints = COALESCE(LoyaltyPoints, 0) + ?
+            WHERE CustomerID = ?
+            ''',
+            [earnedPoints, customerId],
+          );
+        }
+      } catch (e) {
+        print('Failed to award loyalty points: $e');
+      }
+
+      if (usedPoints > 0) {
+        await txn.rawUpdate(
+          '''
+          UPDATE Customer
+          SET LoyaltyPoints = COALESCE(LoyaltyPoints, 0) - ?
+          WHERE CustomerID = ?
+          ''',
+          [usedPoints, customerId],
+        );
+      }
+
+      await txn.delete(
+        'CartItem',
+        where: 'CartID = ? AND ProductID IS NOT NULL',
+        whereArgs: [cartId],
+      );
+
+      await txn.update(
+        'Cart',
+        {'UpdatedAt': now},
+        where: 'CartID = ?',
+        whereArgs: [cartId],
+      );
+    });
+    } catch (e, st) {
+      print('checkoutCurrentUser failed: $e');
+      print(st.toString());
+      // Additional diagnostics
+      try {
+        final refs = await db.rawQuery("SELECT name, type, sql FROM sqlite_master WHERE sql LIKE '%Invoice_old%';");
+        print('sqlite_master refs to Invoice_old: $refs');
+      } catch (e2) {
+        print('failed to query sqlite_master for Invoice_old: $e2');
+      }
+
+      try {
+        final triggers = await db.rawQuery("SELECT name, type, sql FROM sqlite_master WHERE type IN ('trigger','view');");
+        print('All triggers/views: $triggers');
+      } catch (e3) {
+        print('failed to list triggers/views: $e3');
+      }
+
+      try {
+        final fk = await db.rawQuery("PRAGMA foreign_key_list('InvoiceDetail');");
+        print('InvoiceDetail foreign keys: $fk');
+      } catch (e4) {
+        print('failed to get foreign_key_list for InvoiceDetail: $e4');
+      }
+
+      rethrow;
+    }
+
+    await refreshCountForCurrentUser();
+
+    return CheckoutResult(
+      invoiceId: invoiceId,
+      totalItems: totalItems,
+      totalAmount: totalAmount,
+      discountAmount: discountAmount,
+      usedPoints: usedPoints,
+      earnedPoints: earnedPoints,
+    );
+  }
+}

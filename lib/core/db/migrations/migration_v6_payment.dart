@@ -23,6 +23,50 @@ Future<void> migrateV6Payment(Database db) async {
     '''
   );
 
+  // If Payment still references Invoice_old, recreate it to point to Invoice
+  try {
+    final paymentRow = await db.rawQuery("SELECT sql FROM sqlite_master WHERE type='table' AND name='Payment' LIMIT 1;");
+    if (paymentRow.isNotEmpty) {
+      final sql = (paymentRow.first['sql'] as String?) ?? '';
+      if (sql.contains('Invoice_old')) {
+        final paymentOldExists = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='Payment_old' LIMIT 1;");
+        if (paymentOldExists.isNotEmpty) {
+          await db.execute('DROP TABLE IF EXISTS Payment_old;');
+        }
+
+        await db.execute('ALTER TABLE Payment RENAME TO Payment_old;');
+        await db.execute(
+          '''
+          CREATE TABLE Payment (
+            PaymentID INTEGER PRIMARY KEY AUTOINCREMENT,
+            InvoiceID INTEGER NOT NULL,
+            Amount REAL NOT NULL,
+            Method TEXT NOT NULL,
+            Status TEXT NOT NULL,
+            TransactionCode TEXT,
+            PaidAt TEXT,
+            FOREIGN KEY (InvoiceID) REFERENCES Invoice(InvoiceID) ON DELETE CASCADE
+          );
+          '''
+        );
+
+        final oldInfo = await db.rawQuery("PRAGMA table_info('Payment_old');");
+        final oldCols = oldInfo.map((r) => (r['name'] as String?) ?? '').where((s) => s.isNotEmpty).toSet();
+        final desired = ['PaymentID', 'InvoiceID', 'Amount', 'Method', 'Status', 'TransactionCode', 'PaidAt'];
+        final common = desired.where((c) => oldCols.contains(c)).toList();
+        if (common.isNotEmpty) {
+          final cols = common.join(',');
+          await db.execute('INSERT INTO Payment ($cols) SELECT $cols FROM Payment_old;');
+        }
+
+        await db.execute('DROP TABLE IF EXISTS Payment_old;');
+        print('migration_v6: recreated Payment to reference Invoice');
+      }
+    }
+  } catch (e) {
+    print('migration_v6: failed to recreate Payment: $e');
+  }
+
   // Ensure Invoice has TotalAmount and expanded PaymentStatus values.
   // SQLite doesn't allow altering CHECK easily, so recreate table safely.
   final tableInfo = await db.rawQuery("PRAGMA table_info('Invoice');");

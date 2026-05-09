@@ -292,6 +292,7 @@ class CartRepository {
     String? shippingAddress,
     String? notes,
     bool useLoyaltyPoints = false,
+    String? transactionCode,
   }) async {
     final userId = AuthSession.instance.currentUserId.value;
     if (userId == null) {
@@ -395,13 +396,15 @@ class CartRepository {
       }
 
       final now = DateTime.now().toIso8601String();
+      final isOnlinePayment = paymentMethod == 'Bank Transfer';
+      final invoicePaymentStatus = isOnlinePayment ? 'Paid' : 'Pending';
 
       // Insert invoice with computed total amount
       invoiceId = await txn.insert('Invoice', {
         'CustomerID': customerId,
         'ShippingAddress': shippingAddress,
         'PaymentMethod': paymentMethod,
-        'PaymentStatus': 'Pending',
+        'PaymentStatus': invoicePaymentStatus,
         'TotalAmount': totalAmount,
         'Notes': notes,
         'CreatedAt': now,
@@ -447,6 +450,15 @@ class CartRepository {
           throw StateError('Không thể cập nhật tồn kho, vui lòng thử lại');
         }
       }
+
+      await txn.insert('Payment', {
+        'InvoiceID': invoiceId,
+        'Amount': totalAmount,
+        'Method': paymentMethod,
+        'Status': isOnlinePayment ? 'Paid' : 'Pending',
+        'TransactionCode': isOnlinePayment ? (transactionCode ?? 'QR-$invoiceId') : null,
+        'PaidAt': isOnlinePayment ? now : null,
+      });
 
       // Compute and award loyalty points (1 point per 10,000 units)
       try {

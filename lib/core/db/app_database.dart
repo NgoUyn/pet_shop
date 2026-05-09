@@ -95,6 +95,54 @@ class AppDatabase {
         } catch (e) {
           print('onOpen: failed to recreate InvoiceDetail: $e');
         }
+
+        // Detect if Payment still references Invoice_old and recreate it
+        try {
+          final paymentRow = await db.rawQuery("SELECT sql FROM sqlite_master WHERE type='table' AND name='Payment' LIMIT 1;");
+          if (paymentRow.isNotEmpty) {
+            final sql = (paymentRow.first['sql'] as String?) ?? '';
+            if (sql.contains('Invoice_old')) {
+              print('onOpen: Payment references Invoice_old, recreating Payment');
+              final paymentOldExists = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table' AND name='Payment_old' LIMIT 1;");
+              if (paymentOldExists.isNotEmpty) {
+                await db.execute('DROP TABLE IF EXISTS Payment_old;');
+              }
+
+              await db.transaction((txn) async {
+                await txn.execute('ALTER TABLE Payment RENAME TO Payment_old;');
+
+                await txn.execute(
+                  '''
+                  CREATE TABLE Payment (
+                    PaymentID INTEGER PRIMARY KEY AUTOINCREMENT,
+                    InvoiceID INTEGER NOT NULL,
+                    Amount REAL NOT NULL,
+                    Method TEXT NOT NULL,
+                    Status TEXT NOT NULL,
+                    TransactionCode TEXT,
+                    PaidAt TEXT,
+                    FOREIGN KEY (InvoiceID) REFERENCES Invoice(InvoiceID) ON DELETE CASCADE
+                  );
+                  '''
+                );
+
+                final oldInfo = await txn.rawQuery("PRAGMA table_info('Payment_old');");
+                final oldCols = oldInfo.map((r) => (r['name'] as String?) ?? '').where((s) => s.isNotEmpty).toSet();
+                final desired = ['PaymentID', 'InvoiceID', 'Amount', 'Method', 'Status', 'TransactionCode', 'PaidAt'];
+                final common = desired.where((c) => oldCols.contains(c)).toList();
+                if (common.isNotEmpty) {
+                  final cols = common.join(',');
+                  await txn.execute('INSERT INTO Payment ($cols) SELECT $cols FROM Payment_old;');
+                }
+
+                await txn.execute('DROP TABLE IF EXISTS Payment_old;');
+              });
+              print('onOpen: recreated Payment successfully');
+            }
+          }
+        } catch (e) {
+          print('onOpen: failed to recreate Payment: $e');
+        }
       },
       onCreate: (db, version) async {
         await db.execute('PRAGMA foreign_keys = ON;');

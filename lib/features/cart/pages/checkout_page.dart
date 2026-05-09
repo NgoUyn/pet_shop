@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../profile/services/profile_repository.dart';
 import '../../cart/services/cart_repository.dart';
+import 'online_payment_page.dart';
 
 class CheckoutPage extends StatefulWidget {
   const CheckoutPage({super.key});
@@ -67,6 +68,27 @@ class _CheckoutPageState extends State<CheckoutPage> {
     if (_items.isEmpty) return;
     setState(() => _isProcessing = true);
     try {
+      if (_paymentMethod == 'Bank Transfer') {
+        final result = await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => OnlinePaymentPage(
+              subtotalAmount: _total,
+              discountAmount: _useLoyaltyPoints ? _maxRedeemableDiscount : 0,
+              payableAmount: _finalTotal,
+              shippingAddress: _addressCtrl.text.trim().isEmpty ? null : _addressCtrl.text.trim(),
+              useLoyaltyPoints: _useLoyaltyPoints,
+            ),
+          ),
+        );
+
+        if (!mounted) return;
+        if (result != null) {
+          Navigator.pop(context, result);
+        }
+        return;
+      }
+
       final result = await CartRepository.instance.checkoutCurrentUser(
         paymentMethod: _paymentMethod,
         shippingAddress: _addressCtrl.text.trim().isEmpty ? null : _addressCtrl.text.trim(),
@@ -175,7 +197,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   RadioListTile<String>(
                     value: 'Bank Transfer',
                     groupValue: _paymentMethod,
-                    title: const Text('Chuyển khoản ngân hàng'),
+                    title: const Text('Thanh toán trực tuyến (QR)'),
                     onChanged: (v) => setState(() => _paymentMethod = v ?? 'Bank Transfer'),
                   ),
 
