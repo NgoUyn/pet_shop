@@ -2,10 +2,25 @@ import 'package:flutter/material.dart';
 
 import '../core/constants/app_colors.dart';
 import '../core/widgets/main_wrapper.dart';
+import '../features/admin/pages/admin_home_page.dart';
 import '../features/auth/services/auth_repository.dart';
 import '../features/auth/services/auth_session.dart';
+import '../features/profile/services/profile_repository.dart';
 
 final GlobalKey<ScaffoldMessengerState> rootScaffoldMessengerKey = GlobalKey<ScaffoldMessengerState>();
+
+class _StartupScreen extends StatelessWidget {
+  const _StartupScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+  }
+}
 
 class AppWidget extends StatefulWidget {
   const AppWidget({super.key});
@@ -79,20 +94,32 @@ class _AppWidgetState extends State<AppWidget> with WidgetsBindingObserver {
         useMaterial3: true,
         scaffoldBackgroundColor: AppColors.background,
       ),
-      home: _bootstrapping ? const _StartupScreen() : const MainWrapper(),
-    );
-  }
-}
+      home: _bootstrapping
+          ? const _StartupScreen()
+          : ValueListenableBuilder<int?>(
+              valueListenable: AuthSession.instance.currentUserId,
+              builder: (context, userId, _) {
+                if (userId == null) {
+                  return const MainWrapper();
+                }
 
-class _StartupScreen extends StatelessWidget {
-  const _StartupScreen();
+                return FutureBuilder<ProfileData?>(
+                  future: ProfileRepository.instance.getProfileByUserId(userId),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const _StartupScreen();
+                    }
 
-  @override
-  Widget build(BuildContext context) {
-    return const Scaffold(
-      body: Center(
-        child: CircularProgressIndicator(),
-      ),
+                    final profile = snapshot.data;
+                    if (profile?.role.toLowerCase() == 'admin') {
+                      return const AdminHomePage();
+                    }
+
+                    return const MainWrapper();
+                  },
+                );
+              },
+            ),
     );
   }
 }

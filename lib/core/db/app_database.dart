@@ -4,6 +4,8 @@ import 'migrations/migration_v6_payment.dart';
 import 'migrations/migration_v7_unpaid_status.dart';
 import 'migrations/migration_v8_order_status.dart';
 import 'migrations/migration_v9_fix_unpaid_check.dart';
+import 'migrations/migration_v10_add_admin.dart';
+import 'migrations/migration_v11_pet_details.dart';
 
 class AppDatabase {
   static Database? _db;
@@ -20,7 +22,7 @@ class AppDatabase {
 
     return openDatabase(
       path,
-      version: 9,
+      version: 11,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON;');
       },
@@ -207,6 +209,11 @@ class AppDatabase {
             Species TEXT NOT NULL,
             Description TEXT,
             Price REAL CHECK (Price > 0),
+            Age INTEGER,
+            Personality TEXT,
+            IsDewormed INTEGER NOT NULL DEFAULT 0,
+            IsVaccinated INTEGER NOT NULL DEFAULT 0,
+            ImageURL TEXT,
             IsActive INTEGER NOT NULL CHECK (IsActive IN (0, 1)),
             CreatedAt TEXT NOT NULL,
             UpdatedAt TEXT,
@@ -346,6 +353,21 @@ class AppDatabase {
           await db.execute(sql);
         }
 
+        final now = DateTime.now().toIso8601String();
+
+        // Thêm Admin mặc định
+        await db.insert('User', {
+          'Role': 'admin',
+          'Email': 'pet_shop@gmail.com',
+          'PasswordHash': 'admin@123',
+          'FullName': 'Administrator',
+          'IsActive': 1,
+          'VerificationToken': null,
+          'VerifiedAt': now,
+          'CreatedAt': now,
+          'UpdatedAt': null,
+        });
+
         await db.insert('User', {
           'Role': 'customer',
           'Email': 'emgaikwai@gmail.com',
@@ -354,14 +376,13 @@ class AppDatabase {
           'IsActive': 1,
           'VerificationToken': null,
           'VerifiedAt': null,
-          'CreatedAt': DateTime.now().toIso8601String(),
+          'CreatedAt': now,
           'UpdatedAt': null,
         });
-        // Thêm đoạn này vào cuối onCreate(), sau phần insert User mặc định
 
         // Lấy CustomerID mẫu để gán cho Pet
         await db.insert('Customer', {
-          'UserID': 1,
+          'UserID': 2, // UserID của emgaikwai@gmail.com
           'Phone': '0123456789',
           'Address': 'Ho Chi Minh City',
           'LoyaltyPoints': 100,
@@ -383,8 +404,6 @@ class AppDatabase {
         // ======================
         // INSERT 10 PRODUCTS
         // ======================
-
-        final now = DateTime.now().toIso8601String();
 
         final products = [
           {
@@ -889,6 +908,16 @@ class AppDatabase {
         if (oldVersion < 9) {
           // Run migration to fix PaymentStatus CHECK constraint and ensure OrderStatus column
           await migrateV9FixUnpaidCheck(db);
+        }
+
+        if (oldVersion < 10) {
+          // Migration v10: Thêm tài khoản admin mặc định
+          await migrateV10AddAdmin(db);
+        }
+
+        if (oldVersion < 11) {
+          // Migration v11: Bổ sung thông tin chi tiết cho Pet
+          await migrateV11PetDetails(db);
         }
       },
     );

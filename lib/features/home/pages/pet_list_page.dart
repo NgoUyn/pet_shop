@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../services/pet_repository.dart';
@@ -12,10 +14,24 @@ class PetListPage extends StatefulWidget {
 class _PetListPageState extends State<PetListPage> {
   late Future<List<PetItem>> _future;
 
+  void _handlePetsChanged() {
+    if (!mounted) return;
+    setState(() {
+      _future = PetRepository.instance.listActivePets();
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     _future = PetRepository.instance.listActivePets();
+    PetRepository.instance.changeToken.addListener(_handlePetsChanged);
+  }
+
+  @override
+  void dispose() {
+    PetRepository.instance.changeToken.removeListener(_handlePetsChanged);
+    super.dispose();
   }
 
   void _reload() {
@@ -37,16 +53,44 @@ class _PetListPageState extends State<PetListPage> {
     return '$bufferđ';
   }
 
-  Widget _buildPetImage() {
-    return Container(
-      color: AppColors.background,
-      alignment: Alignment.center,
-      child: const Icon(Icons.pets, color: AppColors.textLight, size: 44),
-    );
+  Widget _buildPetImage(String? imageUrl) {
+    final normalized = (imageUrl ?? '').trim();
+    if (normalized.isEmpty) {
+      return Container(
+        color: AppColors.background,
+        alignment: Alignment.center,
+        child: const Icon(Icons.pets, color: AppColors.textLight, size: 44),
+      );
+    }
+
+    final image = normalized.startsWith('http://') || normalized.startsWith('https://')
+        ? Image.network(
+            normalized,
+            width: double.infinity,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Container(
+              color: AppColors.background,
+              alignment: Alignment.center,
+              child: const Icon(Icons.broken_image_outlined, color: AppColors.textLight, size: 44),
+            ),
+          )
+        : Image.file(
+            File(normalized),
+            width: double.infinity,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => Container(
+              color: AppColors.background,
+              alignment: Alignment.center,
+              child: const Icon(Icons.broken_image_outlined, color: AppColors.textLight, size: 44),
+            ),
+          );
+
+    return image;
   }
 
   Widget _buildPetCard(PetItem item) {
     final price = item.price;
+    final ageText = item.age == null ? 'Chưa cập nhật tuổi' : '${item.age} tháng tuổi';
 
     return Container(
       decoration: BoxDecoration(
@@ -59,7 +103,7 @@ class _PetListPageState extends State<PetListPage> {
           Expanded(
             child: ClipRRect(
               borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-              child: _buildPetImage(),
+              child: _buildPetImage(item.imageUrl),
             ),
           ),
           Padding(
@@ -81,6 +125,22 @@ class _PetListPageState extends State<PetListPage> {
                   style: const TextStyle(color: AppColors.textLight, fontSize: 12),
                 ),
                 const SizedBox(height: 6),
+                Text(
+                  ageText,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: AppColors.textDark, fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    _StatusChip(label: item.isDewormed ? 'Đã tẩy giun' : 'Chưa tẩy giun'),
+                    _StatusChip(label: item.isVaccinated ? 'Đã tiêm phòng' : 'Chưa tiêm phòng'),
+                  ],
+                ),
+                const SizedBox(height: 8),
                 Text(
                   price == null ? '-' : _formatPrice(price),
                   style: const TextStyle(
@@ -152,6 +212,27 @@ class _PetListPageState extends State<PetListPage> {
             },
           );
         },
+      ),
+    );
+  }
+}
+
+class _StatusChip extends StatelessWidget {
+  const _StatusChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F7F5),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(fontSize: 11, color: Color(0xFF3E7C63), fontWeight: FontWeight.w600),
       ),
     );
   }

@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+
 import '../../../core/db/app_database.dart';
 
 class ProductItem {
@@ -42,6 +44,11 @@ class ProductRepository {
   ProductRepository._();
 
   static final ProductRepository instance = ProductRepository._();
+  final ValueNotifier<int> changeToken = ValueNotifier<int>(0);
+
+  void _notifyChanged() {
+    changeToken.value = changeToken.value + 1;
+  }
 
   Future<List<ProductItem>> listActiveProducts({int limit = 200}) async {
     final db = await AppDatabase.instance;
@@ -52,6 +59,31 @@ class ProductRepository {
     );
 
     return rows.map(ProductItem.fromRow).toList();
+  }
+
+  Future<int> addProduct({
+    required int categoryId,
+    required String productName,
+    required double price,
+    required int stockQuantity,
+    String? description,
+    String? imageUrl,
+  }) async {
+    final db = await AppDatabase.instance;
+    final now = DateTime.now().toIso8601String();
+    final id = await db.insert('Product', {
+      'CategoryID': categoryId,
+      'ProductName': productName,
+      'Price': price,
+      'StockQuantity': stockQuantity,
+      'Description': description,
+      'ImageURL': imageUrl,
+      'IsActive': 1,
+      'CreatedAt': now,
+      'UpdatedAt': null,
+    });
+    _notifyChanged();
+    return id;
   }
 
   Future<String?> getCategoryName(int categoryId) async {

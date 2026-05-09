@@ -1,12 +1,8 @@
+import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
-import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/cloudinary_helper.dart';
-import '../../auth/pages/login_page.dart';
-import '../../auth/services/auth_session.dart';
-import '../../cart/pages/cart_page.dart';
-import '../../cart/services/cart_repository.dart';
 import '../services/pet_repository.dart';
 import '../services/product_repository.dart';
 import 'pet_list_page.dart';
@@ -25,10 +21,26 @@ class _HomePageState extends State<HomePage> {
   String _selectedPetFilter = 'Tất cả';
   String _selectedProductFilter = 'Thức ăn';
 
+  void _reloadHomeData() {
+    if (!mounted) return;
+    setState(() {
+      _homeDataFuture = _loadHomeData();
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     _homeDataFuture = _loadHomeData();
+    PetRepository.instance.changeToken.addListener(_reloadHomeData);
+    ProductRepository.instance.changeToken.addListener(_reloadHomeData);
+  }
+
+  @override
+  void dispose() {
+    PetRepository.instance.changeToken.removeListener(_reloadHomeData);
+    ProductRepository.instance.changeToken.removeListener(_reloadHomeData);
+    super.dispose();
   }
 
   Future<_HomeData> _loadHomeData() async {
@@ -246,11 +258,7 @@ class _HomePageState extends State<HomePage> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 72, height: 72,
-            decoration: const BoxDecoration(color: Colors.transparent, shape: BoxShape.circle),
-            child: const Center(child: Text('🐕', style: TextStyle(fontSize: 32))),
-          ),
+          _buildPetMedia(item.imageUrl),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -259,19 +267,26 @@ class _HomePageState extends State<HomePage> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Expanded(child: Text('${item.petName} — ${item.description?.contains('đực') == true ? "đực" : "cái"}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500, fontFamily: 'Times New Roman'))),
+                    Expanded(child: Text('${item.petName} — ${item.species}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500, fontFamily: 'Times New Roman'))),
                     Text(item.price != null ? _formatPrice(item.price!) : '-', style: const TextStyle(fontSize: 18, color: Color(0xFF5BAA7C), fontFamily: 'Times New Roman')),
                   ],
                 ),
                 const SizedBox(height: 4),
-                Text('3 tháng · Tiêm phòng đủ · Sổ y bạ', style: const TextStyle(color: Color(0xFF666666), fontSize: 14, fontFamily: 'Times New Roman')),
+                Text(
+                  [
+                    if (item.age != null) '${item.age} tháng tuổi',
+                    if (item.personality != null && item.personality!.trim().isNotEmpty) item.personality!.trim(),
+                  ].join(' · '),
+                  style: const TextStyle(color: Color(0xFF666666), fontSize: 14, fontFamily: 'Times New Roman'),
+                ),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8, runSpacing: 8,
-                  children: const [
-                    _TagPill(label: 'Thân thiện', color: Color(0xFFD8EEE4), textColor: Color(0xFF3E7C63)),
-                    _TagPill(label: 'Đã tẩy giun', color: Color(0xFFD8EEE4), textColor: Color(0xFF3E7C63)),
-                    _TagPill(label: 'Còn 2 con', color: Color(0xFFF5E8C9), textColor: Color(0xFF8A6A23)),
+                  children: [
+                    _TagPill(label: item.isDewormed ? 'Đã tẩy giun' : 'Chưa tẩy giun', color: const Color(0xFFD8EEE4), textColor: const Color(0xFF3E7C63)),
+                    _TagPill(label: item.isVaccinated ? 'Đã tiêm phòng' : 'Chưa tiêm phòng', color: const Color(0xFFD8EEE4), textColor: const Color(0xFF3E7C63)),
+                    if (item.personality != null && item.personality!.trim().isNotEmpty)
+                      _TagPill(label: item.personality!.trim(), color: const Color(0xFFF5E8C9), textColor: const Color(0xFF8A6A23)),
                   ],
                 ),
               ],
@@ -323,6 +338,7 @@ class _HomePageState extends State<HomePage> {
     if (isPet) {
       name = item.pet!.petName;
       priceStr = item.pet!.price != null ? _formatPrice(item.pet!.price!) : '-';
+      imageUrl = item.pet!.imageUrl;
     } else {
       name = item.product!.productName;
       priceStr = _formatPrice(item.product!.price);
@@ -337,9 +353,9 @@ class _HomePageState extends State<HomePage> {
           Expanded(
             child: ClipRRect(
               borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-              child: isPet 
-                ? Container(color: const Color(0xFFF9FAFB), alignment: Alignment.center, child: const Text('🐶', style: TextStyle(fontSize: 44)))
-                : CachedNetworkImage(imageUrl: imageUrl ?? '', fit: BoxFit.cover, width: double.infinity, errorWidget: (_,__,___) => const Icon(Icons.image)),
+              child: isPet
+                ? _buildPreviewImage(imageUrl, fallback: const Center(child: Text('🐶', style: TextStyle(fontSize: 44))))
+                : _buildPreviewImage(imageUrl, fallback: const Icon(Icons.image)),
             ),
           ),
           Padding(
@@ -356,6 +372,53 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
     );
+  }
+
+  Widget _buildPetMedia(String? imageUrl) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(36),
+      child: _buildPreviewImage(
+        imageUrl,
+        width: 72,
+        height: 72,
+        fallback: Container(
+          color: Colors.transparent,
+          alignment: Alignment.center,
+          child: const Text('🐕', style: TextStyle(fontSize: 32)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPreviewImage(String? imageUrl, {double? width, double? height, required Widget fallback}) {
+    final normalized = (imageUrl ?? '').trim();
+    if (normalized.isEmpty) {
+      return Container(
+        width: width,
+        height: height,
+        color: const Color(0xFFF9FAFB),
+        alignment: Alignment.center,
+        child: fallback,
+      );
+    }
+
+    final image = normalized.startsWith('http://') || normalized.startsWith('https://')
+        ? CachedNetworkImage(
+            imageUrl: normalized,
+            width: width,
+            height: height,
+            fit: BoxFit.cover,
+            errorWidget: (_, __, ___) => fallback,
+          )
+        : Image.file(
+            File(normalized),
+            width: width,
+            height: height,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => fallback,
+          );
+
+    return image;
   }
 
   List<PetItem> _filterPets(List<PetItem> items, String filter) {

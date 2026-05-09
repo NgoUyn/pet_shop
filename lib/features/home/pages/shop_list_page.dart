@@ -1,8 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../auth/pages/login_page.dart';
 import '../../auth/services/auth_session.dart';
-import '../../cart/pages/cart_page.dart';
 import '../../cart/services/cart_repository.dart';
 import 'product_detail_page.dart';
 import '../services/product_repository.dart';
@@ -17,10 +18,24 @@ class ShopListPage extends StatefulWidget {
 class _ShopListPageState extends State<ShopListPage> {
   late Future<List<ProductItem>> _future;
 
+  void _handleProductsChanged() {
+    if (!mounted) return;
+    setState(() {
+      _future = ProductRepository.instance.listActiveProducts();
+    });
+  }
+
   @override
   void initState() {
     super.initState();
     _future = ProductRepository.instance.listActiveProducts();
+    ProductRepository.instance.changeToken.addListener(_handleProductsChanged);
+  }
+
+  @override
+  void dispose() {
+    ProductRepository.instance.changeToken.removeListener(_handleProductsChanged);
+    super.dispose();
   }
 
   void _reload() {
@@ -52,8 +67,23 @@ class _ShopListPageState extends State<ShopListPage> {
       );
     }
 
-    return Image.network(
-      normalized,
+    if (normalized.startsWith('http://') || normalized.startsWith('https://')) {
+      return Image.network(
+        normalized,
+        width: double.infinity,
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return Container(
+            color: AppColors.background,
+            alignment: Alignment.center,
+            child: const Icon(Icons.broken_image_outlined, color: AppColors.textLight, size: 44),
+          );
+        },
+      );
+    }
+
+    return Image.file(
+      File(normalized),
       width: double.infinity,
       fit: BoxFit.cover,
       errorBuilder: (context, error, stackTrace) {

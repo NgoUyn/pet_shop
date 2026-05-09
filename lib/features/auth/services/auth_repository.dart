@@ -208,6 +208,33 @@ class AuthRepository {
 
   Future<int> login({required String email, required String password}) async {
     final normalizedEmail = _normalizeEmail(email);
+    final db = await AppDatabase.instance;
+
+    final adminRows = await db.query(
+      'User',
+      columns: ['UserID', 'PasswordHash', 'IsActive'],
+      where: 'lower(Email) = ? AND Role = ?',
+      whereArgs: [normalizedEmail, 'admin'],
+      limit: 1,
+    );
+
+    if (adminRows.isNotEmpty) {
+      final adminRow = adminRows.first;
+      final storedPassword = (adminRow['PasswordHash'] as String?) ?? '';
+      final isActive = (adminRow['IsActive'] as int?) ?? 0;
+
+      if (isActive != 1) {
+        throw StateError('Tài khoản admin đã bị vô hiệu hóa');
+      }
+
+      if (storedPassword != password) {
+        throw StateError('Tài khoản không tồn tại hoặc mật khẩu không đúng');
+      }
+
+      final userId = adminRow['UserID'] as int;
+      await AuthSession.instance.signIn(userId);
+      return userId;
+    }
 
     final firebaseAuth = FirebaseAuth.instance;
     UserCredential credential;

@@ -240,6 +240,7 @@ class _RegisterPageState extends State<RegisterPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
+      resizeToAvoidBottomInset: true,
       appBar: AppBar(
         backgroundColor: AppColors.white,
         foregroundColor: AppColors.textDark,
@@ -247,22 +248,32 @@ class _RegisterPageState extends State<RegisterPage> {
         title: const Text('Đăng ký'),
       ),
       body: SafeArea(
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-            child: Container(
-              width: double.infinity,
-              constraints: const BoxConstraints(maxWidth: 420),
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: AppColors.white,
-                borderRadius: BorderRadius.circular(14),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+              padding: EdgeInsets.fromLTRB(
+                24,
+                24,
+                24,
+                24 + MediaQuery.viewInsetsOf(context).bottom,
               ),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight - 48),
+                child: Center(
+                  child: Container(
+                    width: double.infinity,
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: AppColors.white,
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: Form(
+                      key: _formKey,
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
                     TextFormField(
                       controller: _nameCtrl,
                       textInputAction: TextInputAction.next,
@@ -360,11 +371,14 @@ class _RegisterPageState extends State<RegisterPage> {
                       onPressed: () => Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => const LoginPage())),
                       child: const Text('Đã có tài khoản? Đăng nhập'),
                     ),
-                  ],
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
               ),
-            ),
-          ),
+            );
+          },
         ),
       ),
     );
