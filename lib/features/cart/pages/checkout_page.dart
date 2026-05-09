@@ -83,9 +83,9 @@ class _CheckoutPageState extends State<CheckoutPage> {
         );
 
         if (!mounted) return;
-        if (result != null) {
-          Navigator.pop(context, result);
-        }
+        // result is now a Map {'invoiceId': int, 'status': String}
+        // Always pop back to the previous screen (cart or home)
+        Navigator.pop(context, result);
         return;
       }
 

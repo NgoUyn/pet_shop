@@ -564,17 +564,35 @@ class _CartPageState extends State<CartPage> {
 
     if (result == null) return;
 
-    // result is CheckoutResult from repository
     if (!mounted) return;
     await _loadCart();
+
+    // result can be CheckoutResult (COD) or Map (Bank Transfer)
+    String dialogTitle;
+    String dialogContent;
+
+    if (result is CheckoutResult) {
+      dialogTitle = 'Đặt hàng thành công';
+      dialogContent = 'Mã đơn hàng: #${result.invoiceId}\nSố lượng: ${result.totalItems}\nTổng tiền: ${_formatPrice(result.totalAmount)}\nTích luỹ: +${result.earnedPoints} điểm';
+    } else if (result is Map) {
+      final invoiceId = result['invoiceId'];
+      final status = result['status'];
+      if (status == 'Paid') {
+        dialogTitle = 'Thanh toán thành công';
+        dialogContent = 'Mã đơn hàng: #$invoiceId\nCảm ơn bạn đã mua hàng!';
+      } else {
+        dialogTitle = 'Đơn hàng đã tạo';
+        dialogContent = 'Mã đơn hàng: #$invoiceId\nĐơn hàng đang chờ thanh toán. Vui lòng thanh toán trong vòng 24h.';
+      }
+    } else {
+      return;
+    }
 
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Thanh toán thành công'),
-        content: Text(
-          'Mã đơn hàng: #${result.invoiceId}\nSố lượng: ${result.totalItems}\nTổng tiền: ${_formatPrice(result.totalAmount)}\nTích luỹ: +${result.earnedPoints} điểm',
-        ),
+        title: Text(dialogTitle),
+        content: Text(dialogContent),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:webview_flutter/webview_flutter.dart';
 import '../../../core/constants/app_colors.dart';
 import '../services/payment_service.dart';
 import '../services/cart_repository.dart';
@@ -24,22 +25,42 @@ class OnlinePaymentPage extends StatefulWidget {
   State<OnlinePaymentPage> createState() => _OnlinePaymentPageState();
 }
 
-class _OnlinePaymentPageState extends State<OnlinePaymentPage> {
+class _OnlinePaymentPageState extends State<OnlinePaymentPage> with WidgetsBindingObserver {
   late PaymentLinkResponse? _paymentLink;
   bool _isLoading = true;
   String? _errorMessage;
   dynamic _orderId;
   Timer? _statusCheckTimer;
+  Timer? _countdownTimer;
+  int _countdownSeconds = 120; // 2 phút
+  int? _invoiceId;
+  bool _paymentCompleted = false;
+  WebViewController? _webViewController;
+  bool _webViewLoaded = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializePayment();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !_paymentCompleted && !_isLoading) {
+      _checkPaymentStatusNow();
+    }
   }
 
   Future<void> _initializePayment() async {
     try {
       setState(() => _isLoading = true);
+
+      // Bước 1: Tạo đơn hàng với trạng thái Unpaid ngay lập tức
+      _invoiceId = await CartRepository.instance.createPendingOrder(
+        shippingAddress: widget.shippingAddress,
+        useLoyaltyPoints: widget.useLoyaltyPoints,
+      );
 
       _orderId = DateTime.now().millisecondsSinceEpoch;
 
@@ -63,11 +84,14 @@ class _OnlinePaymentPageState extends State<OnlinePaymentPage> {
       if (mounted) {
         setState(() => _isLoading = false);
 
-        // Mở link thanh toán
-        await PaymentService.openPaymentLink(_paymentLink!.checkoutUrl);
+        // Bắt đầu đếm ngược 2 phút
+        _startCountdown();
 
         // Bắt đầu kiểm tra trạng thái
         _startStatusCheck();
+
+        // Tạo WebView để load link thanh toán ngay trong app
+        _initWebView(_paymentLink!.checkoutUrl);
       }
     } catch (e) {
       if (mounted) {
@@ -79,48 +103,123 @@ class _OnlinePaymentPageState extends State<OnlinePaymentPage> {
     }
   }
 
-  void _startStatusCheck() {
-    _statusCheckTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
-      try {
-        final status = await PaymentService.getPaymentStatus(_orderId);
-
-        if (status.isPaid) {
-          if (mounted) {
-            timer.cancel();
-            _statusCheckTimer = null;
-
-            // Xử lý thanh toán thành công
-            await _handlePaymentSuccess();
-          }
-        } else if (status.isCancelled || status.isFailed) {
-          if (mounted) {
-            timer.cancel();
-            _statusCheckTimer = null;
-
+  void _initWebView(String url) {
+    _webViewController = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: (String url) {
+            print('WebView loading: $url');
+          },
+          onPageFinished: (String url) {
+            print('WebView loaded: $url');
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Thanh toán bị hủy hoặc thất bại'),
-                  backgroundColor: Colors.red,
-                ),
-              );
+              setState(() => _webViewLoaded = true);
             }
-          }
+          },
+          onNavigationRequest: (NavigationRequest request) {
+            final url = request.url.toLowerCase();
+
+            // Nếu URL chứa các từ khoá callback từ PayOS, tự động xử lý
+            if (url.contains('success') || url.contains('paid')) {
+              // Thanh toán thành công - kiểm tra ngay
+              _checkPaymentStatusNow();
+              return NavigationDecision.prevent;
+            }
+
+            if (url.contains('cancel') || url.contains('cancelled') || url.contains('fail')) {
+              // Thanh toán thất bại hoặc bị hủy
+              _checkPaymentStatusNow();
+              return NavigationDecision.prevent;
+            }
+
+            return NavigationDecision.navigate;
+          },
+        ),
+      )
+      ..loadRequest(Uri.parse(url));
+  }
+
+  void _startCountdown() {
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _countdownSeconds--;
+      });
+
+      if (_countdownSeconds <= 0) {
+        timer.cancel();
+        if (mounted && !_paymentCompleted) {
+          _statusCheckTimer?.cancel();
+          _statusCheckTimer = null;
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Đã hết thời gian thanh toán. Đơn hàng sẽ được giữ trong 24h.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+
+          Future.delayed(const Duration(seconds: 2), () {
+            if (mounted) {
+              Navigator.pop(context, {'invoiceId': _invoiceId, 'status': 'Unpaid'});
+            }
+          });
         }
-      } catch (e) {
-        print('Error checking payment status: $e');
       }
     });
   }
 
-  Future<void> _handlePaymentSuccess() async {
+  void _startStatusCheck() {
+    _statusCheckTimer = Timer.periodic(const Duration(seconds: 3), (timer) async {
+      await _checkPaymentStatusNow();
+    });
+  }
+
+  Future<void> _checkPaymentStatusNow() async {
+    if (_paymentCompleted || _orderId == null) return;
+
     try {
-      // Tạo đơn hàng trong database
-      final result = await CartRepository.instance.checkoutCurrentUser(
-        paymentMethod: 'Bank Transfer',
-        shippingAddress: widget.shippingAddress,
-        useLoyaltyPoints: widget.useLoyaltyPoints,
-      );
+      final status = await PaymentService.getPaymentStatus(_orderId);
+
+      if (status.isPaid) {
+        if (mounted) {
+          _statusCheckTimer?.cancel();
+          _statusCheckTimer = null;
+          await _handlePaymentSuccess();
+        }
+      } else if (status.isCancelled || status.isFailed) {
+        if (mounted) {
+          _statusCheckTimer?.cancel();
+          _statusCheckTimer = null;
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Thanh toán bị hủy hoặc thất bại'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      print('Error checking payment status: $e');
+    }
+  }
+
+  Future<void> _handlePaymentSuccess() async {
+    if (_paymentCompleted) return;
+    _paymentCompleted = true;
+
+    try {
+      _countdownTimer?.cancel();
+      _countdownTimer = null;
+
+      if (_invoiceId != null) {
+        await CartRepository.instance.updateOrderToPaid(_invoiceId!);
+      }
 
       if (mounted) {
         _statusCheckTimer?.cancel();
@@ -136,7 +235,7 @@ class _OnlinePaymentPageState extends State<OnlinePaymentPage> {
         await Future.delayed(const Duration(seconds: 2));
 
         if (mounted) {
-          Navigator.pop(context, result);
+          Navigator.pop(context, {'invoiceId': _invoiceId, 'status': 'Paid'});
         }
       }
     } catch (e) {
@@ -167,7 +266,9 @@ class _OnlinePaymentPageState extends State<OnlinePaymentPage> {
     if (mounted) {
       _statusCheckTimer?.cancel();
       _statusCheckTimer = null;
-      Navigator.pop(context);
+      _countdownTimer?.cancel();
+      _countdownTimer = null;
+      Navigator.pop(context, {'invoiceId': _invoiceId, 'status': 'Unpaid'});
     }
   }
 
@@ -182,9 +283,17 @@ class _OnlinePaymentPageState extends State<OnlinePaymentPage> {
     return '${buffer.toString()}đ';
   }
 
+  String get _formattedCountdown {
+    final minutes = _countdownSeconds ~/ 60;
+    final seconds = _countdownSeconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _statusCheckTimer?.cancel();
+    _countdownTimer?.cancel();
     super.dispose();
   }
 
@@ -202,6 +311,33 @@ class _OnlinePaymentPageState extends State<OnlinePaymentPage> {
           foregroundColor: AppColors.textDark,
           elevation: 0,
           automaticallyImplyLeading: false,
+          actions: [
+            // Countdown timer ở AppBar
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.timer,
+                      size: 18,
+                      color: _countdownSeconds <= 30 ? Colors.red : Colors.orange,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _formattedCountdown,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: _countdownSeconds <= 30 ? Colors.red : Colors.orange.shade800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
         body: _isLoading
             ? const Center(
@@ -210,7 +346,7 @@ class _OnlinePaymentPageState extends State<OnlinePaymentPage> {
                   children: [
                     CircularProgressIndicator(),
                     SizedBox(height: 16),
-                    Text('Đang tạo link thanh toán...'),
+                    Text('Đang tạo đơn hàng và link thanh toán...'),
                   ],
                 ),
               )
@@ -242,124 +378,68 @@ class _OnlinePaymentPageState extends State<OnlinePaymentPage> {
                       ),
                     ),
                   )
-                : SingleChildScrollView(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Card(
-                          child: Padding(
-                            padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Chi tiết thanh toán',
-                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                                ),
-                                const SizedBox(height: 16),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    const Text('Tạm tính:'),
-                                    Text(_formatPrice(widget.subtotalAmount)),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                if (widget.discountAmount > 0) ...[
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      const Text('Giảm giá:'),
-                                      Text(
-                                        '- ${_formatPrice(widget.discountAmount)}',
-                                        style: const TextStyle(color: Colors.green),
-                                      ),
-                                    ],
-                                  ),
-                                  const SizedBox(height: 8),
-                                ],
-                                const Divider(),
-                                const SizedBox(height: 8),
-                                Row(
-                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    const Text(
-                                      'Tổng cộng:',
-                                      style: TextStyle(fontWeight: FontWeight.bold),
-                                    ),
-                                    Text(
-                                      _formatPrice(widget.payableAmount),
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                                    ),
-                                  ],
-                                ),
-                              ],
+                : Column(
+                    children: [
+                      // WebView thanh toán - chiếm phần lớn màn hình
+                      Expanded(
+                        child: _webViewController != null
+                            ? WebViewWidget(controller: _webViewController!)
+                            : const Center(child: CircularProgressIndicator()),
+                      ),
+
+                      // Thanh bottom với thông tin đơn hàng
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 4,
+                              offset: const Offset(0, -2),
                             ),
-                          ),
+                          ],
                         ),
-                        const SizedBox(height: 16),
-                        if (widget.shippingAddress != null) ...[
-                          Card(
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Địa chỉ giao hàng',
-                                    style: TextStyle(fontWeight: FontWeight.bold),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(widget.shippingAddress!),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                        ],
-                        Card(
-                          color: Colors.blue.shade50,
-                          child: Padding(
-                            padding: const EdgeInsets.all(12),
-                            child: Row(
-                              children: [
-                                const Icon(Icons.info_outline, color: Colors.blue),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: const [
-                                      Text(
-                                        'Link PayOS đã được mở',
-                                        style: TextStyle(fontWeight: FontWeight.bold),
-                                      ),
-                                      SizedBox(height: 4),
-                                      Text(
-                                        'Vui lòng hoàn thành thanh toán trong trình duyệt. Chúng tôi sẽ tự động xác nhận khi thanh toán thành công.',
-                                        style: TextStyle(fontSize: 12),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        SizedBox(
-                          width: double.infinity,
-                          child: Column(
+                        child: SafeArea(
+                          top: false,
+                          child: Row(
                             children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'Mã đơn hàng: #$_invoiceId',
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Tổng: ${_formatPrice(widget.payableAmount)}',
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                               TextButton(
                                 onPressed: _cancelPayment,
-                                child: const Text('Hủy thanh toán'),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Colors.red,
+                                ),
+                                child: const Text('Hủy'),
                               ),
                             ],
                           ),
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
       ),
     );

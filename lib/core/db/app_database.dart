@@ -1,6 +1,7 @@
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import 'migrations/migration_v6_payment.dart';
+import 'migrations/migration_v7_unpaid_status.dart';
 
 class AppDatabase {
   static Database? _db;
@@ -17,7 +18,7 @@ class AppDatabase {
 
     return openDatabase(
       path,
-      version: 6,
+      version: 7,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON;');
       },
@@ -870,6 +871,11 @@ class AppDatabase {
         if (oldVersion < 6) {
           // Run migration to add Payment table and Invoice.TotalAmount
           await migrateV6Payment(db);
+        }
+
+        if (oldVersion < 7) {
+          // Run migration to add 'Unpaid' status to Invoice
+          await migrateV7UnpaidStatus(db);
         }
       },
     );
