@@ -55,3 +55,4 @@ app.*.map.json
 .lh
 /.lh/z
 /.Ih/
+.md
