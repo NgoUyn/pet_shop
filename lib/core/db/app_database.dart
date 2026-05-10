@@ -4,6 +4,10 @@ import 'migrations/migration_v6_payment.dart';
 import 'migrations/migration_v7_unpaid_status.dart';
 import 'migrations/migration_v8_order_status.dart';
 import 'migrations/migration_v9_fix_unpaid_check.dart';
+import 'migrations/migration_v10_chat.dart';
+import 'migrations/migration_v11_firebase_uid.dart';
+import 'migrations/migration_v12_admin_seed.dart';
+import 'migrations/migration_v13_favorites_and_notifications.dart';
 
 class AppDatabase {
   static Database? _db;
@@ -20,7 +24,7 @@ class AppDatabase {
 
     return openDatabase(
       path,
-      version: 9,
+      version: 13,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON;');
       },
@@ -162,7 +166,8 @@ class AppDatabase {
             VerificationToken TEXT,
             VerifiedAt TEXT,
             CreatedAt TEXT NOT NULL,
-            UpdatedAt TEXT
+            UpdatedAt TEXT,
+            FirebaseUID TEXT
           );
           ''',
           '''
@@ -340,6 +345,27 @@ class AppDatabase {
           CREATE INDEX idx_appnotification_user_read_created_at
           ON AppNotification(UserID, IsRead, CreatedAt);
           ''',
+          '''
+          CREATE TABLE ChatMessage (
+            ChatMessageID INTEGER PRIMARY KEY AUTOINCREMENT,
+            SenderUserID INTEGER NOT NULL,
+            ReceiverUserID INTEGER NOT NULL,
+            Content TEXT NOT NULL,
+            CreatedAt TEXT NOT NULL,
+            IsRead INTEGER NOT NULL DEFAULT 0 CHECK (IsRead IN (0, 1)),
+            ReadAt TEXT,
+            FOREIGN KEY (SenderUserID) REFERENCES User(UserID) ON DELETE CASCADE,
+            FOREIGN KEY (ReceiverUserID) REFERENCES User(UserID) ON DELETE CASCADE
+          );
+          ''',
+          '''
+          CREATE INDEX idx_chatmessage_sender_receiver_created_at
+          ON ChatMessage(SenderUserID, ReceiverUserID, CreatedAt);
+          ''',
+          '''
+          CREATE INDEX idx_chatmessage_receiver_is_read_created_at
+          ON ChatMessage(ReceiverUserID, IsRead, CreatedAt);
+          ''',
         ];
 
         for (final sql in statements) {
@@ -351,6 +377,18 @@ class AppDatabase {
           'Email': 'emgaikwai@gmail.com',
           'PasswordHash': 'hash_customer',
           'FullName': 'Customer Test',
+          'IsActive': 1,
+          'VerificationToken': null,
+          'VerifiedAt': null,
+          'CreatedAt': DateTime.now().toIso8601String(),
+          'UpdatedAt': null,
+        });
+
+        await db.insert('User', {
+          'Role': 'admin',
+          'Email': 'huynhmai2755@gmail.com',
+          'PasswordHash': 'hash_admin',
+          'FullName': 'Admin Shop',
           'IsActive': 1,
           'VerificationToken': null,
           'VerifiedAt': null,
@@ -889,6 +927,26 @@ class AppDatabase {
         if (oldVersion < 9) {
           // Run migration to fix PaymentStatus CHECK constraint and ensure OrderStatus column
           await migrateV9FixUnpaidCheck(db);
+        }
+
+        if (oldVersion < 10) {
+          // Run migration to add chat messages for customer/admin support chat
+          await migrateV10Chat(db);
+        }
+
+        if (oldVersion < 11) {
+          // Run migration to add FirebaseUID column to User table
+          await migrateV11FirebaseUid(db);
+        }
+
+        if (oldVersion < 12) {
+          // Run migration to seed admin user
+          await migrateV12AdminSeed(db);
+        }
+
+        if (oldVersion < 13) {
+          // Run migration to add favorites tables and notification reference columns
+          await MigrationV13FavoritesAndNotifications.up(db);
         }
       },
     );

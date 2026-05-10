@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../chat/pages/admin_chat_inbox_page.dart';
 import '../../orders/services/order_repository.dart';
 
 class OrderManagementPage extends StatefulWidget {
@@ -157,6 +158,16 @@ class _OrderManagementPageState extends State<OrderManagementPage> {
         foregroundColor: AppColors.textDark,
         elevation: 0,
         actions: [
+          IconButton(
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AdminChatInboxPage()),
+              );
+            },
+            icon: const Icon(Icons.chat_bubble_outline),
+            tooltip: 'Chat',
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadOrders,

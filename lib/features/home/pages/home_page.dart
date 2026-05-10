@@ -7,6 +7,7 @@ import '../../auth/pages/login_page.dart';
 import '../../auth/services/auth_session.dart';
 import '../../cart/pages/cart_page.dart';
 import '../../cart/services/cart_repository.dart';
+import '../../favorites/services/favorite_repository.dart';
 import '../services/pet_repository.dart';
 import '../services/product_repository.dart';
 import 'pet_list_page.dart';
@@ -40,6 +41,66 @@ class _HomePageState extends State<HomePage> {
       products: results[0] as List<ProductItem>,
       pets: results[1] as List<PetItem>,
     );
+  }
+
+  Future<void> _ensureLoggedIn() async {
+    if (AuthSession.instance.currentUserId.value != null) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+    );
+  }
+
+  Future<void> _addProductToCart(ProductItem item) async {
+    await _ensureLoggedIn();
+    if (AuthSession.instance.currentUserId.value == null) return;
+    try {
+      await CartRepository.instance.addProductToCart(productId: item.productId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã thêm vào giỏ hàng')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))));
+    }
+  }
+
+  Future<void> _toggleProductFavorite(ProductItem item) async {
+    await _ensureLoggedIn();
+    if (AuthSession.instance.currentUserId.value == null) return;
+    try {
+      await FavoriteRepository.instance.toggleProductFavorite(item.productId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã cập nhật yêu thích')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))));
+    }
+  }
+
+  Future<void> _addPetToCart(PetItem item) async {
+    await _ensureLoggedIn();
+    if (AuthSession.instance.currentUserId.value == null) return;
+    try {
+      await CartRepository.instance.addPetToCart(petId: item.petId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã thêm thú cưng vào giỏ')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))));
+    }
+  }
+
+  Future<void> _togglePetFavorite(PetItem item) async {
+    await _ensureLoggedIn();
+    if (AuthSession.instance.currentUserId.value == null) return;
+    try {
+      await FavoriteRepository.instance.togglePetFavorite(item.petId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã cập nhật yêu thích')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))));
+    }
   }
 
   String _formatPrice(double value) {
@@ -266,6 +327,20 @@ class _HomePageState extends State<HomePage> {
                 const SizedBox(height: 4),
                 Text('3 tháng · Tiêm phòng đủ · Sổ y bạ', style: const TextStyle(color: Color(0xFF666666), fontSize: 14, fontFamily: 'Times New Roman')),
                 const SizedBox(height: 8),
+                Row(
+                  children: [
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _togglePetFavorite(item),
+                      icon: const Icon(Icons.favorite_border),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _addPetToCart(item),
+                      icon: const Icon(Icons.add_shopping_cart_outlined),
+                    ),
+                  ],
+                ),
                 Wrap(
                   spacing: 8, runSpacing: 8,
                   children: const [
@@ -300,6 +375,21 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(height: 8),
           Text(item.productName, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontFamily: 'Times New Roman')),
           const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _toggleProductFavorite(item),
+                icon: const Icon(Icons.favorite_border, size: 20),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _addProductToCart(item),
+                icon: const Icon(Icons.add_shopping_cart_outlined, size: 20),
+              ),
+            ],
+          ),
           Text(_formatPrice(item.price), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF5BAA7C), fontFamily: 'Times New Roman')),
         ],
       ),
@@ -350,6 +440,20 @@ class _HomePageState extends State<HomePage> {
                 Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontFamily: 'Times New Roman')),
                 const SizedBox(height: 4),
                 Text(priceStr, style: const TextStyle(fontSize: 15, color: Color(0xFF5BAA7C), fontWeight: FontWeight.bold, fontFamily: 'Times New Roman')),
+                Row(
+                  children: [
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => isPet ? _togglePetFavorite(item.pet!) : _toggleProductFavorite(item.product!),
+                      icon: const Icon(Icons.favorite_border, size: 20),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => isPet ? _addPetToCart(item.pet!) : _addProductToCart(item.product!),
+                      icon: const Icon(Icons.add_shopping_cart_outlined, size: 20),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),

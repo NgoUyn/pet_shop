@@ -1,8 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../auth/pages/login_page.dart';
 import '../../auth/services/auth_session.dart';
+import '../../chat/pages/chat_page.dart';
+import '../../chat/services/chat_repository.dart';
 import '../../favorites/pages/favorites_page.dart';
 import '../../orders/pages/order_history_page.dart';
 import '../services/profile_repository.dart';
@@ -17,11 +21,24 @@ class ProfilePage extends StatefulWidget {
 
 class _ProfilePageState extends State<ProfilePage> {
   Future<ProfileData?>? _profileFuture;
+  int _unreadChatCount = 0;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _reloadProfile();
+    _loadUnreadCount();
+    // Tự động kiểm tra tin nhắn từ shop mỗi 30 giây
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _loadUnreadCount();
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
   }
 
   void _reloadProfile() {
@@ -36,6 +53,19 @@ class _ProfilePageState extends State<ProfilePage> {
     setState(() {
       _profileFuture = ProfileRepository.instance.getProfileByUserId(currentUserId);
     });
+  }
+
+  Future<void> _loadUnreadCount() async {
+    try {
+      final count = await ChatRepository.instance.unreadCountForCurrentUser();
+      if (mounted) {
+        setState(() {
+          _unreadChatCount = count;
+        });
+      }
+    } catch (_) {
+      // ignore
+    }
   }
 
   @override
@@ -181,6 +211,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         ),
                       ),
                       _buildMenuItem(context, Icons.favorite, 'Danh sách yêu thích', 'Sản phẩm bạn đã thích', destination: const FavoritesPage()),
+                      _buildMenuItem(context, Icons.support_agent, 'Liên hệ shop', 'Nhắn tin với hỗ trợ', destination: const ChatPage(), badgeCount: _unreadChatCount),
                       _buildMenuItem(context, Icons.history, 'Lịch sử mua hàng', 'Xem tất cả đơn hàng', destination: const OrderHistoryPage()),
                       _buildMenuItem(context, Icons.card_membership, 'Điểm tích lũy', '${profile.loyaltyPoints} điểm'),
                       _buildMenuItem(context, Icons.confirmation_number_outlined, 'Kho Voucher', '12 mã giảm giá'),
@@ -287,7 +318,8 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _buildMenuItem(BuildContext context, IconData icon, String title, String subtitle, {Widget? destination}) {
+  Widget _buildMenuItem(BuildContext context, IconData icon, String title, String subtitle,
+      {Widget? destination, int badgeCount = 0}) {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
@@ -298,17 +330,41 @@ class _ProfilePageState extends State<ProfilePage> {
         leading: Icon(icon, color: AppColors.primary),
         title: Text(title),
         subtitle: Text(subtitle, style: const TextStyle(fontSize: 12)),
-        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
-        onTap: () {
+        trailing: badgeCount > 0
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.red.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      badgeCount > 99 ? '99+' : badgeCount.toString(),
+                      style: const TextStyle(
+                        color: Colors.red,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.arrow_forward_ios, size: 16),
+                ],
+              )
+            : const Icon(Icons.arrow_forward_ios, size: 16),
+        onTap: () async {
           if (destination != null) {
-            Navigator.push(
+            await Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => destination),
             );
+            // Reload unread count when coming back from chat
+            _loadUnreadCount();
           }
         },
       ),
     );
   }
 }
-

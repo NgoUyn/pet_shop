@@ -38,22 +38,22 @@ class AuthRepository {
       final existingFullName = (rows.first['FullName'] as String?) ?? '';
       final resolvedName = (displayName ?? firebaseUser.displayName ?? existingFullName).trim();
 
-      final updates = <String, Object?>{};
+      final updates = <String, Object?>{
+        'FirebaseUID': firebaseUser.uid,
+      };
       if (existingEmail != normalizedEmail) {
         updates['Email'] = normalizedEmail;
       }
       if (resolvedName.isNotEmpty && resolvedName != existingFullName) {
         updates['FullName'] = resolvedName;
       }
-      if (updates.isNotEmpty) {
-        updates['UpdatedAt'] = DateTime.now().toIso8601String();
-        await db.update(
-          'User',
-          updates,
-          where: 'UserID = ?',
-          whereArgs: [existingUserId],
-        );
-      }
+      updates['UpdatedAt'] = DateTime.now().toIso8601String();
+      await db.update(
+        'User',
+        updates,
+        where: 'UserID = ?',
+        whereArgs: [existingUserId],
+      );
 
       final customerRows = await db.query(
         'Customer',

@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../auth/services/auth_session.dart';
+import '../../notifications/services/notification_repository.dart';
 
 class OrderInfo {
   final int invoiceId;
@@ -200,6 +201,21 @@ class OrderRepository {
     return orders;
   }
 
+  /// Get customer UserID from invoice
+  Future<int?> _getCustomerUserId(int invoiceId) async {
+    final db = await AppDatabase.instance;
+    final rows = await db.rawQuery(
+      '''
+      SELECT c.UserID FROM Invoice i
+      JOIN Customer c ON i.CustomerID = c.CustomerID
+      WHERE i.InvoiceID = ?
+      ''',
+      [invoiceId],
+    );
+    if (rows.isEmpty) return null;
+    return rows.first['UserID'] as int?;
+  }
+
   /// Admin: Update order status from Preparing to Shipping
   Future<void> confirmPreparing(int invoiceId) async {
     final db = await AppDatabase.instance;
@@ -217,6 +233,21 @@ class OrderRepository {
 
     if (affected == 0) {
       throw StateError('Không thể cập nhật trạng thái. Đơn hàng không ở trạng thái "Đang chuẩn bị".');
+    }
+
+    // Create notification for customer
+    final customerUserId = await _getCustomerUserId(invoiceId);
+    if (customerUserId != null) {
+      try {
+        await NotificationRepository.instance.create(
+          userId: customerUserId,
+          type: 'order',
+          title: 'Đơn hàng đang được giao',
+          content: 'Đơn hàng #$invoiceId đã được chuyển sang trạng thái đang vận chuyển.',
+          referenceId: invoiceId,
+          referenceType: 'order',
+        );
+      } catch (_) {}
     }
   }
 
@@ -238,6 +269,21 @@ class OrderRepository {
     if (affected == 0) {
       throw StateError('Không thể cập nhật trạng thái. Đơn hàng không ở trạng thái "Đang vận chuyển".');
     }
+
+    // Create notification for customer
+    final customerUserId = await _getCustomerUserId(invoiceId);
+    if (customerUserId != null) {
+      try {
+        await NotificationRepository.instance.create(
+          userId: customerUserId,
+          type: 'order',
+          title: 'Đơn hàng đã hoàn thành',
+          content: 'Đơn hàng #$invoiceId đã được giao thành công. Cảm ơn bạn đã mua hàng!',
+          referenceId: invoiceId,
+          referenceType: 'order',
+        );
+      } catch (_) {}
+    }
   }
 
   /// Admin: Cancel order
@@ -255,5 +301,20 @@ class OrderRepository {
       where: 'InvoiceID = ? AND OrderStatus NOT IN (?, ?)',
       whereArgs: [invoiceId, 'Completed', 'Cancelled'],
     );
+
+    // Create notification for customer
+    final customerUserId = await _getCustomerUserId(invoiceId);
+    if (customerUserId != null) {
+      try {
+        await NotificationRepository.instance.create(
+          userId: customerUserId,
+          type: 'order',
+          title: 'Đơn hàng đã bị hủy',
+          content: 'Đơn hàng #$invoiceId đã bị hủy.',
+          referenceId: invoiceId,
+          referenceType: 'order',
+        );
+      } catch (_) {}
+    }
   }
 }

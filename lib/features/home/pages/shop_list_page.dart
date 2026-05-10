@@ -4,6 +4,7 @@ import '../../auth/pages/login_page.dart';
 import '../../auth/services/auth_session.dart';
 import '../../cart/pages/cart_page.dart';
 import '../../cart/services/cart_repository.dart';
+import '../../favorites/services/favorite_repository.dart';
 import 'product_detail_page.dart';
 import '../services/product_repository.dart';
 
@@ -108,6 +109,30 @@ class _ShopListPageState extends State<ShopListPage> {
     }
   }
 
+  Future<void> _toggleFavorite(ProductItem item) async {
+    final userId = AuthSession.instance.currentUserId.value;
+    if (userId == null) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+      );
+      if (!mounted || AuthSession.instance.currentUserId.value == null) return;
+    }
+
+    try {
+      await FavoriteRepository.instance.toggleProductFavorite(item.productId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã cập nhật danh sách yêu thích')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))),
+      );
+    }
+  }
+
   Widget _buildProductCard(ProductItem item) {
     return Container(
       decoration: BoxDecoration(
@@ -127,21 +152,42 @@ class _ShopListPageState extends State<ShopListPage> {
                   Positioned(
                     right: 6,
                     top: 6,
-                    child: Material(
-                      color: AppColors.white,
-                      borderRadius: BorderRadius.circular(999),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(999),
-                        onTap: () => _addToCart(item),
-                        child: const Padding(
-                          padding: EdgeInsets.all(8),
-                          child: Icon(
-                            Icons.add_shopping_cart_outlined,
-                            color: AppColors.textDark,
-                            size: 20,
+                    child: Column(
+                      children: [
+                        Material(
+                          color: AppColors.white,
+                          borderRadius: BorderRadius.circular(999),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(999),
+                            onTap: () => _toggleFavorite(item),
+                            child: const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: Icon(
+                                Icons.favorite_border,
+                                color: AppColors.textDark,
+                                size: 20,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+                        const SizedBox(height: 6),
+                        Material(
+                          color: AppColors.white,
+                          borderRadius: BorderRadius.circular(999),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(999),
+                            onTap: () => _addToCart(item),
+                            child: const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: Icon(
+                                Icons.add_shopping_cart_outlined,
+                                color: AppColors.textDark,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],

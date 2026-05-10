@@ -11,6 +11,7 @@ class OnlinePaymentPage extends StatefulWidget {
   final double payableAmount;
   final String? shippingAddress;
   final bool useLoyaltyPoints;
+  final List<int>? selectedCartItemIds;
 
   const OnlinePaymentPage({
     super.key,
@@ -19,6 +20,7 @@ class OnlinePaymentPage extends StatefulWidget {
     required this.payableAmount,
     this.shippingAddress,
     required this.useLoyaltyPoints,
+    this.selectedCartItemIds,
   });
 
   @override
@@ -60,11 +62,16 @@ class _OnlinePaymentPageState extends State<OnlinePaymentPage> with WidgetsBindi
       _invoiceId = await CartRepository.instance.createPendingOrder(
         shippingAddress: widget.shippingAddress,
         useLoyaltyPoints: widget.useLoyaltyPoints,
+        selectedCartItemIds: widget.selectedCartItemIds,
       );
 
       _orderId = DateTime.now().millisecondsSinceEpoch;
 
-      final items = await CartRepository.instance.listProductEntriesForCurrentUser();
+        final allItems = await CartRepository.instance.listProductEntriesForCurrentUser();
+        final selected = widget.selectedCartItemIds;
+        final items = (selected != null && selected.isNotEmpty)
+          ? allItems.where((e) => selected.contains(e.cartItemId)).toList()
+          : allItems;
 
       final orderItems = items
           .map((item) => OrderItem(

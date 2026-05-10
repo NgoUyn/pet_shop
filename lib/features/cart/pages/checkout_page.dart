@@ -5,7 +5,9 @@ import '../../cart/services/cart_repository.dart';
 import 'online_payment_page.dart';
 
 class CheckoutPage extends StatefulWidget {
-  const CheckoutPage({super.key});
+  const CheckoutPage({super.key, this.selectedCartItemIds});
+
+  final List<int>? selectedCartItemIds;
 
   @override
   State<CheckoutPage> createState() => _CheckoutPageState();
@@ -27,7 +29,11 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   Future<void> _loadData() async {
     final profile = await ProfileRepository.instance.getCurrentProfile();
-    final items = await CartRepository.instance.listProductEntriesForCurrentUser();
+    final allItems = await CartRepository.instance.listProductEntriesForCurrentUser();
+    final selected = widget.selectedCartItemIds;
+    final items = (selected != null && selected.isNotEmpty)
+        ? allItems.where((e) => selected.contains(e.cartItemId)).toList()
+        : allItems;
     if (!mounted) return;
     setState(() {
       _profile = profile;
@@ -78,6 +84,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
               payableAmount: _finalTotal,
               shippingAddress: _addressCtrl.text.trim().isEmpty ? null : _addressCtrl.text.trim(),
               useLoyaltyPoints: _useLoyaltyPoints,
+              selectedCartItemIds: widget.selectedCartItemIds,
             ),
           ),
         );
@@ -93,6 +100,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         paymentMethod: _paymentMethod,
         shippingAddress: _addressCtrl.text.trim().isEmpty ? null : _addressCtrl.text.trim(),
         useLoyaltyPoints: _useLoyaltyPoints,
+        selectedCartItemIds: widget.selectedCartItemIds,
       );
       if (!mounted) return;
       // Return success to caller

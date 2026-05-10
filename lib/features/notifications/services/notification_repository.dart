@@ -11,6 +11,8 @@ class AppNotificationItem {
     required this.isRead,
     this.readAt,
     required this.userId,
+    this.referenceId,
+    this.referenceType,
   });
 
   final int notificationId;
@@ -21,6 +23,8 @@ class AppNotificationItem {
   final DateTime createdAt;
   final bool isRead;
   final DateTime? readAt;
+  final int? referenceId;
+  final String? referenceType;
 
   static AppNotificationItem fromRow(Map<String, Object?> row) {
     final createdAtRaw = row['CreatedAt'] as String;
@@ -35,6 +39,8 @@ class AppNotificationItem {
       createdAt: DateTime.parse(createdAtRaw),
       isRead: (row['IsRead'] as int?) == 1,
       readAt: readAtRaw == null ? null : DateTime.parse(readAtRaw),
+      referenceId: row['ReferenceID'] as int?,
+      referenceType: row['ReferenceType'] as String?,
     );
   }
 }
@@ -50,6 +56,8 @@ class NotificationRepository {
     required String title,
     required String content,
     DateTime? createdAt,
+    int? referenceId,
+    String? referenceType,
   }) async {
     final db = await AppDatabase.instance;
 
@@ -77,6 +85,8 @@ class NotificationRepository {
       'CreatedAt': createdAtIso,
       'IsRead': 0,
       'ReadAt': null,
+      'ReferenceID': referenceId,
+      'ReferenceType': referenceType,
     });
   }
 

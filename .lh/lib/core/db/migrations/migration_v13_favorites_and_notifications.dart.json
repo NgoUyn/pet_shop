@@ -1,0 +1,18 @@
+{
+    "sourceFile": "lib/core/db/migrations/migration_v13_favorites_and_notifications.dart",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 0,
+            "patches": [
+                {
+                    "date": 1778407761981,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                }
+            ],
+            "date": 1778407761981,
+            "name": "Commit-0",
+            "content": "import 'package:sqflite/sqflite.dart';\r\n\r\nclass MigrationV13FavoritesAndNotifications {\r\n  static const int version = 13;\r\n\r\n  static Future<void> up(Database db) async {\r\n    // Create FavoriteProduct table\r\n    await db.execute('''\r\n      CREATE TABLE IF NOT EXISTS FavoriteProduct (\r\n        FavoriteID INTEGER PRIMARY KEY AUTOINCREMENT,\r\n        UserID INTEGER NOT NULL,\r\n        ProductID INTEGER NOT NULL,\r\n        CreatedAt TEXT NOT NULL,\r\n        FOREIGN KEY (UserID) REFERENCES User(UserID) ON DELETE CASCADE,\r\n        FOREIGN KEY (ProductID) REFERENCES Product(ProductID) ON DELETE CASCADE,\r\n        UNIQUE(UserID, ProductID)\r\n      )\r\n    ''');\r\n\r\n    // Create FavoritePet table\r\n    await db.execute('''\r\n      CREATE TABLE IF NOT EXISTS FavoritePet (\r\n        FavoriteID INTEGER PRIMARY KEY AUTOINCREMENT,\r\n        UserID INTEGER NOT NULL,\r\n        PetID INTEGER NOT NULL,\r\n        CreatedAt TEXT NOT NULL,\r\n        FOREIGN KEY (UserID) REFERENCES User(UserID) ON DELETE CASCADE,\r\n        FOREIGN KEY (PetID) REFERENCES Pet(PetID) ON DELETE CASCADE,\r\n        UNIQUE(UserID, PetID)\r\n      )\r\n    ''');\r\n\r\n    // Add ReferenceID column to AppNotification for linking to orders\r\n    final tableInfo = await db.rawQuery(\"PRAGMA table_info('AppNotification')\");\r\n    final existingColumns = tableInfo.map((r) => r['name'] as String).toList();\r\n\r\n    if (!existingColumns.contains('ReferenceID')) {\r\n      await db.execute('ALTER TABLE AppNotification ADD COLUMN ReferenceID INTEGER');\r\n    }\r\n    if (!existingColumns.contains('ReferenceType')) {\r\n      await db.execute(\"ALTER TABLE AppNotification ADD COLUMN ReferenceType TEXT DEFAULT 'order'\");\r\n    }\r\n\r\n    // Create indexes\r\n    await db.execute('CREATE INDEX IF NOT EXISTS idx_favproduct_user ON FavoriteProduct(UserID)');\r\n    await db.execute('CREATE INDEX IF NOT EXISTS idx_favpet_user ON FavoritePet(UserID)');\r\n    await db.execute('CREATE INDEX IF NOT EXISTS idx_notification_reference ON AppNotification(ReferenceID, ReferenceType)');\r\n  }\r\n}\r\n"
+        }
+    ]
+}

@@ -1,5 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../auth/pages/login_page.dart';
+import '../../auth/services/auth_session.dart';
+import '../../cart/services/cart_repository.dart';
+import '../../favorites/services/favorite_repository.dart';
 import '../services/pet_repository.dart';
 
 class PetListPage extends StatefulWidget {
@@ -45,6 +49,48 @@ class _PetListPageState extends State<PetListPage> {
     );
   }
 
+  Future<void> _ensureLoggedIn() async {
+    if (AuthSession.instance.currentUserId.value != null) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+    );
+  }
+
+  Future<void> _addPetToFavorites(PetItem item) async {
+    await _ensureLoggedIn();
+    if (AuthSession.instance.currentUserId.value == null) return;
+    try {
+      await FavoriteRepository.instance.togglePetFavorite(item.petId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã cập nhật yêu thích thú cưng')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))),
+      );
+    }
+  }
+
+  Future<void> _addPetToCart(PetItem item) async {
+    await _ensureLoggedIn();
+    if (AuthSession.instance.currentUserId.value == null) return;
+    try {
+      await CartRepository.instance.addPetToCart(petId: item.petId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã thêm thú cưng vào giỏ hàng')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))),
+      );
+    }
+  }
+
   Widget _buildPetCard(PetItem item) {
     final price = item.price;
 
@@ -59,7 +105,45 @@ class _PetListPageState extends State<PetListPage> {
           Expanded(
             child: ClipRRect(
               borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-              child: _buildPetImage(),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  _buildPetImage(),
+                  Positioned(
+                    right: 6,
+                    top: 6,
+                    child: Column(
+                      children: [
+                        Material(
+                          color: AppColors.white,
+                          borderRadius: BorderRadius.circular(999),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(999),
+                            onTap: () => _addPetToFavorites(item),
+                            child: const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: Icon(Icons.favorite_border, size: 20, color: AppColors.textDark),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Material(
+                          color: AppColors.white,
+                          borderRadius: BorderRadius.circular(999),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(999),
+                            onTap: () => _addPetToCart(item),
+                            child: const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: Icon(Icons.add_shopping_cart_outlined, size: 20, color: AppColors.textDark),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           Padding(

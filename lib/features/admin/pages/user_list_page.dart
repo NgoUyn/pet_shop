@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/db/app_database.dart';
+import '../../chat/pages/admin_chat_inbox_page.dart';
+import '../../chat/services/chat_repository.dart';
+import 'user_detail_page.dart';
 
 class UserListPage extends StatefulWidget {
   const UserListPage({super.key});
@@ -13,11 +18,38 @@ class UserListPage extends StatefulWidget {
 class _UserListPageState extends State<UserListPage> {
   late Future<List<Map<String, Object?>>> _usersFuture;
   bool _deletingUser = false;
+  int _unreadConversations = 0;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _usersFuture = _loadUsers();
+    _loadUnreadConversations();
+    // Tự động kiểm tra tin nhắn chưa phản hồi mỗi 30 giây
+    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _loadUnreadConversations();
+    });
+  }
+
+  @override
+  void dispose() {
+    _refreshTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _loadUnreadConversations() async {
+    try {
+      final conversations = await ChatRepository.instance.watchAdminConversations().first;
+      final unreadCount = conversations.where((c) => c.adminUnreadCount > 0).length;
+      if (mounted) {
+        setState(() {
+          _unreadConversations = unreadCount;
+        });
+      }
+    } catch (_) {
+      // ignore
+    }
   }
 
   Future<List<Map<String, Object?>>> _loadUsers() async {
@@ -119,6 +151,47 @@ class _UserListPageState extends State<UserListPage> {
         foregroundColor: AppColors.textDark,
         elevation: 0,
         actions: [
+          // Chat icon with badge - số nhỏ ở góc
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              IconButton(
+                onPressed: () async {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AdminChatInboxPage()),
+                  );
+                  if (mounted) {
+                    _loadUnreadConversations();
+                  }
+                },
+                icon: const Icon(Icons.chat_bubble_outline),
+                tooltip: 'Chat',
+              ),
+              if (_unreadConversations > 0)
+                Positioned(
+                  right: 4,
+                  top: 4,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.red,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      _unreadConversations > 99 ? '99+' : _unreadConversations.toString(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+            ],
+          ),
           IconButton(
             onPressed: _refreshUsers,
             icon: const Icon(Icons.refresh),
@@ -176,85 +249,96 @@ class _UserListPageState extends State<UserListPage> {
                 final verifiedAt = user['VerifiedAt'] as String?;
                 final createdAt = user['CreatedAt'] as String?;
 
-                return Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.white,
-                    borderRadius: BorderRadius.circular(14),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x12000000),
-                        blurRadius: 12,
-                        offset: Offset(0, 4),
+                return InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => UserDetailPage(userId: user['UserID'] as int),
                       ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          CircleAvatar(
-                            backgroundColor: _roleColor(role).withValues(alpha: 0.12),
-                            child: Icon(
-                              role.toLowerCase() == 'admin' ? Icons.admin_panel_settings : Icons.person,
-                              color: _roleColor(role),
+                    );
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: AppColors.white,
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x12000000),
+                          blurRadius: 12,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            CircleAvatar(
+                              backgroundColor: _roleColor(role).withValues(alpha: 0.12),
+                              child: Icon(
+                                role.toLowerCase() == 'admin' ? Icons.admin_panel_settings : Icons.person,
+                                color: _roleColor(role),
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  fullName.isNotEmpty ? fullName : 'Không có tên',
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    fullName.isNotEmpty ? fullName : 'Không có tên',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w700,
+                                    ),
                                   ),
-                                ),
-                                const SizedBox(height: 4),
-                                Text(email),
-                              ],
+                                  const SizedBox(height: 4),
+                                  Text(email),
+                                ],
+                              ),
                             ),
-                          ),
-                          Text(
-                            '#${user['UserID']}',
-                            style: const TextStyle(fontWeight: FontWeight.w600),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _InfoChip(label: role, color: _roleColor(role)),
-                          _InfoChip(label: _statusLabel(isActive), color: _statusColor(isActive)),
-                          _InfoChip(label: verifiedAt == null ? 'Chưa có VerifiedAt' : 'VerifiedAt có', color: Colors.blueGrey),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        'CreatedAt: ${createdAt ?? '-'}',
-                        style: const TextStyle(color: AppColors.textLight, fontSize: 12),
-                      ),
-                      const SizedBox(height: 12),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: OutlinedButton.icon(
-                          onPressed: _deletingUser ? null : () => _deleteUser(user['UserID'] as int),
-                          icon: const Icon(Icons.delete_outline, color: Colors.red),
-                          label: const Text(
-                            'Xoá',
-                            style: TextStyle(color: Colors.red),
-                          ),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: Colors.red),
+                            Text(
+                              '#${user['UserID']}',
+                              style: const TextStyle(fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _InfoChip(label: role, color: _roleColor(role)),
+                            _InfoChip(label: _statusLabel(isActive), color: _statusColor(isActive)),
+                            _InfoChip(label: verifiedAt == null ? 'Chưa có VerifiedAt' : 'VerifiedAt có', color: Colors.blueGrey),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'CreatedAt: ${createdAt ?? '-'}',
+                          style: const TextStyle(color: AppColors.textLight, fontSize: 12),
+                        ),
+                        const SizedBox(height: 12),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: OutlinedButton.icon(
+                            onPressed: _deletingUser ? null : () => _deleteUser(user['UserID'] as int),
+                            icon: const Icon(Icons.delete_outline, color: Colors.red),
+                            label: const Text(
+                              'Xoá',
+                              style: TextStyle(color: Colors.red),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Colors.red),
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 );
               },
