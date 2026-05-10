@@ -122,7 +122,7 @@ class _ShopListPageState extends State<ShopListPage> {
       await FavoriteRepository.instance.toggleProductFavorite(item.productId);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Đã cập nhật danh sách yêu thích')),
+        const SnackBar(content: Text('Đã thêm vào danh sách yêu thích')),
       );
     } catch (e) {
       if (!mounted) return;

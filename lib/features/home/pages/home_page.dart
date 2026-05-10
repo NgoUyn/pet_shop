@@ -69,7 +69,7 @@ class _HomePageState extends State<HomePage> {
     try {
       await FavoriteRepository.instance.toggleProductFavorite(item.productId);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã cập nhật yêu thích')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã thêm vào danh sách yêu thích')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))));
@@ -95,7 +95,7 @@ class _HomePageState extends State<HomePage> {
     try {
       await FavoriteRepository.instance.togglePetFavorite(item.petId);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã cập nhật yêu thích')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã cập nhật danh sách yêu thích')));
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))));

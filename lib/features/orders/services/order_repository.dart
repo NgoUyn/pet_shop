@@ -64,6 +64,8 @@ class OrderItemInfo {
   final int invoiceDetailId;
   final int? productId;
   final String? productName;
+  final int? petId;
+  final String? petName;
   final int quantity;
   final double unitPrice;
 
@@ -71,15 +73,21 @@ class OrderItemInfo {
     required this.invoiceDetailId,
     this.productId,
     this.productName,
+    this.petId,
+    this.petName,
     required this.quantity,
     required this.unitPrice,
   });
+
+  String get displayName => petName ?? productName ?? 'Sản phẩm';
 
   static OrderItemInfo fromRow(Map<String, Object?> row) {
     return OrderItemInfo(
       invoiceDetailId: row['InvoiceDetailID'] as int,
       productId: row['ProductID'] as int?,
       productName: row['ProductName'] as String?,
+      petId: row['PetID'] as int?,
+      petName: row['PetName'] as String?,
       quantity: (row['Quantity'] as int?) ?? 1,
       unitPrice: (row['UnitPrice'] as num).toDouble(),
     );
@@ -137,9 +145,10 @@ class OrderRepository {
 
       final detailRows = await db.rawQuery(
         '''
-        SELECT id.*, p.ProductName
+        SELECT id.*, p.ProductName, pet.PetName
         FROM InvoiceDetail id
         LEFT JOIN Product p ON id.ProductID = p.ProductID
+        LEFT JOIN Pet pet ON id.PetID = pet.PetID
         WHERE id.InvoiceID = ?
         ''',
         [invoiceId],
@@ -186,9 +195,10 @@ class OrderRepository {
 
       final detailRows = await db.rawQuery(
         '''
-        SELECT id.*, p.ProductName
+        SELECT id.*, p.ProductName, pet.PetName
         FROM InvoiceDetail id
         LEFT JOIN Product p ON id.ProductID = p.ProductID
+        LEFT JOIN Pet pet ON id.PetID = pet.PetID
         WHERE id.InvoiceID = ?
         ''',
         [invoiceId],

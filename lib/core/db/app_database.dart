@@ -8,6 +8,7 @@ import 'migrations/migration_v10_chat.dart';
 import 'migrations/migration_v11_firebase_uid.dart';
 import 'migrations/migration_v12_admin_seed.dart';
 import 'migrations/migration_v13_favorites_and_notifications.dart';
+import 'migrations/migration_v14_review.dart';
 
 class AppDatabase {
   static Database? _db;
@@ -24,7 +25,7 @@ class AppDatabase {
 
     return openDatabase(
       path,
-      version: 13,
+      version: 14,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON;');
       },
@@ -344,6 +345,26 @@ class AppDatabase {
           '''
           CREATE INDEX idx_appnotification_user_read_created_at
           ON AppNotification(UserID, IsRead, CreatedAt);
+          ''',
+          '''
+          CREATE TABLE Review (
+            ReviewID INTEGER PRIMARY KEY AUTOINCREMENT,
+            InvoiceID INTEGER NOT NULL,
+            UserID INTEGER NOT NULL,
+            Rating INTEGER NOT NULL CHECK (Rating >= 1 AND Rating <= 5),
+            Content TEXT,
+            CreatedAt TEXT NOT NULL,
+            UpdatedAt TEXT,
+            FOREIGN KEY (InvoiceID) REFERENCES Invoice(InvoiceID) ON DELETE CASCADE,
+            FOREIGN KEY (UserID) REFERENCES User(UserID) ON DELETE CASCADE,
+            UNIQUE(InvoiceID, UserID)
+          );
+          ''',
+          '''
+          CREATE INDEX idx_review_invoice ON Review(InvoiceID);
+          ''',
+          '''
+          CREATE INDEX idx_review_user ON Review(UserID);
           ''',
           '''
           CREATE TABLE ChatMessage (
@@ -947,6 +968,10 @@ class AppDatabase {
         if (oldVersion < 13) {
           // Run migration to add favorites tables and notification reference columns
           await MigrationV13FavoritesAndNotifications.up(db);
+        }
+
+        if (oldVersion < 14) {
+          await MigrationV14Review.up(db);
         }
       },
     );

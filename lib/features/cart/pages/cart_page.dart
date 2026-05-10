@@ -17,7 +17,6 @@ class _CartPageState extends State<CartPage> {
   List<CartProductEntry> _items = [];
   bool _isLoading = true;
   bool _isCheckingOut = false;
-  bool _isSelectionMode = false;
   final Set<int> _selectedIds = {};
 
   @override
@@ -37,6 +36,8 @@ class _CartPageState extends State<CartPage> {
 
       setState(() {
         _items = data;
+        // Remove any selected IDs that no longer exist
+        _selectedIds.removeWhere((id) => !data.any((e) => e.cartItemId == id));
       });
     } catch (e) {
       _showMessage('Không thể tải giỏ hàng');
@@ -207,7 +208,6 @@ class _CartPageState extends State<CartPage> {
       setState(() {
         _items.removeWhere((e) => _selectedIds.contains(e.cartItemId));
         _selectedIds.clear();
-        _isSelectionMode = false;
       });
       _showMessage('Đã xoá sản phẩm đã chọn');
     }
@@ -217,20 +217,18 @@ class _CartPageState extends State<CartPage> {
     setState(() {
       if (_selectedIds.contains(cartItemId)) {
         _selectedIds.remove(cartItemId);
-        if (_selectedIds.isEmpty) {
-          _isSelectionMode = false;
-        }
       } else {
         _selectedIds.add(cartItemId);
       }
     });
   }
 
-  void _toggleSelectionMode() {
+  void _selectAll() {
     setState(() {
-      _isSelectionMode = !_isSelectionMode;
-      if (!_isSelectionMode) {
+      if (_selectedIds.length == _items.length) {
         _selectedIds.clear();
+      } else {
+        _selectedIds.addAll(_items.map((e) => e.cartItemId));
       }
     });
   }
@@ -324,7 +322,7 @@ class _CartPageState extends State<CartPage> {
         color: AppColors.white,
         borderRadius:
             BorderRadius.circular(14),
-        border: _isSelectionMode && isSelected
+        border: isSelected
             ? Border.all(color: AppColors.primary, width: 2)
             : null,
       ),
@@ -332,18 +330,20 @@ class _CartPageState extends State<CartPage> {
           const EdgeInsets.all(12),
       child: Row(
         children: [
-          if (_isSelectionMode)
-            Padding(
+          // Checkbox luôn hiển thị để chọn sản phẩm
+          GestureDetector(
+            onTap: () => _toggleSelection(entry.cartItemId),
+            child: Padding(
               padding: const EdgeInsets.only(right: 8),
               child: Icon(
                 isSelected ? Icons.check_circle : Icons.radio_button_unchecked,
                 color: isSelected ? AppColors.primary : AppColors.textLight,
+                size: 24,
               ),
             ),
+          ),
           GestureDetector(
-            onTap: _isSelectionMode
-                ? () => _toggleSelection(entry.cartItemId)
-                : null,
+            onTap: () => _toggleSelection(entry.cartItemId),
             child: ClipRRect(
               borderRadius:
                   BorderRadius.circular(12),
@@ -358,116 +358,110 @@ class _CartPageState extends State<CartPage> {
           ),
           const SizedBox(width: 12),
           Expanded(
-            child: GestureDetector(
-              onTap: _isSelectionMode
-                  ? () => _toggleSelection(entry.cartItemId)
-                  : null,
-              child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment
-                        .start,
-                children: [
-                  Row(
-                    mainAxisAlignment:
-                        MainAxisAlignment
-                            .spaceBetween,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          entry.productName,
-                          maxLines: 1,
-                          overflow:
-                              TextOverflow
-                                  .ellipsis,
-                          style:
-                              const TextStyle(
-                            color: AppColors
-                                .textDark,
-                            fontWeight:
-                                FontWeight
-                                    .w600,
-                          ),
-                        ),
-                      ),
-                      if (!_isSelectionMode)
-                        IconButton(
-                          icon: const Icon(
-                            Icons
-                                .delete_outline,
-                            color: Colors.red,
-                            size: 20,
-                          ),
-                          onPressed: () =>
-                              _removeItem(
-                            entry,
-                          ),
-                        ),
-                    ],
-                  ),
-                  Text(
-                    _formatPrice(
-                      entry.unitPrice,
-                    ),
-                    style:
-                        const TextStyle(
-                      color: AppColors
-                          .secondary,
-                      fontWeight:
-                          FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(
-                    height: 8,
-                  ),
-                  Row(
-                    children: [
-                      _qtyBtn(
-                        Icons.remove,
-                        () => _updateQty(
-                          entry,
-                          -1,
-                        ),
-                      ),
-                      Padding(
-                        padding:
-                            const EdgeInsets
-                                .symmetric(
-                          horizontal: 12,
-                        ),
-                        child: Text(
-                          '${entry.quantity}',
-                          style:
-                              const TextStyle(
-                            fontWeight:
-                                FontWeight
-                                    .bold,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ),
-                      _qtyBtn(
-                        Icons.add,
-                        entry.isPet
-                            ? null
-                            : () => _updateQty(
-                                  entry,
-                                  1,
-                                ),
-                      ),
-                      const Spacer(),
-                      Text(
-                        entry.isPet ? 'Thú cưng' : 'Kho: ${entry.stockQuantity}',
+            child: Column(
+              crossAxisAlignment:
+                  CrossAxisAlignment
+                      .start,
+              children: [
+                Row(
+                  mainAxisAlignment:
+                      MainAxisAlignment
+                          .spaceBetween,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        entry.productName,
+                        maxLines: 1,
+                        overflow:
+                            TextOverflow
+                                .ellipsis,
                         style:
                             const TextStyle(
-                          fontSize: 12,
                           color: AppColors
-                              .textLight,
+                              .textDark,
+                          fontWeight:
+                              FontWeight
+                                  .w600,
                         ),
                       ),
-                    ],
+                    ),
+                    IconButton(
+                      icon: const Icon(
+                        Icons
+                            .delete_outline,
+                        color: Colors.red,
+                        size: 20,
+                      ),
+                      onPressed: () =>
+                          _removeItem(
+                        entry,
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  _formatPrice(
+                    entry.unitPrice,
                   ),
-                ],
-              ),
+                  style:
+                      const TextStyle(
+                    color: AppColors
+                        .secondary,
+                    fontWeight:
+                        FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(
+                  height: 8,
+                ),
+                Row(
+                  children: [
+                    _qtyBtn(
+                      Icons.remove,
+                      () => _updateQty(
+                        entry,
+                        -1,
+                      ),
+                    ),
+                    Padding(
+                      padding:
+                          const EdgeInsets
+                              .symmetric(
+                        horizontal: 12,
+                      ),
+                      child: Text(
+                        '${entry.quantity}',
+                        style:
+                            const TextStyle(
+                          fontWeight:
+                              FontWeight
+                                  .bold,
+                          fontSize: 16,
+                        ),
+                      ),
+                    ),
+                    _qtyBtn(
+                      Icons.add,
+                      entry.isPet
+                          ? null
+                          : () => _updateQty(
+                                entry,
+                                1,
+                              ),
+                    ),
+                    const Spacer(),
+                    Text(
+                      entry.isPet ? 'Thú cưng' : 'Kho: ${entry.stockQuantity}',
+                      style:
+                          const TextStyle(
+                        fontSize: 12,
+                        color: AppColors
+                            .textLight,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],
@@ -476,12 +470,13 @@ class _CartPageState extends State<CartPage> {
   }
 
   Widget _buildBottomBar() {
-    final total = (_isSelectionMode && _selectedIds.isNotEmpty)
+    final hasSelection = _selectedIds.isNotEmpty;
+    final total = hasSelection
         ? _items
             .where((item) => _selectedIds.contains(item.cartItemId))
             .fold(0.0, (sum, item) => sum + item.lineTotal)
         : _items.fold(0.0, (sum, item) => sum + item.lineTotal);
-    final hasCheckoutItems = _isSelectionMode ? _selectedIds.isNotEmpty : _items.isNotEmpty;
+    final hasCheckoutItems = hasSelection ? true : _items.isNotEmpty;
 
     return Container(
       padding:
@@ -509,9 +504,9 @@ class _CartPageState extends State<CartPage> {
                 CrossAxisAlignment
                     .start,
             children: [
-              const Text(
-                'Tổng thanh toán',
-                style: TextStyle(
+              Text(
+                hasSelection ? 'Tổng đã chọn' : 'Tổng thanh toán',
+                style: const TextStyle(
                   color:
                       AppColors.textLight,
                 ),
@@ -545,7 +540,7 @@ class _CartPageState extends State<CartPage> {
               ),
             ),
             child: Text(
-              _isSelectionMode ? 'Mua đã chọn' : 'Mua hàng',
+              hasSelection ? 'Mua đã chọn (${_selectedIds.length})' : 'Mua hàng',
               style: TextStyle(
                 color: Colors.white,
               ),
@@ -576,21 +571,27 @@ class _CartPageState extends State<CartPage> {
             AppColors.textDark,
         elevation: 0,
         actions: [
-          if (_items.isNotEmpty)
+          if (_items.isNotEmpty) ...[
+            // Chọn tất cả / Bỏ chọn tất cả
             IconButton(
               icon: Icon(
-                _isSelectionMode ? Icons.close : Icons.checklist,
+                _selectedIds.length == _items.length
+                    ? Icons.deselect
+                    : Icons.select_all,
               ),
-              tooltip: _isSelectionMode ? 'Thoát chọn' : 'Chọn nhiều',
-              onPressed: _toggleSelectionMode,
+              tooltip: _selectedIds.length == _items.length
+                  ? 'Bỏ chọn tất cả'
+                  : 'Chọn tất cả',
+              onPressed: _selectAll,
             ),
-          if (_isSelectionMode && _selectedIds.isNotEmpty)
-            IconButton(
-              icon: const Icon(Icons.delete_sweep, color: Colors.red),
-              tooltip: 'Xoá đã chọn',
-              onPressed: _deleteSelected,
-            ),
-          if (!_isSelectionMode)
+            // Xoá các mục đã chọn
+            if (_selectedIds.isNotEmpty)
+              IconButton(
+                icon: const Icon(Icons.delete_sweep, color: Colors.red),
+                tooltip: 'Xoá đã chọn',
+                onPressed: _deleteSelected,
+              ),
+            // Tải lại
             IconButton(
               tooltip: 'Tải lại',
               onPressed: _loadCart,
@@ -598,6 +599,7 @@ class _CartPageState extends State<CartPage> {
                 Icons.refresh,
               ),
             ),
+          ],
         ],
       ),
       body: userId == null
@@ -684,7 +686,7 @@ class _CartPageState extends State<CartPage> {
   }
 
   Future<void> _checkout() async {
-    final selectedIds = (_isSelectionMode && _selectedIds.isNotEmpty) ? _selectedIds.toList() : null;
+    final selectedIds = _selectedIds.isNotEmpty ? _selectedIds.toList() : null;
 
     // Navigate to dedicated checkout page for full confirmation
     final result = await Navigator.push(
