@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/db/app_database.dart';
+import '../../chat/pages/chat_page.dart';
 import '../../orders/services/order_repository.dart';
 
 class UserDetailPage extends StatefulWidget {
@@ -180,8 +181,38 @@ class _UserDetailPageState extends State<UserDetailPage> {
         backgroundColor: AppColors.white,
         foregroundColor: AppColors.textDark,
         elevation: 0,
+        actions: [
+          if (_user != null) ...[
+            IconButton(
+              onPressed: () => _openChat(context),
+              icon: const Icon(Icons.chat_bubble_outline),
+              tooltip: 'Chat với khách hàng',
+            ),
+          ],
+        ],
       ),
       body: _buildBody(),
+    );
+  }
+
+  Future<void> _openChat(BuildContext context) async {
+    final user = _user;
+    if (user == null) return;
+
+    final firebaseUid = user['FirebaseUID'] as String?;
+    if (firebaseUid == null || firebaseUid.isEmpty) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Người dùng này chưa có Firebase UID, không thể chat')),
+      );
+      return;
+    }
+
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ChatPage(participantUid: firebaseUid),
+      ),
     );
   }
 

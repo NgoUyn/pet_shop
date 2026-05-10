@@ -3,11 +3,23 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 0,
+            "activePatchIndex": 3,
             "patches": [
                 {
                     "date": 1778407350221,
                     "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1778408714628,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -3,8 +3,10 @@\n import 'package:flutter/material.dart';\r\n \r\n import '../../../core/constants/app_colors.dart';\r\n import '../../../core/db/app_database.dart';\r\n+import '../../chat/pages/chat_page.dart';\r\n+import '../../chat/services/chat_repository.dart';\r\n import '../../orders/services/order_repository.dart';\r\n \r\n class UserDetailPage extends StatefulWidget {\r\n   const UserDetailPage({super.key, required this.userId});\r\n"
+                },
+                {
+                    "date": 1778408738677,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -181,13 +181,43 @@\n         title: Text('Chi tiết người dùng #${widget.userId}'),\r\n         backgroundColor: AppColors.white,\r\n         foregroundColor: AppColors.textDark,\r\n         elevation: 0,\r\n+        actions: [\r\n+          if (_user != null) ...[\r\n+            IconButton(\r\n+              onPressed: () => _openChat(context),\r\n+              icon: const Icon(Icons.chat_bubble_outline),\r\n+              tooltip: 'Chat với khách hàng',\r\n+            ),\r\n+          ],\r\n+        ],\r\n       ),\r\n       body: _buildBody(),\r\n     );\r\n   }\r\n \r\n+  Future<void> _openChat(BuildContext context) async {\r\n+    final user = _user;\r\n+    if (user == null) return;\r\n+\r\n+    final firebaseUid = user['FirebaseUID'] as String?;\r\n+    if (firebaseUid == null || firebaseUid.isEmpty) {\r\n+      if (!mounted) return;\r\n+      ScaffoldMessenger.of(context).showSnackBar(\r\n+        const SnackBar(content: Text('Người dùng này chưa có Firebase UID, không thể chat')),\r\n+      );\r\n+      return;\r\n+    }\r\n+\r\n+    await Navigator.push(\r\n+      context,\r\n+      MaterialPageRoute(\r\n+        builder: (_) => ChatPage(participantUid: firebaseUid),\r\n+      ),\r\n+    );\r\n+  }\r\n+\r\n   Widget _buildBody() {\r\n     if (_loading) {\r\n       return const Center(child: CircularProgressIndicator());\r\n     }\r\n"
+                },
+                {
+                    "date": 1778408799153,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -4,9 +4,8 @@\n \r\n import '../../../core/constants/app_colors.dart';\r\n import '../../../core/db/app_database.dart';\r\n import '../../chat/pages/chat_page.dart';\r\n-import '../../chat/services/chat_repository.dart';\r\n import '../../orders/services/order_repository.dart';\r\n \r\n class UserDetailPage extends StatefulWidget {\r\n   const UserDetailPage({super.key, required this.userId});\r\n"
                 }
             ],
             "date": 1778407350221,

@@ -3,11 +3,15 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 0,
+            "activePatchIndex": 1,
             "patches": [
                 {
                     "date": 1778407386864,
                     "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1778409240788,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -2,8 +2,10 @@\n \r\n import 'package:flutter/material.dart';\r\n \r\n import '../../../core/constants/app_colors.dart';\r\n+import '../../../core/widgets/main_wrapper.dart';\r\n+import '../../auth/services/auth_repository.dart';\r\n import '../../chat/pages/admin_chat_inbox_page.dart';\r\n import '../../chat/services/chat_repository.dart';\r\n import 'order_management_page.dart';\r\n import 'user_list_page.dart';\r\n@@ -55,11 +57,56 @@\n       // ignore\r\n     }\r\n   }\r\n \r\n+  Future<void> _logout() async {\r\n+    final confirmed = await showDialog<bool>(\r\n+      context: context,\r\n+      builder: (dialogContext) {\r\n+        return AlertDialog(\r\n+          title: const Text('Đăng xuất'),\r\n+          content: const Text('Bạn có chắc muốn đăng xuất khỏi tài khoản admin không?'),\r\n+          actions: [\r\n+            TextButton(\r\n+              onPressed: () => Navigator.pop(dialogContext, false),\r\n+              child: const Text('Huỷ'),\r\n+            ),\r\n+            FilledButton(\r\n+              onPressed: () => Navigator.pop(dialogContext, true),\r\n+              child: const Text('Đăng xuất'),\r\n+            ),\r\n+          ],\r\n+        );\r\n+      },\r\n+    );\r\n+\r\n+    if (confirmed != true) return;\r\n+\r\n+    await AuthRepository.instance.signOut();\r\n+    if (!mounted) return;\r\n+\r\n+    Navigator.of(context).pushAndRemoveUntil(\r\n+      MaterialPageRoute(builder: (_) => const MainWrapper(initialIndex: 0)),\r\n+      (route) => false,\r\n+    );\r\n+  }\r\n+\r\n   @override\r\n   Widget build(BuildContext context) {\r\n     return Scaffold(\r\n+      appBar: AppBar(\r\n+        title: const Text('Quản trị viên'),\r\n+        backgroundColor: AppColors.white,\r\n+        foregroundColor: AppColors.textDark,\r\n+        elevation: 0,\r\n+        actions: [\r\n+          IconButton(\r\n+            onPressed: _logout,\r\n+            icon: const Icon(Icons.logout),\r\n+            tooltip: 'Đăng xuất',\r\n+          ),\r\n+        ],\r\n+      ),\r\n       body: _pages[_selectedIndex],\r\n       bottomNavigationBar: BottomNavigationBar(\r\n         currentIndex: _selectedIndex,\r\n         onTap: (index) {\r\n"
                 }
             ],
             "date": 1778407386864,

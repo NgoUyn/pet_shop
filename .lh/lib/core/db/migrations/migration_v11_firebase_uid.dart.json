@@ -1,0 +1,18 @@
+{
+    "sourceFile": "lib/core/db/migrations/migration_v11_firebase_uid.dart",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 0,
+            "patches": [
+                {
+                    "date": 1778409012435,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                }
+            ],
+            "date": 1778409012435,
+            "name": "Commit-0",
+            "content": "import 'package:sqflite/sqflite.dart';\r\n\r\nFuture<void> migrateV11FirebaseUid(Database db) async {\r\n  print('Running migrateV11FirebaseUid...');\r\n\r\n  final tableInfo = await db.rawQuery(\"PRAGMA table_info('User');\");\r\n  final existingColumns = tableInfo\r\n      .map((row) => (row['name'] as String?) ?? '')\r\n      .where((name) => name.isNotEmpty)\r\n      .toSet();\r\n\r\n  if (!existingColumns.contains('FirebaseUID')) {\r\n    await db.execute('ALTER TABLE User ADD COLUMN FirebaseUID TEXT;');\r\n  }\r\n\r\n  await db.execute(\r\n    'CREATE UNIQUE INDEX IF NOT EXISTS idx_user_firebase_uid ON User(FirebaseUID) WHERE FirebaseUID IS NOT NULL;',\r\n  );\r\n\r\n  print('migrateV11: done');\r\n}"
+        }
+    ]
+}

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../auth/pages/login_page.dart';
 import '../../auth/services/auth_session.dart';
-import '../../cart/pages/cart_page.dart';
 import '../../cart/services/cart_repository.dart';
 import '../../favorites/services/favorite_repository.dart';
 import 'product_detail_page.dart';
