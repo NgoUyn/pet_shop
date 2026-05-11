@@ -24,6 +24,9 @@ class _HomePageState extends State<HomePage> {
   late Future<_HomeData> _homeDataFuture;
   String _selectedPetFilter = 'Tất cả';
   String _selectedProductFilter = 'Thức ăn';
+  Set<int> _favoriteProductIds = {};
+  Set<int> _favoritePetIds = {};
+  List<_RecommendedItem> _suggestedItems = [];
 
   @override
   void initState() {
@@ -35,7 +38,19 @@ class _HomePageState extends State<HomePage> {
     final results = await Future.wait([
       ProductRepository.instance.listActiveProducts(limit: 50),
       PetRepository.instance.listActivePets(limit: 50),
+      FavoriteRepository.instance.listFavoriteProducts(),
+      FavoriteRepository.instance.listFavoritePets(),
     ]);
+    _favoriteProductIds = (results[2] as List<ProductItem>)
+        .map((item) => item.productId)
+        .toSet();
+    _favoritePetIds = (results[3] as List<PetItem>)
+        .map((item) => item.petId)
+        .toSet();
+    _suggestedItems = _buildSuggestedItems(
+      results[0] as List<ProductItem>,
+      results[1] as List<PetItem>,
+    );
     return _HomeData(
       products: results[0] as List<ProductItem>,
       pets: results[1] as List<PetItem>,
@@ -68,8 +83,13 @@ class _HomePageState extends State<HomePage> {
     if (AuthSession.instance.currentUserId.value == null) return;
     try {
       await FavoriteRepository.instance.toggleProductFavorite(item.productId);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã thêm vào danh sách yêu thích')));
+      setState(() {
+        if (_favoriteProductIds.contains(item.productId)) {
+          _favoriteProductIds.remove(item.productId);
+        } else {
+          _favoriteProductIds.add(item.productId);
+        }
+      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))));
@@ -94,8 +114,13 @@ class _HomePageState extends State<HomePage> {
     if (AuthSession.instance.currentUserId.value == null) return;
     try {
       await FavoriteRepository.instance.togglePetFavorite(item.petId);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã cập nhật danh sách yêu thích')));
+      setState(() {
+        if (_favoritePetIds.contains(item.petId)) {
+          _favoritePetIds.remove(item.petId);
+        } else {
+          _favoritePetIds.add(item.petId);
+        }
+      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))));
@@ -154,7 +179,7 @@ class _HomePageState extends State<HomePage> {
                 final data = snapshot.data;
                 if (data == null) return const SizedBox();
 
-                final suggestedItems = _buildSuggestedItems(data.products, data.pets);
+                final suggestedItems = _suggestedItems;
                 final filteredPets = _filterPets(data.pets, _selectedPetFilter);
                 final filteredProducts = _filterProducts(data.products, _selectedProductFilter);
 
@@ -301,6 +326,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildPetRow(PetItem item) {
+    final isFavorited = _favoritePetIds.contains(item.petId);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
       child: Row(
@@ -331,7 +357,10 @@ class _HomePageState extends State<HomePage> {
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       onPressed: () => _togglePetFavorite(item),
-                      icon: const Icon(Icons.favorite_border),
+                      icon: Icon(
+                        isFavorited ? Icons.favorite : Icons.favorite_border,
+                        color: isFavorited ? Colors.red : null,
+                      ),
                     ),
                     IconButton(
                       visualDensity: VisualDensity.compact,
@@ -357,6 +386,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   Widget _buildProductTile(ProductItem item) {
+    final isFavorited = _favoriteProductIds.contains(item.productId);
     return InkWell(
       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ProductDetailPage(product: item))),
       child: Column(
@@ -380,7 +410,11 @@ class _HomePageState extends State<HomePage> {
               IconButton(
                 visualDensity: VisualDensity.compact,
                 onPressed: () => _toggleProductFavorite(item),
-                icon: const Icon(Icons.favorite_border, size: 20),
+                icon: Icon(
+                  isFavorited ? Icons.favorite : Icons.favorite_border,
+                  size: 20,
+                  color: isFavorited ? Colors.red : null,
+                ),
               ),
               IconButton(
                 visualDensity: VisualDensity.compact,
@@ -408,6 +442,8 @@ class _HomePageState extends State<HomePage> {
     String priceStr = '-';
     String? imageUrl;
     bool isPet = item.kind == _RecommendedKind.pet;
+    final isProductFavorited = !isPet && _favoriteProductIds.contains(item.product!.productId);
+    final isPetFavorited = isPet && _favoritePetIds.contains(item.pet!.petId);
 
     if (isPet) {
       name = item.pet!.petName;
@@ -444,7 +480,12 @@ class _HomePageState extends State<HomePage> {
                     IconButton(
                       visualDensity: VisualDensity.compact,
                       onPressed: () => isPet ? _togglePetFavorite(item.pet!) : _toggleProductFavorite(item.product!),
-                      icon: const Icon(Icons.favorite_border, size: 20),
+                      icon: Icon(
+                        isPet ? (isPetFavorited ? Icons.favorite : Icons.favorite_border)
+                          : (isProductFavorited ? Icons.favorite : Icons.favorite_border),
+                        size: 20,
+                        color: (isPet ? isPetFavorited : isProductFavorited) ? Colors.red : null,
+                      ),
                     ),
                     IconButton(
                       visualDensity: VisualDensity.compact,

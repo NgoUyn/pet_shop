@@ -16,16 +16,27 @@ class ShopListPage extends StatefulWidget {
 
 class _ShopListPageState extends State<ShopListPage> {
   late Future<List<ProductItem>> _future;
+  Set<int> _favoriteProductIds = {};
 
   @override
   void initState() {
     super.initState();
     _future = ProductRepository.instance.listActiveProducts();
+    _loadFavorites();
   }
 
   void _reload() {
     setState(() {
       _future = ProductRepository.instance.listActiveProducts();
+    });
+    _loadFavorites();
+  }
+
+  Future<void> _loadFavorites() async {
+    final favorites = await FavoriteRepository.instance.listFavoriteProducts();
+    if (!mounted) return;
+    setState(() {
+      _favoriteProductIds = favorites.map((item) => item.productId).toSet();
     });
   }
 
@@ -120,10 +131,13 @@ class _ShopListPageState extends State<ShopListPage> {
 
     try {
       await FavoriteRepository.instance.toggleProductFavorite(item.productId);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Đã thêm vào danh sách yêu thích')),
-      );
+      setState(() {
+        if (_favoriteProductIds.contains(item.productId)) {
+          _favoriteProductIds.remove(item.productId);
+        } else {
+          _favoriteProductIds.add(item.productId);
+        }
+      });
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -133,6 +147,7 @@ class _ShopListPageState extends State<ShopListPage> {
   }
 
   Widget _buildProductCard(ProductItem item) {
+    final isFavorited = _favoriteProductIds.contains(item.productId);
     return Container(
       decoration: BoxDecoration(
         color: AppColors.white,
@@ -159,11 +174,11 @@ class _ShopListPageState extends State<ShopListPage> {
                           child: InkWell(
                             borderRadius: BorderRadius.circular(999),
                             onTap: () => _toggleFavorite(item),
-                            child: const Padding(
-                              padding: EdgeInsets.all(8),
+                            child: Padding(
+                              padding: const EdgeInsets.all(8),
                               child: Icon(
-                                Icons.favorite_border,
-                                color: AppColors.textDark,
+                                isFavorited ? Icons.favorite : Icons.favorite_border,
+                                color: isFavorited ? Colors.red : AppColors.textDark,
                                 size: 20,
                               ),
                             ),
