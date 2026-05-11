@@ -1,0 +1,22 @@
+{
+    "sourceFile": "firestore.rules",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 1,
+            "patches": [
+                {
+                    "date": 1778407008950,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1778407015762,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -1,1 +1,10 @@\n-firestore.rules\n\\ No newline at end of file\n+rules_version = '2';\r\n+\r\n+service cloud.firestore {\r\n+  match /databases/{database}/documents {\r\n+    // Allow all authenticated users to read/write everything\r\n+    match /{document=**} {\r\n+      allow read, write: if request.auth != null;\r\n+    }\r\n+  }\r\n+}\r\n"
+                }
+            ],
+            "date": 1778407008950,
+            "name": "Commit-0",
+            "content": "firestore.rules"
+        }
+    ]
+}

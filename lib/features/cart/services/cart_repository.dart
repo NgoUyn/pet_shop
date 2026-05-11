@@ -3,11 +3,14 @@ import 'package:sqflite/sqflite.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../auth/services/auth_session.dart';
+import '../../profile/services/profile_repository.dart';
+import '../../notifications/services/notification_repository.dart';
 
 class CartProductEntry {
   CartProductEntry({
     required this.cartItemId,
     required this.productId,
+    required this.petId,
     required this.productName,
     required this.imageUrl,
     required this.unitPrice,
@@ -17,7 +20,8 @@ class CartProductEntry {
   });
 
   final int cartItemId;
-  final int productId;
+  final int? productId;
+  final int? petId;
   final String productName;
   final String? imageUrl;
   final double unitPrice;
@@ -25,13 +29,16 @@ class CartProductEntry {
   final DateTime addedAt;
   final int stockQuantity;
 
+  bool get isPet => petId != null;
+
   double get lineTotal => unitPrice * quantity;
 
   static CartProductEntry fromRow(Map<String, Object?> row) {
     return CartProductEntry(
       cartItemId: row['CartItemID'] as int,
-      productId: row['ProductID'] as int,
-      productName: (row['ProductName'] as String?) ?? '',
+      productId: row['ProductID'] as int?,
+      petId: row['PetID'] as int?,
+      productName: (row['ItemName'] as String?) ?? '',
       imageUrl: row['ImageURL'] as String?,
       unitPrice: (row['UnitPrice'] as num).toDouble(),
       quantity: (row['Quantity'] as int?) ?? 1,
@@ -128,7 +135,7 @@ class CartRepository {
     final rows = await db.query(
       'CartItem',
       columns: ['CartItemID'],
-      where: 'CartID = ? AND ProductID IS NOT NULL',
+      where: 'CartID = ?',
       whereArgs: [cartId],
     );
     cartCount.value = rows.length;
@@ -217,6 +224,73 @@ class CartRepository {
     await refreshCountForCurrentUser();
   }
 
+  Future<void> addPetToCart({required int petId}) async {
+    final userId = AuthSession.instance.currentUserId.value;
+    if (userId == null) {
+      throw StateError('Vui lòng đăng nhập để thêm vào giỏ hàng');
+    }
+
+    final db = await AppDatabase.instance;
+    final customerId = await _resolveCustomerId(userId);
+
+    await db.transaction((txn) async {
+      final cartId = await _ensureCartIdForCustomer(customerId, txnOrDb: txn);
+
+      final petRows = await txn.query(
+        'Pet',
+        columns: ['Price', 'IsActive'],
+        where: 'PetID = ?',
+        whereArgs: [petId],
+        limit: 1,
+      );
+
+      if (petRows.isEmpty) {
+        throw StateError('Không tìm thấy thú cưng để thêm vào giỏ hàng');
+      }
+
+      final isActive = (petRows.first['IsActive'] as int?) ?? 0;
+      if (isActive != 1) {
+        throw StateError('Thú cưng hiện không khả dụng');
+      }
+
+      final price = (petRows.first['Price'] as num?)?.toDouble();
+      if (price == null || price <= 0) {
+        throw StateError('Giá thú cưng không hợp lệ');
+      }
+
+      final existingRows = await txn.query(
+        'CartItem',
+        columns: ['CartItemID'],
+        where: 'CartID = ? AND PetID = ?',
+        whereArgs: [cartId, petId],
+        limit: 1,
+      );
+
+      if (existingRows.isNotEmpty) {
+        throw StateError('Thú cưng này đã có trong giỏ hàng');
+      }
+
+      final now = DateTime.now().toIso8601String();
+      await txn.insert('CartItem', {
+        'CartID': cartId,
+        'ProductID': null,
+        'PetID': petId,
+        'Quantity': 1,
+        'UnitPrice': price,
+        'AddedAt': now,
+      });
+
+      await txn.update(
+        'Cart',
+        {'UpdatedAt': now},
+        where: 'CartID = ?',
+        whereArgs: [cartId],
+      );
+    });
+
+    await refreshCountForCurrentUser();
+  }
+
   Future<void> updateQuantity(int cartItemId, int newQuantity) async {
     if (newQuantity <= 0) {
       await removeFromCart(cartItemId);
@@ -226,17 +300,24 @@ class CartRepository {
     final db = await AppDatabase.instance;
     await db.transaction((txn) async {
       final itemRows = await txn.rawQuery('''
-        SELECT ci.ProductID, p.StockQuantity 
-        FROM CartItem ci 
-        JOIN Product p ON ci.ProductID = p.ProductID 
+        SELECT ci.ProductID, ci.PetID, p.StockQuantity
+        FROM CartItem ci
+        LEFT JOIN Product p ON ci.ProductID = p.ProductID
         WHERE ci.CartItemID = ?
       ''', [cartItemId]);
 
       if (itemRows.isEmpty) throw StateError('Không tìm thấy sản phẩm trong giỏ');
 
-      final stock = (itemRows.first['StockQuantity'] as int?) ?? 0;
-      if (newQuantity > stock) {
-        throw StateError('Số lượng tồn kho không đủ (Hiện có: $stock)');
+      final isPet = itemRows.first['PetID'] != null;
+      if (isPet && newQuantity > 1) {
+        throw StateError('Thú cưng chỉ có thể mua 1 con');
+      }
+
+      if (!isPet) {
+        final stock = (itemRows.first['StockQuantity'] as int?) ?? 0;
+        if (newQuantity > stock) {
+          throw StateError('Số lượng tồn kho không đủ (Hiện có: $stock)');
+        }
       }
 
       await txn.update(
@@ -270,15 +351,20 @@ class CartRepository {
       SELECT
         ci.CartItemID,
         ci.ProductID,
-        p.ProductName,
+        ci.PetID,
+        COALESCE(p.ProductName, pet.PetName) AS ItemName,
         p.ImageURL,
-        p.StockQuantity,
+        CASE
+          WHEN ci.ProductID IS NOT NULL THEN COALESCE(p.StockQuantity, 0)
+          ELSE 1
+        END AS StockQuantity,
         ci.UnitPrice,
         ci.Quantity,
         ci.AddedAt
       FROM CartItem ci
-      JOIN Product p ON p.ProductID = ci.ProductID
-      WHERE ci.CartID = ? AND ci.ProductID IS NOT NULL
+      LEFT JOIN Product p ON p.ProductID = ci.ProductID
+      LEFT JOIN Pet pet ON pet.PetID = ci.PetID
+      WHERE ci.CartID = ?
       ORDER BY ci.AddedAt DESC, ci.CartItemID DESC
       ''',
       [cartId],
@@ -292,6 +378,7 @@ class CartRepository {
   Future<int> createPendingOrder({
     required String? shippingAddress,
     required bool useLoyaltyPoints,
+    List<int>? selectedCartItemIds,
   }) async {
     final userId = AuthSession.instance.currentUserId.value;
     if (userId == null) {
@@ -301,24 +388,34 @@ class CartRepository {
     final db = await AppDatabase.instance;
     final customerId = await _resolveCustomerId(userId);
 
-    return await db.transaction<int>((txn) async {
+    final invoiceId = await db.transaction<int>((txn) async {
       final cartId = await _ensureCartIdForCustomer(customerId, txnOrDb: txn);
+
+      String selectedWhere = '';
+      final selectedArgs = <Object?>[cartId];
+      if (selectedCartItemIds != null && selectedCartItemIds.isNotEmpty) {
+        selectedWhere = ' AND ci.CartItemID IN (${List.filled(selectedCartItemIds.length, '?').join(',')})';
+        selectedArgs.addAll(selectedCartItemIds);
+      }
 
       final cartItems = await txn.rawQuery(
         '''
         SELECT
           ci.CartItemID,
           ci.ProductID,
+          ci.PetID,
           ci.Quantity,
           ci.UnitPrice,
           p.ProductName,
-          p.StockQuantity
+          p.StockQuantity,
+          pet.PetName
         FROM CartItem ci
-        JOIN Product p ON p.ProductID = ci.ProductID
-        WHERE ci.CartID = ? AND ci.ProductID IS NOT NULL
+        LEFT JOIN Product p ON p.ProductID = ci.ProductID
+        LEFT JOIN Pet pet ON pet.PetID = ci.PetID
+        WHERE ci.CartID = ?$selectedWhere
         ORDER BY ci.AddedAt DESC, ci.CartItemID DESC
         ''',
-        [cartId],
+        selectedArgs,
       );
 
       if (cartItems.isEmpty) {
@@ -331,18 +428,21 @@ class CartRepository {
 
       // Validate items and compute totals
       for (final row in cartItems) {
-        if (row['ProductID'] == null) throw StateError('Một mục giỏ hàng thiếu ProductID');
+        if (row['ProductID'] == null && row['PetID'] == null) {
+          throw StateError('Một mục giỏ hàng không hợp lệ');
+        }
         if (row['Quantity'] == null) throw StateError('Một mục giỏ hàng thiếu Quantity');
 
         final stock = (row['StockQuantity'] as int?) ?? 0;
         final quantity = (row['Quantity'] as int?) ?? 0;
-        final productName = (row['ProductName'] as String?) ?? 'Sản phẩm';
+        final productName = (row['ProductName'] as String?) ?? (row['PetName'] as String?) ?? 'Sản phẩm';
+        final isProduct = row['ProductID'] != null;
 
         if (quantity <= 0) {
           throw StateError('Dữ liệu giỏ hàng không hợp lệ');
         }
 
-        if (stock < quantity) {
+        if (isProduct && stock < quantity) {
           throw StateError('Sản phẩm "$productName" không đủ tồn kho');
         }
 
@@ -381,6 +481,7 @@ class CartRepository {
         'ShippingAddress': shippingAddress,
         'PaymentMethod': 'Bank Transfer',
         'PaymentStatus': 'Unpaid',
+        'OrderStatus': 'Unpaid',
         'TotalAmount': totalAmount,
         'Notes': null,
         'CreatedAt': now,
@@ -394,17 +495,18 @@ class CartRepository {
       // Insert invoice details (no stock deduction)
       for (final row in cartItems) {
         final productId = row['ProductID'] as int?;
+        final petId = row['PetID'] as int?;
         final quantity = (row['Quantity'] as int?) ?? 1;
         final unitPrice = (row['UnitPrice'] as num).toDouble();
 
-        if (productId == null) {
-          throw StateError('ProductID null khi tạo InvoiceDetail');
+        if (productId == null && petId == null) {
+          throw StateError('Cart item không hợp lệ khi tạo InvoiceDetail');
         }
 
         await txn.insert('InvoiceDetail', {
           'InvoiceID': invoiceId,
           'ProductID': productId,
-          'PetID': null,
+          'PetID': petId,
           'Quantity': quantity,
           'UnitPrice': unitPrice,
         });
@@ -431,8 +533,12 @@ class CartRepository {
       // Clear cart items
       await txn.delete(
         'CartItem',
-        where: 'CartID = ? AND ProductID IS NOT NULL',
-        whereArgs: [cartId],
+        where: selectedCartItemIds != null && selectedCartItemIds.isNotEmpty
+            ? 'CartID = ? AND CartItemID IN (${List.filled(selectedCartItemIds.length, '?').join(',')})'
+            : 'CartID = ?',
+        whereArgs: selectedCartItemIds != null && selectedCartItemIds.isNotEmpty
+            ? <Object?>[cartId, ...selectedCartItemIds]
+            : [cartId],
       );
 
       await txn.update(
@@ -444,12 +550,27 @@ class CartRepository {
 
       return invoiceId;
     });
+
+    await refreshCountForCurrentUser();
+
+    try {
+      await NotificationRepository.instance.create(
+        type: 'order',
+        title: 'Đơn hàng chờ thanh toán',
+        content: 'Đơn hàng #$invoiceId đã được tạo, vui lòng hoàn tất thanh toán.',
+        referenceId: invoiceId,
+        referenceType: 'order',
+      );
+    } catch (_) {}
+
+    return invoiceId;
   }
 
   /// Updates an unpaid order to Paid status after successful payment.
   /// Deducts stock and awards loyalty points.
   Future<void> updateOrderToPaid(int invoiceId, {String? transactionCode}) async {
     final db = await AppDatabase.instance;
+    int? customerUserId;
 
     await db.transaction((txn) async {
       // Get invoice info
@@ -479,6 +600,12 @@ class CartRepository {
       final customerId = invoice['CustomerID'] as int;
       final totalAmount = (invoice['TotalAmount'] as num).toDouble();
       final now = DateTime.now().toIso8601String();
+
+      final customerRows = await txn.rawQuery(
+        'SELECT UserID FROM Customer WHERE CustomerID = ? LIMIT 1',
+        [customerId],
+      );
+      customerUserId = customerRows.isNotEmpty ? customerRows.first['UserID'] as int? : null;
 
       // Deduct stock for each item
       final detailRows = await txn.query(
@@ -536,6 +663,19 @@ class CartRepository {
         );
       }
     });
+
+    if (customerUserId != null) {
+      try {
+        await NotificationRepository.instance.create(
+          userId: customerUserId,
+          type: 'order',
+          title: 'Đơn hàng đang chuẩn bị',
+          content: 'Đơn hàng #$invoiceId đã thanh toán thành công và đang được chuẩn bị.',
+          referenceId: invoiceId,
+          referenceType: 'order',
+        );
+      } catch (_) {}
+    }
   }
 
   Future<CheckoutResult> checkoutCurrentUser({
@@ -544,10 +684,22 @@ class CartRepository {
     String? notes,
     bool useLoyaltyPoints = false,
     String? transactionCode,
+    List<int>? selectedCartItemIds,
   }) async {
     final userId = AuthSession.instance.currentUserId.value;
     if (userId == null) {
       throw StateError('Vui lòng đăng nhập để thanh toán');
+    }
+
+    final profile = await ProfileRepository.instance.getCurrentProfile();
+    final profilePhone = profile?.phone?.trim() ?? '';
+    final profileAddress = profile?.address?.trim() ?? '';
+    final resolvedShippingAddress = shippingAddress?.trim().isNotEmpty == true
+        ? shippingAddress!.trim()
+        : profileAddress;
+
+    if (profile == null || profilePhone.isEmpty || profileAddress.isEmpty || resolvedShippingAddress.isEmpty) {
+      throw StateError('Vui lòng cập nhật đầy đủ thông tin hồ sơ trước khi mua hàng');
     }
 
     final db = await AppDatabase.instance;
@@ -561,226 +713,217 @@ class CartRepository {
     var earnedPoints = 0;
 
     try {
-      // Diagnostic: print existing tables and schema for Invoice/InvoiceDetail
-      try {
-        final tables = await db.rawQuery("SELECT name FROM sqlite_master WHERE type='table';");
-        print('DB Tables: ${tables.map((r) => r['name']).toList()}');
-        final invInfo = await db.rawQuery("PRAGMA table_info('Invoice');");
-        print('Invoice schema: $invInfo');
-        final detInfo = await db.rawQuery("PRAGMA table_info('InvoiceDetail');");
-        print('InvoiceDetail schema: $detInfo');
-      } catch (e) {
-        print('Failed to read DB schema for diagnostics: $e');
-      }
-
       await db.transaction((txn) async {
-      final cartId = await _ensureCartIdForCustomer(customerId, txnOrDb: txn);
+        final cartId = await _ensureCartIdForCustomer(customerId, txnOrDb: txn);
 
-      final cartItems = await txn.rawQuery(
-        '''
-        SELECT
-          ci.CartItemID,
-          ci.ProductID,
-          ci.Quantity,
-          ci.UnitPrice,
-          p.ProductName,
-          p.StockQuantity
-        FROM CartItem ci
-        JOIN Product p ON p.ProductID = ci.ProductID
-        WHERE ci.CartID = ? AND ci.ProductID IS NOT NULL
-        ORDER BY ci.AddedAt DESC, ci.CartItemID DESC
-        ''',
-        [cartId],
-      );
-
-      print('Checkout: cartItems rows count=${cartItems.length}');
-      for (final r in cartItems) {
-        print('cartItem: $r');
-      }
-
-      if (cartItems.isEmpty) {
-        throw StateError('Giỏ hàng đang trống');
-      }
-
-      // Validate items and compute totals before creating the Invoice
-      for (final row in cartItems) {
-        if (row['ProductID'] == null) throw StateError('Một mục giỏ hàng thiếu ProductID');
-        if (row['Quantity'] == null) throw StateError('Một mục giỏ hàng thiếu Quantity');
-
-        final stock = (row['StockQuantity'] as int?) ?? 0;
-        final quantity = (row['Quantity'] as int?) ?? 0;
-        final productName = (row['ProductName'] as String?) ?? 'Sản phẩm';
-
-        if (quantity <= 0) {
-          throw StateError('Dữ liệu giỏ hàng không hợp lệ');
+        String selectedWhere = '';
+        final selectedArgs = <Object?>[cartId];
+        if (selectedCartItemIds != null && selectedCartItemIds.isNotEmpty) {
+          selectedWhere = ' AND ci.CartItemID IN (${List.filled(selectedCartItemIds.length, '?').join(',')})';
+          selectedArgs.addAll(selectedCartItemIds);
         }
 
-        if (stock < quantity) {
-          throw StateError('Sản phẩm "$productName" không đủ tồn kho');
-        }
-
-        final unitPrice = (row['UnitPrice'] as num).toDouble();
-        totalItems += quantity;
-        totalAmount += (quantity * unitPrice);
-      }
-
-      final customerRows = await txn.query(
-        'Customer',
-        columns: ['LoyaltyPoints'],
-        where: 'CustomerID = ?',
-        whereArgs: [customerId],
-        limit: 1,
-      );
-      final currentLoyaltyPoints = customerRows.isNotEmpty
-          ? ((customerRows.first['LoyaltyPoints'] as int?) ?? 0)
-          : 0;
-
-      if (useLoyaltyPoints && currentLoyaltyPoints >= 50) {
-        final redeemableBlocks = currentLoyaltyPoints ~/ 50;
-        final maxBlocksByAmount = (totalAmount / 5000).floor();
-        final blocksToUse = redeemableBlocks > maxBlocksByAmount
-            ? maxBlocksByAmount
-            : redeemableBlocks;
-        usedPoints = blocksToUse * 50;
-        discountAmount = blocksToUse * 5000.0;
-        totalAmount = totalAmount - discountAmount;
-      }
-
-      final now = DateTime.now().toIso8601String();
-      final isOnlinePayment = paymentMethod == 'Bank Transfer';
-      final invoicePaymentStatus = isOnlinePayment ? 'Paid' : 'Pending';
-
-      // Insert invoice with computed total amount
-      invoiceId = await txn.insert('Invoice', {
-        'CustomerID': customerId,
-        'ShippingAddress': shippingAddress,
-        'PaymentMethod': paymentMethod,
-        'PaymentStatus': invoicePaymentStatus,
-        'TotalAmount': totalAmount,
-        'Notes': notes,
-        'CreatedAt': now,
-        'UpdatedAt': null,
-      });
-
-      print('Created Invoice id=$invoiceId totalAmount=$totalAmount totalItems=$totalItems discountAmount=$discountAmount usedPoints=$usedPoints');
-
-      if (invoiceId <= 0) {
-        throw StateError('Không thể tạo đơn hàng, invoiceId không hợp lệ');
-      }
-
-      // Insert invoice details and decrement stock
-      for (final row in cartItems) {
-        final productId = row['ProductID'] as int?;
-        final quantity = (row['Quantity'] as int?) ?? 1;
-        final unitPrice = (row['UnitPrice'] as num).toDouble();
-
-        if (productId == null) {
-          throw StateError('ProductID null khi tạo InvoiceDetail');
-        }
-
-        await txn.insert('InvoiceDetail', {
-          'InvoiceID': invoiceId,
-          'ProductID': productId,
-          'PetID': null,
-          'Quantity': quantity,
-          'UnitPrice': unitPrice,
-        });
-
-        print('Inserted InvoiceDetail for productId=$productId qty=$quantity');
-
-        final affected = await txn.rawUpdate(
+        final cartItems = await txn.rawQuery(
           '''
-          UPDATE Product
-          SET StockQuantity = StockQuantity - ?
-          WHERE ProductID = ? AND StockQuantity >= ?
+          SELECT
+            ci.CartItemID,
+            ci.ProductID,
+            ci.PetID,
+            ci.Quantity,
+            ci.UnitPrice,
+            p.ProductName,
+            p.StockQuantity,
+            pet.PetName
+          FROM CartItem ci
+          LEFT JOIN Product p ON p.ProductID = ci.ProductID
+          LEFT JOIN Pet pet ON pet.PetID = ci.PetID
+          WHERE ci.CartID = ?$selectedWhere
+          ORDER BY ci.AddedAt DESC, ci.CartItemID DESC
           ''',
-          [quantity, productId, quantity],
+          selectedArgs,
         );
 
-        if (affected == 0) {
-          throw StateError('Không thể cập nhật tồn kho, vui lòng thử lại');
+        if (cartItems.isEmpty) {
+          throw StateError('Giỏ hàng đang trống');
         }
-      }
 
-      await txn.insert('Payment', {
-        'InvoiceID': invoiceId,
-        'Amount': totalAmount,
-        'Method': paymentMethod,
-        'Status': isOnlinePayment ? 'Paid' : 'Pending',
-        'TransactionCode': isOnlinePayment ? (transactionCode ?? 'QR-$invoiceId') : null,
-        'PaidAt': isOnlinePayment ? now : null,
-      });
+        // Validate items and compute totals before creating the Invoice
+        for (final row in cartItems) {
+          if (row['ProductID'] == null && row['PetID'] == null) {
+            throw StateError('Một mục giỏ hàng không hợp lệ');
+          }
+          if (row['Quantity'] == null) throw StateError('Một mục giỏ hàng thiếu Quantity');
 
-      // Compute and award loyalty points (1 point per 10,000 units)
-      try {
-        earnedPoints = (totalAmount / 10000).floor();
-        if (earnedPoints > 0) {
+          final stock = (row['StockQuantity'] as int?) ?? 0;
+          final quantity = (row['Quantity'] as int?) ?? 0;
+          final productName = (row['ProductName'] as String?) ?? (row['PetName'] as String?) ?? 'Sản phẩm';
+          final isProduct = row['ProductID'] != null;
+
+          if (quantity <= 0) {
+            throw StateError('Dữ liệu giỏ hàng không hợp lệ');
+          }
+
+          if (isProduct && stock < quantity) {
+            throw StateError('Sản phẩm "$productName" không đủ tồn kho');
+          }
+
+          final unitPrice = (row['UnitPrice'] as num).toDouble();
+          totalItems += quantity;
+          totalAmount += (quantity * unitPrice);
+        }
+
+        final customerRows = await txn.query(
+          'Customer',
+          columns: ['LoyaltyPoints'],
+          where: 'CustomerID = ?',
+          whereArgs: [customerId],
+          limit: 1,
+        );
+        final currentLoyaltyPoints = customerRows.isNotEmpty
+            ? ((customerRows.first['LoyaltyPoints'] as int?) ?? 0)
+            : 0;
+
+        if (useLoyaltyPoints && currentLoyaltyPoints >= 50) {
+          final redeemableBlocks = currentLoyaltyPoints ~/ 50;
+          final maxBlocksByAmount = (totalAmount / 5000).floor();
+          final blocksToUse = redeemableBlocks > maxBlocksByAmount
+              ? maxBlocksByAmount
+              : redeemableBlocks;
+          usedPoints = blocksToUse * 50;
+          discountAmount = blocksToUse * 5000.0;
+          totalAmount = totalAmount - discountAmount;
+        }
+
+        final now = DateTime.now().toIso8601String();
+        final isOnlinePayment = paymentMethod == 'Bank Transfer';
+        final invoicePaymentStatus = isOnlinePayment ? 'Paid' : 'Pending';
+
+        // Insert invoice with computed total amount
+        invoiceId = await txn.insert('Invoice', {
+          'CustomerID': customerId,
+          'ShippingAddress': resolvedShippingAddress,
+          'PaymentMethod': paymentMethod,
+          'PaymentStatus': invoicePaymentStatus,
+          'OrderStatus': 'Preparing',
+          'TotalAmount': totalAmount,
+          'Notes': notes,
+          'CreatedAt': now,
+          'UpdatedAt': null,
+        });
+
+        if (invoiceId <= 0) {
+          throw StateError('Không thể tạo đơn hàng, invoiceId không hợp lệ');
+        }
+
+        // Insert invoice details and decrement stock
+        for (final row in cartItems) {
+          final productId = row['ProductID'] as int?;
+          final petId = row['PetID'] as int?;
+          final quantity = (row['Quantity'] as int?) ?? 1;
+          final unitPrice = (row['UnitPrice'] as num).toDouble();
+
+          if (productId == null && petId == null) {
+            throw StateError('Cart item không hợp lệ khi tạo InvoiceDetail');
+          }
+
+          await txn.insert('InvoiceDetail', {
+            'InvoiceID': invoiceId,
+            'ProductID': productId,
+            'PetID': petId,
+            'Quantity': quantity,
+            'UnitPrice': unitPrice,
+          });
+
+          if (productId != null) {
+            final affected = await txn.rawUpdate(
+              '''
+              UPDATE Product
+              SET StockQuantity = StockQuantity - ?
+              WHERE ProductID = ? AND StockQuantity >= ?
+              ''',
+              [quantity, productId, quantity],
+            );
+
+            if (affected == 0) {
+              throw StateError('Không thể cập nhật tồn kho, vui lòng thử lại');
+            }
+          }
+        }
+
+        await txn.insert('Payment', {
+          'InvoiceID': invoiceId,
+          'Amount': totalAmount,
+          'Method': paymentMethod,
+          'Status': isOnlinePayment ? 'Paid' : 'Pending',
+          'TransactionCode': isOnlinePayment ? (transactionCode ?? 'QR-$invoiceId') : null,
+          'PaidAt': isOnlinePayment ? now : null,
+        });
+
+        // Compute and award loyalty points (1 point per 10,000 units)
+        try {
+          earnedPoints = (totalAmount / 10000).floor();
+          if (earnedPoints > 0) {
+            await txn.rawUpdate(
+              '''
+              UPDATE Customer
+              SET LoyaltyPoints = COALESCE(LoyaltyPoints, 0) + ?
+              WHERE CustomerID = ?
+              ''',
+              [earnedPoints, customerId],
+            );
+          }
+        } catch (e) {
+          // ignore
+        }
+
+        if (usedPoints > 0) {
           await txn.rawUpdate(
             '''
             UPDATE Customer
-            SET LoyaltyPoints = COALESCE(LoyaltyPoints, 0) + ?
+            SET LoyaltyPoints = COALESCE(LoyaltyPoints, 0) - ?
             WHERE CustomerID = ?
             ''',
-            [earnedPoints, customerId],
+            [usedPoints, customerId],
           );
         }
-      } catch (e) {
-        print('Failed to award loyalty points: $e');
-      }
 
-      if (usedPoints > 0) {
-        await txn.rawUpdate(
-          '''
-          UPDATE Customer
-          SET LoyaltyPoints = COALESCE(LoyaltyPoints, 0) - ?
-          WHERE CustomerID = ?
-          ''',
-          [usedPoints, customerId],
+        await txn.delete(
+          'CartItem',
+          where: selectedCartItemIds != null && selectedCartItemIds.isNotEmpty
+              ? 'CartID = ? AND CartItemID IN (${List.filled(selectedCartItemIds.length, '?').join(',')})'
+              : 'CartID = ?',
+          whereArgs: selectedCartItemIds != null && selectedCartItemIds.isNotEmpty
+              ? <Object?>[cartId, ...selectedCartItemIds]
+              : [cartId],
         );
-      }
 
-      await txn.delete(
-        'CartItem',
-        where: 'CartID = ? AND ProductID IS NOT NULL',
-        whereArgs: [cartId],
-      );
-
-      await txn.update(
-        'Cart',
-        {'UpdatedAt': now},
-        where: 'CartID = ?',
-        whereArgs: [cartId],
-      );
-    });
+        await txn.update(
+          'Cart',
+          {'UpdatedAt': now},
+          where: 'CartID = ?',
+          whereArgs: [cartId],
+        );
+      });
     } catch (e, st) {
       print('checkoutCurrentUser failed: $e');
       print(st.toString());
-      // Additional diagnostics
-      try {
-        final refs = await db.rawQuery("SELECT name, type, sql FROM sqlite_master WHERE sql LIKE '%Invoice_old%';");
-        print('sqlite_master refs to Invoice_old: $refs');
-      } catch (e2) {
-        print('failed to query sqlite_master for Invoice_old: $e2');
-      }
-
-      try {
-        final triggers = await db.rawQuery("SELECT name, type, sql FROM sqlite_master WHERE type IN ('trigger','view');");
-        print('All triggers/views: $triggers');
-      } catch (e3) {
-        print('failed to list triggers/views: $e3');
-      }
-
-      try {
-        final fk = await db.rawQuery("PRAGMA foreign_key_list('InvoiceDetail');");
-        print('InvoiceDetail foreign keys: $fk');
-      } catch (e4) {
-        print('failed to get foreign_key_list for InvoiceDetail: $e4');
-      }
-
       rethrow;
     }
 
     await refreshCountForCurrentUser();
+
+    // Create notification for the user
+    try {
+      final isOnlinePayment = paymentMethod == 'Bank Transfer';
+      final statusText = isOnlinePayment ? 'đang được chuẩn bị' : 'đã được tiếp nhận và đang chuẩn bị';
+      await NotificationRepository.instance.create(
+        type: 'order',
+        title: 'Đơn hàng đang chuẩn bị',
+        content: 'Đơn hàng #$invoiceId $statusText.',
+        referenceId: invoiceId,
+        referenceType: 'order',
+      );
+    } catch (_) {}
 
     return CheckoutResult(
       invoiceId: invoiceId,

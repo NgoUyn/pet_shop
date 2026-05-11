@@ -11,6 +11,7 @@ class OnlinePaymentPage extends StatefulWidget {
   final double payableAmount;
   final String? shippingAddress;
   final bool useLoyaltyPoints;
+  final List<int>? selectedCartItemIds;
 
   const OnlinePaymentPage({
     super.key,
@@ -19,6 +20,7 @@ class OnlinePaymentPage extends StatefulWidget {
     required this.payableAmount,
     this.shippingAddress,
     required this.useLoyaltyPoints,
+    this.selectedCartItemIds,
   });
 
   @override
@@ -26,16 +28,17 @@ class OnlinePaymentPage extends StatefulWidget {
 }
 
 class _OnlinePaymentPageState extends State<OnlinePaymentPage> with WidgetsBindingObserver {
-  PaymentLinkResponse? _paymentLink;
+  late PaymentLinkResponse? _paymentLink;
   bool _isLoading = true;
   String? _errorMessage;
   dynamic _orderId;
   Timer? _statusCheckTimer;
   Timer? _countdownTimer;
-  int _countdownSeconds = 120;
+  int _countdownSeconds = 120; // 2 phút
   int? _invoiceId;
   bool _paymentCompleted = false;
   WebViewController? _webViewController;
+  bool _webViewLoaded = false;
 
   @override
   void initState() {
@@ -55,18 +58,28 @@ class _OnlinePaymentPageState extends State<OnlinePaymentPage> with WidgetsBindi
     try {
       setState(() => _isLoading = true);
 
+      // Bước 1: Tạo đơn hàng với trạng thái Unpaid ngay lập tức
       _invoiceId = await CartRepository.instance.createPendingOrder(
         shippingAddress: widget.shippingAddress,
         useLoyaltyPoints: widget.useLoyaltyPoints,
+        selectedCartItemIds: widget.selectedCartItemIds,
       );
 
       _orderId = DateTime.now().millisecondsSinceEpoch;
-      final items = await CartRepository.instance.listProductEntriesForCurrentUser();
-      final orderItems = items.map((item) => OrderItem(
-        name: item.productName,
-        quantity: item.quantity,
-        price: item.unitPrice,
-      )).toList();
+
+        final allItems = await CartRepository.instance.listProductEntriesForCurrentUser();
+        final selected = widget.selectedCartItemIds;
+        final items = (selected != null && selected.isNotEmpty)
+          ? allItems.where((e) => selected.contains(e.cartItemId)).toList()
+          : allItems;
+
+      final orderItems = items
+          .map((item) => OrderItem(
+                name: item.productName,
+                quantity: item.quantity,
+                price: item.unitPrice,
+              ))
+          .toList();
 
       _paymentLink = await PaymentService.createPaymentLink(
         amount: widget.payableAmount,
@@ -75,11 +88,17 @@ class _OnlinePaymentPageState extends State<OnlinePaymentPage> with WidgetsBindi
         items: orderItems,
       );
 
-      if (mounted && _paymentLink != null) {
-        _initWebView(_paymentLink!.checkoutUrl);
-        _startCountdown();
-        _startStatusCheck();
+      if (mounted) {
         setState(() => _isLoading = false);
+
+        // Bắt đầu đếm ngược 2 phút
+        _startCountdown();
+
+        // Bắt đầu kiểm tra trạng thái
+        _startStatusCheck();
+
+        // Tạo WebView để load link thanh toán ngay trong app
+        _initWebView(_paymentLink!.checkoutUrl);
       }
     } catch (e) {
       if (mounted) {
@@ -96,16 +115,31 @@ class _OnlinePaymentPageState extends State<OnlinePaymentPage> with WidgetsBindi
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
         NavigationDelegate(
+          onPageStarted: (String url) {
+            print('WebView loading: $url');
+          },
+          onPageFinished: (String url) {
+            print('WebView loaded: $url');
+            if (mounted) {
+              setState(() => _webViewLoaded = true);
+            }
+          },
           onNavigationRequest: (NavigationRequest request) {
             final url = request.url.toLowerCase();
+
+            // Nếu URL chứa các từ khoá callback từ PayOS, tự động xử lý
             if (url.contains('success') || url.contains('paid')) {
+              // Thanh toán thành công - kiểm tra ngay
               _checkPaymentStatusNow();
               return NavigationDecision.prevent;
             }
+
             if (url.contains('cancel') || url.contains('cancelled') || url.contains('fail')) {
+              // Thanh toán thất bại hoặc bị hủy
               _checkPaymentStatusNow();
               return NavigationDecision.prevent;
             }
+
             return NavigationDecision.navigate;
           },
         ),
@@ -115,11 +149,33 @@ class _OnlinePaymentPageState extends State<OnlinePaymentPage> with WidgetsBindi
 
   void _startCountdown() {
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) { timer.cancel(); return; }
-      setState(() => _countdownSeconds--);
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _countdownSeconds--;
+      });
+
       if (_countdownSeconds <= 0) {
         timer.cancel();
-        _cancelPayment();
+        if (mounted && !_paymentCompleted) {
+          _statusCheckTimer?.cancel();
+          _statusCheckTimer = null;
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Đã hết thời gian thanh toán. Đơn hàng sẽ được giữ trong 24h.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+
+          Future.delayed(const Duration(seconds: 2), () {
+            if (mounted) {
+              Navigator.pop(context, {'invoiceId': _invoiceId, 'status': 'Unpaid'});
+            }
+          });
+        }
       }
     });
   }
@@ -132,40 +188,112 @@ class _OnlinePaymentPageState extends State<OnlinePaymentPage> with WidgetsBindi
 
   Future<void> _checkPaymentStatusNow() async {
     if (_paymentCompleted || _orderId == null) return;
+
     try {
       final status = await PaymentService.getPaymentStatus(_orderId);
+
       if (status.isPaid) {
-        await _handlePaymentSuccess();
+        if (mounted) {
+          _statusCheckTimer?.cancel();
+          _statusCheckTimer = null;
+          await _handlePaymentSuccess();
+        }
+      } else if (status.isCancelled || status.isFailed) {
+        if (mounted) {
+          _statusCheckTimer?.cancel();
+          _statusCheckTimer = null;
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Thanh toán bị hủy hoặc thất bại'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
       }
     } catch (e) {
-      debugPrint('Error: $e');
+      print('Error checking payment status: $e');
     }
   }
 
   Future<void> _handlePaymentSuccess() async {
     if (_paymentCompleted) return;
     _paymentCompleted = true;
-    _countdownTimer?.cancel();
-    _statusCheckTimer?.cancel();
 
-    if (_invoiceId != null) {
-      await CartRepository.instance.updateOrderToPaid(_invoiceId!);
-    }
+    try {
+      _countdownTimer?.cancel();
+      _countdownTimer = null;
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Thanh toán thành công!'), backgroundColor: Colors.green));
-      Navigator.pop(context, {'invoiceId': _invoiceId, 'status': 'Paid'});
+      if (_invoiceId != null) {
+        await CartRepository.instance.updateOrderToPaid(_invoiceId!);
+      }
+
+      if (mounted) {
+        _statusCheckTimer?.cancel();
+        _statusCheckTimer = null;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Thanh toán thành công!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+
+        await Future.delayed(const Duration(seconds: 2));
+
+        if (mounted) {
+          Navigator.pop(context, {'invoiceId': _invoiceId, 'status': 'Paid'});
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi: ${e.toString().replaceAll('StateError: ', '')}'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
     }
+  }
+
+  Future<void> _retryPayment() async {
+    _initializePayment();
   }
 
   Future<void> _cancelPayment() async {
-    _statusCheckTimer?.cancel();
-    _countdownTimer?.cancel();
-    if (mounted) Navigator.pop(context, {'invoiceId': _invoiceId, 'status': 'Unpaid'});
+    try {
+      if (_orderId != null) {
+        await PaymentService.cancelPayment(_orderId);
+      }
+    } catch (e) {
+      print('Error canceling payment: $e');
+    }
+
+    if (mounted) {
+      _statusCheckTimer?.cancel();
+      _statusCheckTimer = null;
+      _countdownTimer?.cancel();
+      _countdownTimer = null;
+      Navigator.pop(context, {'invoiceId': _invoiceId, 'status': 'Unpaid'});
+    }
   }
 
   String _formatPrice(double value) {
-    return '${value.toStringAsFixed(0).replaceAllMapped(RegExp(r"(\d{1,3})(?=(\d{3})+(?!\d))"), (Match m) => "${m[1]}.")}đ';
+    final formatted = value.toStringAsFixed(0);
+    final buffer = StringBuffer();
+    for (var i = 0; i < formatted.length; i++) {
+      final fromEnd = formatted.length - i;
+      buffer.write(formatted[i]);
+      if (fromEnd > 1 && fromEnd % 3 == 1) buffer.write('.');
+    }
+    return '${buffer.toString()}đ';
+  }
+
+  String get _formattedCountdown {
+    final minutes = _countdownSeconds ~/ 60;
+    final seconds = _countdownSeconds % 60;
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
   @override
@@ -178,42 +306,144 @@ class _OnlinePaymentPageState extends State<OnlinePaymentPage> with WidgetsBindi
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, result) async {
-        if (didPop) return;
+    return WillPopScope(
+      onWillPop: () async {
         await _cancelPayment();
+        return false;
       },
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Thanh toán PayOS'),
+          backgroundColor: AppColors.white,
+          foregroundColor: AppColors.textDark,
+          elevation: 0,
+          automaticallyImplyLeading: false,
           actions: [
-            Center(child: Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: Text('${_countdownSeconds ~/ 60}:${(_countdownSeconds % 60).toString().padLeft(2, '0')}', 
-                style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.orange)),
-            ))
+            // Countdown timer ở AppBar
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.timer,
+                      size: 18,
+                      color: _countdownSeconds <= 30 ? Colors.red : Colors.orange,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _formattedCountdown,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: _countdownSeconds <= 30 ? Colors.red : Colors.orange.shade800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
         body: _isLoading
-            ? const Center(child: CircularProgressIndicator())
+            ? const Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    CircularProgressIndicator(),
+                    SizedBox(height: 16),
+                    Text('Đang tạo đơn hàng và link thanh toán...'),
+                  ],
+                ),
+              )
             : _errorMessage != null
-                ? Center(child: Text(_errorMessage!))
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                          const SizedBox(height: 16),
+                          Text(
+                            _errorMessage!,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontSize: 16),
+                          ),
+                          const SizedBox(height: 24),
+                          ElevatedButton(
+                            onPressed: _retryPayment,
+                            child: const Text('Thử lại'),
+                          ),
+                          const SizedBox(height: 8),
+                          TextButton(
+                            onPressed: _cancelPayment,
+                            child: const Text('Hủy'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
                 : Column(
                     children: [
-                      Expanded(child: _webViewController != null ? WebViewWidget(controller: _webViewController!) : const SizedBox()),
+                      // WebView thanh toán - chiếm phần lớn màn hình
+                      Expanded(
+                        child: _webViewController != null
+                            ? WebViewWidget(controller: _webViewController!)
+                            : const Center(child: CircularProgressIndicator()),
+                      ),
+
+                      // Thanh bottom với thông tin đơn hàng
                       Container(
-                        padding: const EdgeInsets.all(16),
+                        padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
                           color: Colors.white,
-                          boxShadow: [BoxShadow(color: Colors.black.withAlpha(25), blurRadius: 4, offset: const Offset(0, -2))],
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text('Tổng: ${_formatPrice(widget.payableAmount)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                            TextButton(onPressed: _cancelPayment, child: const Text('Hủy', style: TextStyle(color: Colors.red))),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 4,
+                              offset: const Offset(0, -2),
+                            ),
                           ],
+                        ),
+                        child: SafeArea(
+                          top: false,
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      'Mã đơn hàng: #$_invoiceId',
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Tổng: ${_formatPrice(widget.payableAmount)}',
+                                      style: const TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.bold,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              TextButton(
+                                onPressed: _cancelPayment,
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Colors.red,
+                                ),
+                                child: const Text('Hủy'),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ],

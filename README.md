@@ -121,3 +121,12 @@ WHERE PetID IS NOT NULL;
 
 
 & "D:\MyData\Android\Sdk\platform-tools\adb.exe" shell am start -W -a android.intent.action.VIEW -c android.intent.category.BROWSABLE -d "petshop://verify-email?token=6de0d063ab369860395b83bcf4bf688ccb74df2cf06bd24b717e9135249ab987"
+
+
+task 1: mất trang lịch sử mua hàng của khách hàng rồi - khi click vào lịch sử mua hàng ở profile thì mở trang lịch sử mua hàng 
+task 2: mỗi khi đơn hàng được có cập nhật (đặt thành công nhưng chưa thanh toán, đang chuẩn bị, đang vận chuẩn, đã hoàn tất) đều đưa vào thông báo và cập nhật badge thông báo trên header của khách (xoá những thông báo mặc định vô nghĩa đi)
+task 3: cho phép bấm vào thông báo mở trang chi tiết thông báo
+task 4: thêm icon yêu thích và icon giỏ hàng vào toàn bộ sản phẩm và pet. Khi click vào thì thêm vào danh sách tương ứng
+task 5: gắn và mở trang yêu thích, cho phép xoá sản phẩm khỏi danh sách yêu thích (hỏi trước khi xoá)
+task 6: khi khách hàng click vào dấu trừ ở giỏ hàng (giảm số lượng sản phẩm), nếu số lượng sản phẩm đó ở giỏ hàng là 1 thì xoá sản phẩm (hỏi trước khi xoá)
+task 7: cho phép khách hàng chọn mua/xoá list sản phẩm chứ không phải mua toàn bộ giỏ hàng

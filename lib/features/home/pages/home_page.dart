@@ -1,14 +1,18 @@
-import 'dart:io';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/cloudinary_helper.dart';
+import '../../auth/pages/login_page.dart';
+import '../../auth/services/auth_session.dart';
+import '../../cart/services/cart_repository.dart';
+import '../../favorites/services/favorite_repository.dart';
 import '../services/pet_repository.dart';
 import '../services/product_repository.dart';
 import 'pet_list_page.dart';
+import 'pet_detail_page.dart';
 import 'product_detail_page.dart';
 import 'shop_list_page.dart';
-import '../widgets/pet_card.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -21,38 +25,107 @@ class _HomePageState extends State<HomePage> {
   late Future<_HomeData> _homeDataFuture;
   String _selectedPetFilter = 'Tất cả';
   String _selectedProductFilter = 'Thức ăn';
-
-  void _reloadHomeData() {
-    if (!mounted) return;
-    setState(() {
-      _homeDataFuture = _loadHomeData();
-    });
-  }
+  Set<int> _favoriteProductIds = {};
+  Set<int> _favoritePetIds = {};
+  List<_RecommendedItem> _suggestedItems = [];
 
   @override
   void initState() {
     super.initState();
     _homeDataFuture = _loadHomeData();
-    PetRepository.instance.changeToken.addListener(_reloadHomeData);
-    ProductRepository.instance.changeToken.addListener(_reloadHomeData);
-  }
-
-  @override
-  void dispose() {
-    PetRepository.instance.changeToken.removeListener(_reloadHomeData);
-    ProductRepository.instance.changeToken.removeListener(_reloadHomeData);
-    super.dispose();
   }
 
   Future<_HomeData> _loadHomeData() async {
     final results = await Future.wait([
       ProductRepository.instance.listActiveProducts(limit: 50),
       PetRepository.instance.listActivePets(limit: 50),
+      FavoriteRepository.instance.listFavoriteProducts(),
+      FavoriteRepository.instance.listFavoritePets(),
     ]);
+    _favoriteProductIds = (results[2] as List<ProductItem>)
+        .map((item) => item.productId)
+        .toSet();
+    _favoritePetIds = (results[3] as List<PetItem>)
+        .map((item) => item.petId)
+        .toSet();
+    _suggestedItems = _buildSuggestedItems(
+      results[0] as List<ProductItem>,
+      results[1] as List<PetItem>,
+    );
     return _HomeData(
       products: results[0] as List<ProductItem>,
       pets: results[1] as List<PetItem>,
     );
+  }
+
+  Future<void> _ensureLoggedIn() async {
+    if (AuthSession.instance.currentUserId.value != null) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+    );
+  }
+
+  Future<void> _addProductToCart(ProductItem item) async {
+    await _ensureLoggedIn();
+    if (AuthSession.instance.currentUserId.value == null) return;
+    try {
+      await CartRepository.instance.addProductToCart(productId: item.productId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã thêm vào giỏ hàng')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))));
+    }
+  }
+
+  Future<void> _toggleProductFavorite(ProductItem item) async {
+    await _ensureLoggedIn();
+    if (AuthSession.instance.currentUserId.value == null) return;
+    try {
+      await FavoriteRepository.instance.toggleProductFavorite(item.productId);
+      setState(() {
+        if (_favoriteProductIds.contains(item.productId)) {
+          _favoriteProductIds.remove(item.productId);
+        } else {
+          _favoriteProductIds.add(item.productId);
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))));
+    }
+  }
+
+  Future<void> _addPetToCart(PetItem item) async {
+    await _ensureLoggedIn();
+    if (AuthSession.instance.currentUserId.value == null) return;
+    try {
+      await CartRepository.instance.addPetToCart(petId: item.petId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã thêm thú cưng vào giỏ')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))));
+    }
+  }
+
+  Future<void> _togglePetFavorite(PetItem item) async {
+    await _ensureLoggedIn();
+    if (AuthSession.instance.currentUserId.value == null) return;
+    try {
+      await FavoriteRepository.instance.togglePetFavorite(item.petId);
+      setState(() {
+        if (_favoritePetIds.contains(item.petId)) {
+          _favoritePetIds.remove(item.petId);
+        } else {
+          _favoritePetIds.add(item.petId);
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))));
+    }
   }
 
   String _formatPrice(double value) {
@@ -107,8 +180,9 @@ class _HomePageState extends State<HomePage> {
                 final data = snapshot.data;
                 if (data == null) return const SizedBox();
 
-                final suggestedItems = _buildSuggestedItems(data.products, data.pets);
+                final suggestedItems = _suggestedItems;
                 final filteredPets = _filterPets(data.pets, _selectedPetFilter);
+                final filteredProducts = _filterProducts(data.products, _selectedProductFilter);
 
                 return Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -119,16 +193,13 @@ class _HomePageState extends State<HomePage> {
                       onAction: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ShopListPage())),
                     ),
                     SizedBox(
-                      height: 248,
+                      height: 220,
                       child: ListView.separated(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         scrollDirection: Axis.horizontal,
                         itemCount: suggestedItems.length,
-                        separatorBuilder: (context, index) => const SizedBox(width: 12),
-                        itemBuilder: (context, index) => SizedBox(
-                          width: 172,
-                          child: _buildHomeItemCard(suggestedItems[index]),
-                        ),
+                        separatorBuilder: (_, __) => const SizedBox(width: 12),
+                        itemBuilder: (context, index) => SizedBox(width: 165, child: _buildSuggestionCard(suggestedItems[index])),
                       ),
                     ),
 
@@ -142,47 +213,33 @@ class _HomePageState extends State<HomePage> {
                     _buildPetFilterRow(),
                     const SizedBox(height: 16),
                     if (filteredPets.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
-                        child: GridView.builder(
-                          shrinkWrap: true,
-                          physics: const NeverScrollableScrollPhysics(),
-                          itemCount: min(4, filteredPets.length),
-                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 2,
-                            crossAxisSpacing: 12,
-                            mainAxisSpacing: 12,
-                            childAspectRatio: 0.74,
-                          ),
-                          itemBuilder: (context, index) => _buildPetCard(filteredPets[index]),
-                        ),
-                      )
+                      ...filteredPets.take(3).map(_buildPetRow)
                     else
                       const Center(child: Padding(padding: EdgeInsets.all(32), child: Text('Chưa có thú cưng phù hợp'))),
 
                     const SizedBox(height: 24),
 
-                    // Sản phẩm gợi ý Section
+                    // Sản phẩm gợi ý Section (3 cột như ảnh mẫu)
                     _buildSectionHeader(
                       'Sản phẩm gợi ý',
                       onAction: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ShopListPage())),
                     ),
                     _buildProductFilterRow(),
                     const SizedBox(height: 16),
-                    if (data.products.isNotEmpty)
+                    if (filteredProducts.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16),
                         child: GridView.builder(
                           shrinkWrap: true,
                           physics: const NeverScrollableScrollPhysics(),
-                          itemCount: min(6, data.products.length),
+                          itemCount: min(6, filteredProducts.length),
                           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                             crossAxisCount: 3,
                             crossAxisSpacing: 12,
                             mainAxisSpacing: 24,
                             childAspectRatio: 0.7,
                           ),
-                          itemBuilder: (context, index) => _buildProductTile(data.products[index]),
+                          itemBuilder: (context, index) => _buildProductTile(filteredProducts[index]),
                         ),
                       )
                     else
@@ -269,25 +326,117 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  Widget _buildPetCard(PetItem item) {
-    return PetCard(
-      item: item,
-      formatPrice: _formatPrice,
-      onTap: () => showPetDetailSheet(context, item, _formatPrice),
+  Widget _buildPetRow(PetItem item) {
+    final isFavorited = _favoritePetIds.contains(item.petId);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PetDetailPage(pet: item),
+            ),
+          );
+        },
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+          Container(
+            width: 72, height: 72,
+            decoration: const BoxDecoration(color: Colors.transparent, shape: BoxShape.circle),
+            child: const Center(child: Text('🐕', style: TextStyle(fontSize: 32))),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Expanded(child: Text('${item.petName} — ${item.description?.contains('đực') == true ? "đực" : "cái"}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w500, fontFamily: 'Times New Roman'))),
+                    Text(item.price != null ? _formatPrice(item.price!) : '-', style: const TextStyle(fontSize: 18, color: Color(0xFF5BAA7C), fontFamily: 'Times New Roman')),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text('3 tháng · Tiêm phòng đủ · Sổ y bạ', style: const TextStyle(color: Color(0xFF666666), fontSize: 14, fontFamily: 'Times New Roman')),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _togglePetFavorite(item),
+                      icon: Icon(
+                        isFavorited ? Icons.favorite : Icons.favorite_border,
+                        color: isFavorited ? Colors.red : null,
+                      ),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => _addPetToCart(item),
+                      icon: const Icon(Icons.add_shopping_cart_outlined),
+                    ),
+                  ],
+                ),
+                Wrap(
+                  spacing: 8, runSpacing: 8,
+                  children: const [
+                    _TagPill(label: 'Thân thiện', color: Color(0xFFD8EEE4), textColor: Color(0xFF3E7C63)),
+                    _TagPill(label: 'Đã tẩy giun', color: Color(0xFFD8EEE4), textColor: Color(0xFF3E7C63)),
+                    _TagPill(label: 'Còn 2 con', color: Color(0xFFF5E8C9), textColor: Color(0xFF8A6A23)),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          ],
+        ),
+      ),
     );
   }
 
   Widget _buildProductTile(ProductItem item) {
+    final isFavorited = _favoriteProductIds.contains(item.productId);
     return InkWell(
       onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ProductDetailPage(product: item))),
-      child: _SquareHomeCard(
-        image: item.imageUrl != null && item.imageUrl!.isNotEmpty
-            ? CachedNetworkImage(imageUrl: item.imageUrl!, errorWidget: (context, url, error) => const Icon(Icons.image, size: 40))
-            : Text(_productEmoji(item.productName), style: const TextStyle(fontSize: 40)),
-        title: item.productName,
-        subtitle: '',
-        price: _formatPrice(item.price),
-        badges: const [],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+              alignment: Alignment.center,
+              child: item.imageUrl != null && item.imageUrl!.isNotEmpty
+                  ? CachedNetworkImage(imageUrl: item.imageUrl!, errorWidget: (context, url, error) => const Icon(Icons.image, size: 40))
+                  : Text(_productEmoji(item.productName), style: const TextStyle(fontSize: 40)),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(item.productName, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontFamily: 'Times New Roman')),
+          const SizedBox(height: 4),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _toggleProductFavorite(item),
+                icon: Icon(
+                  isFavorited ? Icons.favorite : Icons.favorite_border,
+                  size: 20,
+                  color: isFavorited ? Colors.red : null,
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                onPressed: () => _addProductToCart(item),
+                icon: const Icon(Icons.add_shopping_cart_outlined, size: 20),
+              ),
+            ],
+          ),
+          Text(_formatPrice(item.price), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Color(0xFF5BAA7C), fontFamily: 'Times New Roman')),
+        ],
       ),
     );
   }
@@ -300,68 +449,79 @@ class _HomePageState extends State<HomePage> {
     return '🧸';
   }
 
-  Widget _buildHomeItemCard(_RecommendedItem item) {
+  Widget _buildSuggestionCard(_RecommendedItem item) {
     String name = '';
     String priceStr = '-';
     String? imageUrl;
     bool isPet = item.kind == _RecommendedKind.pet;
-    List<_CardBadge> badges = const [];
+    final isProductFavorited = !isPet && _favoriteProductIds.contains(item.product!.productId);
+    final isPetFavorited = isPet && _favoritePetIds.contains(item.pet!.petId);
 
     if (isPet) {
       name = item.pet!.petName;
       priceStr = item.pet!.price != null ? _formatPrice(item.pet!.price!) : '-';
-      imageUrl = item.pet!.imageUrl;
-      badges = [
-        _CardBadge(label: item.pet!.age != null ? '${item.pet!.age} tháng' : 'Chưa có tuổi', isPrimary: true),
-        _CardBadge(label: item.pet!.isDewormed ? 'Đã tẩy giun' : 'Chưa tẩy giun'),
-        _CardBadge(label: item.pet!.isVaccinated ? 'Đã tiêm phòng' : 'Chưa tiêm phòng'),
-      ];
     } else {
       name = item.product!.productName;
       priceStr = _formatPrice(item.product!.price);
       imageUrl = item.product!.imageUrl;
     }
 
-    return _SquareHomeCard(
-      image: isPet
-          ? _buildPreviewImage(imageUrl, fallback: const Center(child: Text('🐶', style: TextStyle(fontSize: 44))))
-          : _buildPreviewImage(imageUrl, fallback: const Icon(Icons.image)),
-      title: name,
-      subtitle: isPet && item.pet!.species.isNotEmpty ? item.pet!.species : 'Phụ kiện',
-      price: priceStr,
-      badges: badges,
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () {
+        if (isPet) {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => PetDetailPage(pet: item.pet!)));
+        } else {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => ProductDetailPage(product: item.product!)));
+        }
+      },
+      child: Container(
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)]),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+          Expanded(
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+              child: isPet 
+                ? Container(color: const Color(0xFFF9FAFB), alignment: Alignment.center, child: const Text('🐶', style: TextStyle(fontSize: 44)))
+                : CachedNetworkImage(imageUrl: imageUrl ?? '', fit: BoxFit.cover, width: double.infinity, errorWidget: (_,__,___) => const Icon(Icons.image)),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 15, fontFamily: 'Times New Roman')),
+                const SizedBox(height: 4),
+                Text(priceStr, style: const TextStyle(fontSize: 15, color: Color(0xFF5BAA7C), fontWeight: FontWeight.bold, fontFamily: 'Times New Roman')),
+                Row(
+                  children: [
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => isPet ? _togglePetFavorite(item.pet!) : _toggleProductFavorite(item.product!),
+                      icon: Icon(
+                        isPet ? (isPetFavorited ? Icons.favorite : Icons.favorite_border)
+                          : (isProductFavorited ? Icons.favorite : Icons.favorite_border),
+                        size: 20,
+                        color: (isPet ? isPetFavorited : isProductFavorited) ? Colors.red : null,
+                      ),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => isPet ? _addPetToCart(item.pet!) : _addProductToCart(item.product!),
+                      icon: const Icon(Icons.add_shopping_cart_outlined, size: 20),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          ],
+        ),
+      ),
     );
-  }
-
-  Widget _buildPreviewImage(String? imageUrl, {double? width, double? height, required Widget fallback}) {
-    final normalized = (imageUrl ?? '').trim();
-    if (normalized.isEmpty) {
-      return Container(
-        width: width,
-        height: height,
-        color: const Color(0xFFF9FAFB),
-        alignment: Alignment.center,
-        child: fallback,
-      );
-    }
-
-    final image = normalized.startsWith('http://') || normalized.startsWith('https://')
-        ? CachedNetworkImage(
-            imageUrl: normalized,
-            width: width,
-            height: height,
-            fit: BoxFit.cover,
-            errorWidget: (_, __, ___) => fallback,
-          )
-        : Image.file(
-            File(normalized),
-            width: width,
-            height: height,
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => fallback,
-          );
-
-    return image;
   }
 
   List<PetItem> _filterPets(List<PetItem> items, String filter) {
@@ -378,94 +538,14 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
-class _SquareHomeCard extends StatelessWidget {
-  const _SquareHomeCard({required this.image, required this.title, required this.subtitle, required this.price, required this.badges});
-
-  final Widget image;
-  final String title;
-  final String subtitle;
-  final String price;
-  final List<_CardBadge> badges;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4))],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Container(
-              decoration: const BoxDecoration(
-                color: Color(0xFFF9FAFB),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-              ),
-              alignment: Alignment.center,
-              child: FittedBox(fit: BoxFit.scaleDown, child: image),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 10, 10, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 15, fontFamily: 'Times New Roman'),
-                ),
-                if (subtitle.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 12, color: Color(0xFF666666), fontFamily: 'Times New Roman'),
-                  ),
-                ],
-                const SizedBox(height: 6),
-                Text(
-                  price,
-                  style: const TextStyle(fontSize: 15, color: Color(0xFF5BAA7C), fontWeight: FontWeight.bold, fontFamily: 'Times New Roman'),
-                ),
-                if (badges.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: badges,
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _CardBadge extends StatelessWidget {
-  const _CardBadge({required this.label, this.accent, this.textColor, this.isPrimary = false});
-
-  final String label;
-  final Color? accent;
-  final Color? textColor;
-  final bool isPrimary;
-
-  @override
-  Widget build(BuildContext context) {
-    final background = accent ?? (isPrimary ? const Color(0xFFD8EEE4) : const Color(0xFFF5E8C9));
-    final foreground = textColor ?? (isPrimary ? const Color(0xFF3E7C63) : const Color(0xFF8A6A23));
+class _TagPill extends StatelessWidget {
+  const _TagPill({required this.label, required this.color, required this.textColor});
+  final String label; final Color color; final Color textColor;
+  @override Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(color: background, borderRadius: BorderRadius.circular(8)),
-      child: Text(label, style: TextStyle(color: foreground, fontSize: 12, fontWeight: FontWeight.w500, fontFamily: 'Times New Roman')),
+      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(6)),
+      child: Text(label, style: TextStyle(color: textColor, fontSize: 12, fontWeight: FontWeight.w500, fontFamily: 'Times New Roman')),
     );
   }
 }

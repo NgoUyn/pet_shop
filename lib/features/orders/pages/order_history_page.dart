@@ -259,7 +259,7 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
                           const SizedBox(width: 6),
                           Expanded(
                             child: Text(
-                              item.productName ?? 'Sản phẩm',
+                              item.displayName,
                               style: const TextStyle(fontSize: 13),
                               overflow: TextOverflow.ellipsis,
                             ),
@@ -387,7 +387,7 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
                           children: [
                             Expanded(
                               child: Text(
-                                item.productName ?? 'Sản phẩm',
+                                item.displayName,
                                 style: const TextStyle(fontSize: 14),
                               ),
                             ),

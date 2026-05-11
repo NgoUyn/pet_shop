@@ -1,10 +1,9 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../auth/pages/login_page.dart';
 import '../../auth/services/auth_session.dart';
 import '../../cart/services/cart_repository.dart';
+import '../../favorites/services/favorite_repository.dart';
 import 'product_detail_page.dart';
 import '../services/product_repository.dart';
 
@@ -17,30 +16,27 @@ class ShopListPage extends StatefulWidget {
 
 class _ShopListPageState extends State<ShopListPage> {
   late Future<List<ProductItem>> _future;
-
-  void _handleProductsChanged() {
-    if (!mounted) return;
-    setState(() {
-      _future = ProductRepository.instance.listActiveProducts();
-    });
-  }
+  Set<int> _favoriteProductIds = {};
 
   @override
   void initState() {
     super.initState();
     _future = ProductRepository.instance.listActiveProducts();
-    ProductRepository.instance.changeToken.addListener(_handleProductsChanged);
-  }
-
-  @override
-  void dispose() {
-    ProductRepository.instance.changeToken.removeListener(_handleProductsChanged);
-    super.dispose();
+    _loadFavorites();
   }
 
   void _reload() {
     setState(() {
       _future = ProductRepository.instance.listActiveProducts();
+    });
+    _loadFavorites();
+  }
+
+  Future<void> _loadFavorites() async {
+    final favorites = await FavoriteRepository.instance.listFavoriteProducts();
+    if (!mounted) return;
+    setState(() {
+      _favoriteProductIds = favorites.map((item) => item.productId).toSet();
     });
   }
 
@@ -67,23 +63,8 @@ class _ShopListPageState extends State<ShopListPage> {
       );
     }
 
-    if (normalized.startsWith('http://') || normalized.startsWith('https://')) {
-      return Image.network(
-        normalized,
-        width: double.infinity,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          return Container(
-            color: AppColors.background,
-            alignment: Alignment.center,
-            child: const Icon(Icons.broken_image_outlined, color: AppColors.textLight, size: 44),
-          );
-        },
-      );
-    }
-
-    return Image.file(
-      File(normalized),
+    return Image.network(
+      normalized,
       width: double.infinity,
       fit: BoxFit.cover,
       errorBuilder: (context, error, stackTrace) {
@@ -138,7 +119,35 @@ class _ShopListPageState extends State<ShopListPage> {
     }
   }
 
+  Future<void> _toggleFavorite(ProductItem item) async {
+    final userId = AuthSession.instance.currentUserId.value;
+    if (userId == null) {
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+      );
+      if (!mounted || AuthSession.instance.currentUserId.value == null) return;
+    }
+
+    try {
+      await FavoriteRepository.instance.toggleProductFavorite(item.productId);
+      setState(() {
+        if (_favoriteProductIds.contains(item.productId)) {
+          _favoriteProductIds.remove(item.productId);
+        } else {
+          _favoriteProductIds.add(item.productId);
+        }
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))),
+      );
+    }
+  }
+
   Widget _buildProductCard(ProductItem item) {
+    final isFavorited = _favoriteProductIds.contains(item.productId);
     return Container(
       decoration: BoxDecoration(
         color: AppColors.white,
@@ -157,21 +166,42 @@ class _ShopListPageState extends State<ShopListPage> {
                   Positioned(
                     right: 6,
                     top: 6,
-                    child: Material(
-                      color: AppColors.white,
-                      borderRadius: BorderRadius.circular(999),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(999),
-                        onTap: () => _addToCart(item),
-                        child: const Padding(
-                          padding: EdgeInsets.all(8),
-                          child: Icon(
-                            Icons.add_shopping_cart_outlined,
-                            color: AppColors.textDark,
-                            size: 20,
+                    child: Column(
+                      children: [
+                        Material(
+                          color: AppColors.white,
+                          borderRadius: BorderRadius.circular(999),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(999),
+                            onTap: () => _toggleFavorite(item),
+                            child: Padding(
+                              padding: const EdgeInsets.all(8),
+                              child: Icon(
+                                isFavorited ? Icons.favorite : Icons.favorite_border,
+                                color: isFavorited ? Colors.red : AppColors.textDark,
+                                size: 20,
+                              ),
+                            ),
                           ),
                         ),
-                      ),
+                        const SizedBox(height: 6),
+                        Material(
+                          color: AppColors.white,
+                          borderRadius: BorderRadius.circular(999),
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(999),
+                            onTap: () => _addToCart(item),
+                            child: const Padding(
+                              padding: EdgeInsets.all(8),
+                              child: Icon(
+                                Icons.add_shopping_cart_outlined,
+                                color: AppColors.textDark,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ],

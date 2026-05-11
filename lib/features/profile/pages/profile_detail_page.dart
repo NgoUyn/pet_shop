@@ -220,15 +220,15 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                   validator: (value) {
                     final normalized = value?.trim() ?? '';
                     if (normalized.isEmpty) {
-                      return null;
+                      return 'Vui lòng nhập số điện thoại';
                     }
 
                     if (!RegExp(r'^[0-9]+$').hasMatch(normalized)) {
                       return 'Số điện thoại không được chứa chữ hoặc ký tự đặc biệt';
                     }
 
-                    if (normalized.length < 8 || normalized.length > 15) {
-                      return 'Số điện thoại không hợp lệ';
+                    if (normalized.length < 10 || normalized.length > 10 || !normalized.startsWith('0')) {
+                      return 'Số điện thoại phải gồm 10 số và bắt đầu bằng 0';
                     }
                     return null;
                   },

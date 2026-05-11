@@ -1,0 +1,22 @@
+{
+    "sourceFile": "lib/core/db/migrations/migration_v10_chat.dart",
+    "activeCommit": 0,
+    "commits": [
+        {
+            "activePatchIndex": 1,
+            "patches": [
+                {
+                    "date": 1778409012434,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1778409068750,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -24,32 +24,5 @@\n     'CREATE INDEX IF NOT EXISTS idx_chatmessage_receiver_is_read_created_at ON ChatMessage(ReceiverUserID, IsRead, CreatedAt);',\r\n   );\r\n \r\n   print('migrateV10: done');\r\n-}import 'package:sqflite/sqflite.dart';\r\n-\r\n-Future<void> migrateV10Chat(Database db) async {\r\n-  print('Running migrateV10Chat...');\r\n-\r\n-  await db.execute('''\r\n-    CREATE TABLE IF NOT EXISTS ChatMessage (\r\n-      ChatMessageID INTEGER PRIMARY KEY AUTOINCREMENT,\r\n-      SenderUserID INTEGER NOT NULL,\r\n-      ReceiverUserID INTEGER NOT NULL,\r\n-      Content TEXT NOT NULL,\r\n-      CreatedAt TEXT NOT NULL,\r\n-      IsRead INTEGER NOT NULL DEFAULT 0 CHECK (IsRead IN (0, 1)),\r\n-      ReadAt TEXT,\r\n-      FOREIGN KEY (SenderUserID) REFERENCES User(UserID) ON DELETE CASCADE,\r\n-      FOREIGN KEY (ReceiverUserID) REFERENCES User(UserID) ON DELETE CASCADE\r\n-    );\r\n-  ''');\r\n-\r\n-  await db.execute(\r\n-    'CREATE INDEX IF NOT EXISTS idx_chatmessage_sender_receiver_created_at ON ChatMessage(SenderUserID, ReceiverUserID, CreatedAt);',\r\n-  );\r\n-  await db.execute(\r\n-    'CREATE INDEX IF NOT EXISTS idx_chatmessage_receiver_is_read_created_at ON ChatMessage(ReceiverUserID, IsRead, CreatedAt);',\r\n-  );\r\n-\r\n-  print('migrateV10: done');\r\n }\r\n"
+                }
+            ],
+            "date": 1778409012434,
+            "name": "Commit-0",
+            "content": "import 'package:sqflite/sqflite.dart';\r\n\r\nFuture<void> migrateV10Chat(Database db) async {\r\n  print('Running migrateV10Chat...');\r\n\r\n  await db.execute('''\r\n    CREATE TABLE IF NOT EXISTS ChatMessage (\r\n      ChatMessageID INTEGER PRIMARY KEY AUTOINCREMENT,\r\n      SenderUserID INTEGER NOT NULL,\r\n      ReceiverUserID INTEGER NOT NULL,\r\n      Content TEXT NOT NULL,\r\n      CreatedAt TEXT NOT NULL,\r\n      IsRead INTEGER NOT NULL DEFAULT 0 CHECK (IsRead IN (0, 1)),\r\n      ReadAt TEXT,\r\n      FOREIGN KEY (SenderUserID) REFERENCES User(UserID) ON DELETE CASCADE,\r\n      FOREIGN KEY (ReceiverUserID) REFERENCES User(UserID) ON DELETE CASCADE\r\n    );\r\n  ''');\r\n\r\n  await db.execute(\r\n    'CREATE INDEX IF NOT EXISTS idx_chatmessage_sender_receiver_created_at ON ChatMessage(SenderUserID, ReceiverUserID, CreatedAt);',\r\n  );\r\n  await db.execute(\r\n    'CREATE INDEX IF NOT EXISTS idx_chatmessage_receiver_is_read_created_at ON ChatMessage(ReceiverUserID, IsRead, CreatedAt);',\r\n  );\r\n\r\n  print('migrateV10: done');\r\n}import 'package:sqflite/sqflite.dart';\r\n\r\nFuture<void> migrateV10Chat(Database db) async {\r\n  print('Running migrateV10Chat...');\r\n\r\n  await db.execute('''\r\n    CREATE TABLE IF NOT EXISTS ChatMessage (\r\n      ChatMessageID INTEGER PRIMARY KEY AUTOINCREMENT,\r\n      SenderUserID INTEGER NOT NULL,\r\n      ReceiverUserID INTEGER NOT NULL,\r\n      Content TEXT NOT NULL,\r\n      CreatedAt TEXT NOT NULL,\r\n      IsRead INTEGER NOT NULL DEFAULT 0 CHECK (IsRead IN (0, 1)),\r\n      ReadAt TEXT,\r\n      FOREIGN KEY (SenderUserID) REFERENCES User(UserID) ON DELETE CASCADE,\r\n      FOREIGN KEY (ReceiverUserID) REFERENCES User(UserID) ON DELETE CASCADE\r\n    );\r\n  ''');\r\n\r\n  await db.execute(\r\n    'CREATE INDEX IF NOT EXISTS idx_chatmessage_sender_receiver_created_at ON ChatMessage(SenderUserID, ReceiverUserID, CreatedAt);',\r\n  );\r\n  await db.execute(\r\n    'CREATE INDEX IF NOT EXISTS idx_chatmessage_receiver_is_read_created_at ON ChatMessage(ReceiverUserID, IsRead, CreatedAt);',\r\n  );\r\n\r\n  print('migrateV10: done');\r\n}\r\n"
+        }
+    ]
+}
