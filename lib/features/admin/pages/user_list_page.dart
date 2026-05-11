@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
@@ -26,8 +27,9 @@ class _UserListPageState extends State<UserListPage> {
     super.initState();
     _usersFuture = _loadUsers();
     _loadUnreadConversations();
-    // Tự động kiểm tra tin nhắn chưa phản hồi mỗi 30 giây
+    // Tự động refresh danh sách user và tin nhắn chưa phản hồi mỗi 30 giây
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      _refreshUsers();
       _loadUnreadConversations();
     });
   }
@@ -54,19 +56,88 @@ class _UserListPageState extends State<UserListPage> {
 
   Future<List<Map<String, Object?>>> _loadUsers() async {
     final db = await AppDatabase.instance;
-    return db.query(
+    final localUsers = await db.query(
       'User',
       columns: [
         'UserID',
         'Role',
         'Email',
         'FullName',
-        'IsActive',
-        'VerifiedAt',
         'CreatedAt',
+        'FirebaseUID',
       ],
       orderBy: 'UserID DESC',
     );
+
+    final firestoreSnapshot = await FirebaseFirestore.instance.collection('users').get();
+
+    final usersByEmail = <String, Map<String, Object?>>{};
+    final usersByUid = <String, Map<String, Object?>>{};
+
+    for (final row in localUsers) {
+      final email = (row['Email'] as String?)?.trim().toLowerCase();
+      final firebaseUid = (row['FirebaseUID'] as String?)?.trim();
+      final normalized = Map<String, Object?>.from(row)
+        ..putIfAbsent('FirebaseUID', () => firebaseUid)
+        ..putIfAbsent('Source', () => 'local');
+
+      if (email != null && email.isNotEmpty) {
+        usersByEmail[email] = normalized;
+      }
+      if (firebaseUid != null && firebaseUid.isNotEmpty) {
+        usersByUid[firebaseUid] = normalized;
+      }
+    }
+
+    for (final doc in firestoreSnapshot.docs) {
+      final data = doc.data();
+      final email = (data['email'] as String?)?.trim().toLowerCase();
+      final uid = doc.id;
+      final localUserId = data['localUserId'] as int?;
+      final createdAt = data['createdAt'];
+      final updatedAt = data['updatedAt'];
+
+      final normalized = <String, Object?>{
+        'UserID': localUserId ?? uid,
+        'Role': (data['role'] as String?) ?? 'customer',
+        'Email': (data['email'] as String?) ?? '',
+        'FullName': (data['fullName'] as String?) ?? '',
+        'CreatedAt': createdAt is Timestamp ? createdAt.toDate().toIso8601String() : (createdAt as String?) ?? '',
+        'UpdatedAt': updatedAt is Timestamp ? updatedAt.toDate().toIso8601String() : (updatedAt as String?) ?? null,
+        'FirebaseUID': uid,
+        'Source': 'firestore',
+      };
+
+      if (email != null && email.isNotEmpty) {
+        final existing = usersByEmail[email];
+        if (existing == null || (existing['FirebaseUID'] as String?)?.isEmpty == true) {
+          usersByEmail[email] = normalized;
+        }
+      } else if (!usersByUid.containsKey(uid)) {
+        usersByUid[uid] = normalized;
+      }
+    }
+
+    final merged = <Map<String, Object?>>[];
+    merged.addAll(usersByEmail.values);
+
+    for (final entry in usersByUid.entries) {
+      final uid = entry.key;
+      final row = entry.value;
+      final email = (row['Email'] as String?)?.trim().toLowerCase();
+      if (email != null && email.isNotEmpty && usersByEmail.containsKey(email)) {
+        continue;
+      }
+      merged.add(row);
+    }
+
+    merged.sort((left, right) {
+      final leftCreated = DateTime.tryParse((left['CreatedAt'] as String?) ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+      final rightCreated = DateTime.tryParse((right['CreatedAt'] as String?) ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0);
+      return rightCreated.compareTo(leftCreated);
+    });
+
+    return merged;
   }
 
   Future<void> _refreshUsers() async {
@@ -137,9 +208,13 @@ class _UserListPageState extends State<UserListPage> {
     }
   }
 
-  String _statusLabel(int isActive) => isActive == 1 ? 'Đã xác thực' : 'Chờ xác thực';
-
-  Color _statusColor(int isActive) => isActive == 1 ? Colors.green : Colors.orange;
+  int? _resolveLocalUserId(Map<String, Object?> user) {
+    final userId = user['UserID'];
+    if (userId is int) return userId;
+    final localUserId = user['localUserId'];
+    if (localUserId is int) return localUserId;
+    return null;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -243,21 +318,26 @@ class _UserListPageState extends State<UserListPage> {
               itemBuilder: (context, index) {
                 final user = users[index];
                 final role = (user['Role'] as String?) ?? '';
-                final isActive = (user['IsActive'] as int?) ?? 0;
                 final email = (user['Email'] as String?) ?? '';
                 final fullName = (user['FullName'] as String?) ?? '';
-                final verifiedAt = user['VerifiedAt'] as String?;
                 final createdAt = user['CreatedAt'] as String?;
+                final localUserId = _resolveLocalUserId(user);
 
                 return InkWell(
                   borderRadius: BorderRadius.circular(14),
-                  onTap: () {
-                    Navigator.push(
+                  onTap: () async {
+                    await Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (_) => UserDetailPage(userId: user['UserID'] as int),
+                        builder: (_) => UserDetailPage(
+                          userId: localUserId ?? 0,
+                          initialUser: user,
+                        ),
                       ),
                     );
+                    if (mounted) {
+                      await _refreshUsers();
+                    }
                   },
                   child: Container(
                     padding: const EdgeInsets.all(16),
@@ -302,7 +382,7 @@ class _UserListPageState extends State<UserListPage> {
                               ),
                             ),
                             Text(
-                              '#${user['UserID']}',
+                              localUserId != null ? '#$localUserId' : (user['FirebaseUID'] as String?)?.isNotEmpty == true ? 'Firestore' : '-',
                               style: const TextStyle(fontWeight: FontWeight.w600),
                             ),
                           ],
@@ -313,8 +393,6 @@ class _UserListPageState extends State<UserListPage> {
                           runSpacing: 8,
                           children: [
                             _InfoChip(label: role, color: _roleColor(role)),
-                            _InfoChip(label: _statusLabel(isActive), color: _statusColor(isActive)),
-                            _InfoChip(label: verifiedAt == null ? 'Chưa có VerifiedAt' : 'VerifiedAt có', color: Colors.blueGrey),
                           ],
                         ),
                         const SizedBox(height: 12),
@@ -326,7 +404,7 @@ class _UserListPageState extends State<UserListPage> {
                         Align(
                           alignment: Alignment.centerRight,
                           child: OutlinedButton.icon(
-                            onPressed: _deletingUser ? null : () => _deleteUser(user['UserID'] as int),
+                            onPressed: _deletingUser || localUserId == null ? null : () => _deleteUser(localUserId),
                             icon: const Icon(Icons.delete_outline, color: Colors.red),
                             label: const Text(
                               'Xoá',

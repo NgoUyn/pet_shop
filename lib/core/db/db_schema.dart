@@ -125,6 +125,18 @@ Future<void> createBaseSchema(Database db) async {
     );
     ''',
     '''
+    CREATE TABLE Payment (
+      PaymentID INTEGER PRIMARY KEY AUTOINCREMENT,
+      InvoiceID INTEGER NOT NULL,
+      Amount REAL NOT NULL,
+      Method TEXT NOT NULL,
+      Status TEXT NOT NULL,
+      TransactionCode TEXT,
+      PaidAt TEXT,
+      FOREIGN KEY (InvoiceID) REFERENCES Invoice(InvoiceID) ON DELETE CASCADE
+    );
+    ''',
+    '''
     CREATE TABLE AppNotification (
       NotificationID INTEGER PRIMARY KEY AUTOINCREMENT,
       UserID INTEGER NOT NULL,

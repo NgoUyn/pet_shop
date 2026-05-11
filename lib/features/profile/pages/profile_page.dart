@@ -211,12 +211,7 @@ class _ProfilePageState extends State<ProfilePage> {
                         ),
                       ),
                       _buildMenuItem(context, Icons.favorite, 'Danh sách yêu thích', 'Sản phẩm bạn đã thích', destination: const FavoritesPage()),
-                      _buildMenuItem(context, Icons.support_agent, 'Liên hệ shop', 'Nhắn tin với hỗ trợ', destination: const ChatPage(), badgeCount: _unreadChatCount),
-                      _buildMenuItem(context, Icons.history, 'Lịch sử mua hàng', 'Xem tất cả đơn hàng', destination: const OrderHistoryPage()),
-                      _buildMenuItem(context, Icons.card_membership, 'Điểm tích lũy', '${profile.loyaltyPoints} điểm'),
-                      _buildMenuItem(context, Icons.confirmation_number_outlined, 'Kho Voucher', '12 mã giảm giá'),
-                      _buildMenuItem(context, Icons.storefront, 'Đăng ký thành người bán', 'Kiếm tiền ngay'),
-                      const SizedBox(height: 20),
+                      _buildMenuItem(context, Icons.support_agent, 'Liên hệ shop', 'Nhắn tin với hỗ trợ', destination: const ChatPage(), badgeCount: _unreadChatCount)
                     ],
                   ),
                 ),

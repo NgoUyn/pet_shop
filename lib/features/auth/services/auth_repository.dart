@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../../core/db/app_database.dart';
@@ -18,6 +19,7 @@ class AuthRepository {
     String? displayName,
   }) async {
     final db = await AppDatabase.instance;
+    final firestore = FirebaseFirestore.instance;
     final normalizedEmail = _normalizeEmail(firebaseUser.email ?? '');
 
     if (normalizedEmail.isEmpty) {
@@ -36,7 +38,21 @@ class AuthRepository {
       final existingUserId = rows.first['UserID'] as int;
       final existingEmail = (rows.first['Email'] as String?)?.trim().toLowerCase();
       final existingFullName = (rows.first['FullName'] as String?) ?? '';
+      final existingRole = (rows.first['Role'] as String?) ?? 'customer';
       final resolvedName = (displayName ?? firebaseUser.displayName ?? existingFullName).trim();
+      String resolvedRole = existingRole;
+
+      try {
+        final remoteDoc = await firestore.collection('users').doc(firebaseUser.uid).get();
+        if (remoteDoc.exists) {
+          final remoteRole = (remoteDoc.data()?['role'] as String?)?.trim().toLowerCase();
+          if (remoteRole != null && remoteRole.isNotEmpty) {
+            resolvedRole = remoteRole;
+          }
+        }
+      } catch (_) {
+        // Keep local role when Firestore is unavailable.
+      }
 
       final updates = <String, Object?>{
         'FirebaseUID': firebaseUser.uid,
@@ -46,6 +62,9 @@ class AuthRepository {
       }
       if (resolvedName.isNotEmpty && resolvedName != existingFullName) {
         updates['FullName'] = resolvedName;
+      }
+      if (resolvedRole.toLowerCase() != existingRole.toLowerCase()) {
+        updates['Role'] = resolvedRole;
       }
       updates['UpdatedAt'] = DateTime.now().toIso8601String();
       await db.update(
@@ -81,10 +100,23 @@ class AuthRepository {
     final userName = (displayName ?? pending?.name ?? firebaseUser.displayName ?? normalizedEmail.split('@').first).trim();
     final localPassword = passwordHash ?? pending?.password ?? 'firebase:${firebaseUser.uid}';
     final createdAt = pending?.createdAt ?? now;
+    String resolvedRole = 'customer';
+
+    try {
+      final remoteDoc = await firestore.collection('users').doc(firebaseUser.uid).get();
+      if (remoteDoc.exists) {
+        final remoteRole = (remoteDoc.data()?['role'] as String?)?.trim().toLowerCase();
+        if (remoteRole != null && remoteRole.isNotEmpty) {
+          resolvedRole = remoteRole;
+        }
+      }
+    } catch (_) {
+      // Keep default customer role when Firestore is unavailable.
+    }
 
     final userId = await db.transaction((txn) async {
       final insertedUserId = await txn.insert('User', {
-        'Role': 'customer',
+        'Role': resolvedRole,
         'Email': normalizedEmail,
         'PasswordHash': localPassword,
         'FullName': userName,

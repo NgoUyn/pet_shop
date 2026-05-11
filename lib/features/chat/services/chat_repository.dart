@@ -409,30 +409,42 @@ class ChatRepository {
     }
 
     final query = _firestore.collection('chats').where('adminUid', isEqualTo: currentUser.uid);
-    yield* query.snapshots().map((snapshot) {
-      final items = snapshot.docs.map((doc) {
-        final data = doc.data();
-        return ChatConversationSummary(
-          threadId: doc.id,
-          customerUser: ChatUser(
-            uid: (data['customerUid'] as String?) ?? '',
-            fullName: (data['customerName'] as String?) ?? 'Khách hàng',
-            email: (data['customerEmail'] as String?) ?? '',
-            role: 'customer',
-          ),
-          adminUser: ChatUser(
-            uid: currentUser.uid,
-            fullName: currentUser.fullName,
-            email: currentUser.email,
-            role: currentUser.role,
-          ),
-          lastMessage: (data['lastMessage'] as String?) ?? '',
-          lastMessageAt: _timestampToDateTime(data['lastMessageAt']),
-          customerUnreadCount: (data['customerUnreadCount'] as num?)?.toInt() ?? 0,
-          adminUnreadCount: (data['adminUnreadCount'] as num?)?.toInt() ?? 0,
-        );
-      }).toList();
+    yield* query.snapshots().asyncMap((snapshot) async {
+      final items = <ChatConversationSummary>[];
 
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final customerUid = (data['customerUid'] as String?) ?? '';
+        final customerUser = customerUid.isEmpty ? null : await getUserByUid(customerUid);
+
+        if (customerUser != null && customerUser.isAdmin) {
+          continue;
+        }
+
+        items.add(
+          ChatConversationSummary(
+            threadId: doc.id,
+            customerUser: ChatUser(
+              uid: customerUid,
+              fullName: customerUser?.fullName ?? (data['customerName'] as String?) ?? 'Khách hàng',
+              email: customerUser?.email ?? (data['customerEmail'] as String?) ?? '',
+              role: customerUser?.role ?? 'customer',
+            ),
+            adminUser: ChatUser(
+              uid: currentUser.uid,
+              fullName: currentUser.fullName,
+              email: currentUser.email,
+              role: currentUser.role,
+            ),
+            lastMessage: (data['lastMessage'] as String?) ?? '',
+            lastMessageAt: _timestampToDateTime(data['lastMessageAt']),
+            customerUnreadCount: (data['customerUnreadCount'] as num?)?.toInt() ?? 0,
+            adminUnreadCount: (data['adminUnreadCount'] as num?)?.toInt() ?? 0,
+          ),
+        );
+      }
+
+      items.removeWhere((item) => item.lastMessage.trim().isEmpty);
       items.sort((left, right) => right.lastMessageAt.compareTo(left.lastMessageAt));
       return items;
     });

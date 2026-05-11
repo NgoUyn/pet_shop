@@ -101,7 +101,23 @@ Future<void> _repairPayment(Database db) async {
     final paymentRow = await db.rawQuery(
       "SELECT sql FROM sqlite_master WHERE type='table' AND name='Payment' LIMIT 1;",
     );
-    if (paymentRow.isEmpty) return;
+    if (paymentRow.isEmpty) {
+      await db.execute(
+        '''
+        CREATE TABLE Payment (
+          PaymentID INTEGER PRIMARY KEY AUTOINCREMENT,
+          InvoiceID INTEGER NOT NULL,
+          Amount REAL NOT NULL,
+          Method TEXT NOT NULL,
+          Status TEXT NOT NULL,
+          TransactionCode TEXT,
+          PaidAt TEXT,
+          FOREIGN KEY (InvoiceID) REFERENCES Invoice(InvoiceID) ON DELETE CASCADE
+        );
+        ''',
+      );
+      return;
+    }
 
     final sql = (paymentRow.first['sql'] as String?) ?? '';
     if (!sql.contains('Invoice_old')) return;

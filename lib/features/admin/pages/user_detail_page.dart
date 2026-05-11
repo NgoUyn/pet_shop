@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
@@ -8,9 +9,10 @@ import '../../chat/pages/chat_page.dart';
 import '../../orders/services/order_repository.dart';
 
 class UserDetailPage extends StatefulWidget {
-  const UserDetailPage({super.key, required this.userId});
+  const UserDetailPage({super.key, required this.userId, this.initialUser});
 
   final int userId;
+  final Map<String, Object?>? initialUser;
 
   @override
   State<UserDetailPage> createState() => _UserDetailPageState();
@@ -56,8 +58,6 @@ class _UserDetailPageState extends State<UserDetailPage> {
           u.Role,
           u.Email,
           u.FullName,
-          u.IsActive,
-          u.VerifiedAt,
           u.CreatedAt,
           u.UpdatedAt,
           u.FirebaseUID,
@@ -76,14 +76,86 @@ class _UserDetailPageState extends State<UserDetailPage> {
           _loading = false;
         });
       } else {
-        setState(() {
-          _error = 'Không tìm thấy người dùng';
-          _loading = false;
-        });
+        await _loadFallbackUser();
       }
     } catch (e) {
+      await _loadFallbackUser(fallbackError: 'Lỗi: $e');
+    }
+  }
+
+  Future<void> _loadFallbackUser({String? fallbackError}) async {
+    try {
+      final initialUser = widget.initialUser;
+      final db = await AppDatabase.instance;
+
+      Map<String, Object?>? customerRow;
+      if (widget.userId > 0) {
+        final customerRows = await db.rawQuery('''
+          SELECT
+            c.Phone,
+            c.Address,
+            COALESCE(c.LoyaltyPoints, 0) AS LoyaltyPoints
+          FROM Customer c
+          WHERE c.UserID = ?
+          LIMIT 1
+        ''', [widget.userId]);
+        if (customerRows.isNotEmpty) {
+          customerRow = customerRows.first;
+        }
+      }
+
+      if (initialUser != null) {
+        setState(() {
+          _user = {
+            ...initialUser,
+            if (customerRow != null) ...customerRow,
+            'Phone': (customerRow?['Phone'] as String?) ?? initialUser['Phone'] ?? null,
+            'Address': (customerRow?['Address'] as String?) ?? initialUser['Address'] ?? null,
+            'LoyaltyPoints': (customerRow?['LoyaltyPoints'] as int?) ?? (initialUser['LoyaltyPoints'] as int?) ?? 0,
+          };
+          _loading = false;
+          _error = null;
+        });
+        return;
+      }
+
+      if (widget.userId > 0) {
+        final firestoreSnapshot = await FirebaseFirestore.instance
+            .collection('users')
+            .where('localUserId', isEqualTo: widget.userId)
+            .limit(1)
+            .get();
+
+        if (firestoreSnapshot.docs.isNotEmpty) {
+          final data = firestoreSnapshot.docs.first.data();
+          setState(() {
+            _user = {
+              'UserID': widget.userId,
+              'Role': (data['role'] as String?) ?? 'customer',
+              'Email': (data['email'] as String?) ?? '',
+              'FullName': (data['fullName'] as String?) ?? '',
+              'CreatedAt': data['createdAt'] is Timestamp ? (data['createdAt'] as Timestamp).toDate().toIso8601String() : '',
+              'UpdatedAt': data['updatedAt'] is Timestamp ? (data['updatedAt'] as Timestamp).toDate().toIso8601String() : null,
+              'FirebaseUID': firestoreSnapshot.docs.first.id,
+              if (customerRow != null) ...customerRow,
+              'Phone': customerRow?['Phone'] as String? ?? null,
+              'Address': customerRow?['Address'] as String? ?? null,
+              'LoyaltyPoints': (customerRow?['LoyaltyPoints'] as int?) ?? 0,
+            };
+            _loading = false;
+            _error = null;
+          });
+          return;
+        }
+      }
+
       setState(() {
-        _error = 'Lỗi: $e';
+        _error = fallbackError ?? 'Không tìm thấy người dùng';
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = fallbackError ?? 'Lỗi: $e';
         _loading = false;
       });
     }
@@ -146,6 +218,103 @@ class _UserDetailPageState extends State<UserDetailPage> {
     }
   }
 
+  Future<void> _promoteToAdmin() async {
+    final user = _user;
+    if (user == null) return;
+
+    final currentRole = (user['Role'] as String?) ?? '';
+    if (currentRole.toLowerCase() == 'admin') {
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Chuyển thành admin'),
+          content: Text(
+            'Bạn có chắc muốn chuyển ${user['Email'] ?? 'người dùng này'} thành admin không?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Huỷ'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Chuyển'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      final db = await AppDatabase.instance;
+      final now = DateTime.now().toIso8601String();
+      final firebaseUid = (user['FirebaseUID'] as String?)?.trim();
+      final fullName = (user['FullName'] as String?)?.trim() ?? '';
+      final email = (user['Email'] as String?)?.trim().toLowerCase() ?? '';
+
+      await db.update(
+        'User',
+        {
+          'Role': 'admin',
+          'UpdatedAt': now,
+        },
+        where: 'UserID = ?',
+        whereArgs: [widget.userId],
+      );
+
+      if (firebaseUid != null && firebaseUid.isNotEmpty) {
+        try {
+          final userDoc = FirebaseFirestore.instance.collection('users').doc(firebaseUid);
+          final existing = await userDoc.get();
+          final timestamp = Timestamp.now();
+
+          await userDoc.set(
+            {
+              'uid': firebaseUid,
+              'localUserId': widget.userId,
+              'fullName': fullName,
+              'email': email,
+              'role': 'admin',
+              'updatedAt': timestamp,
+              if (!existing.exists) 'createdAt': timestamp,
+            },
+            SetOptions(merge: true),
+          );
+        } catch (e) {
+          print('promoteToAdmin: error syncing Firestore role: $e');
+        }
+      }
+
+      if (mounted) {
+        setState(() {
+          _user = {
+            ...user,
+            'Role': 'admin',
+            'UpdatedAt': now,
+          };
+        });
+      }
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã chuyển người dùng thành admin')),
+      );
+      await _loadUserDetail();
+      await _loadRecentOrders();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Không thể chuyển thành admin: $e')),
+      );
+    }
+  }
+
   Color _roleColor(String role) {
     switch (role.toLowerCase()) {
       case 'admin':
@@ -177,12 +346,12 @@ class _UserDetailPageState extends State<UserDetailPage> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Text('Chi tiết người dùng #${widget.userId}'),
+        title: Text('Chi tiết người dùng #${widget.initialUser?['UserID']?.toString() ?? widget.userId.toString()}'),
         backgroundColor: AppColors.white,
         foregroundColor: AppColors.textDark,
         elevation: 0,
         actions: [
-          if (_user != null) ...[
+          if (_user != null && (( _user!['Role'] as String?) ?? '').toLowerCase() != 'admin') ...[
             IconButton(
               onPressed: () => _openChat(context),
               icon: const Icon(Icons.chat_bubble_outline),
@@ -198,6 +367,11 @@ class _UserDetailPageState extends State<UserDetailPage> {
   Future<void> _openChat(BuildContext context) async {
     final user = _user;
     if (user == null) return;
+
+    final role = (user['Role'] as String?) ?? '';
+    if (role.toLowerCase() == 'admin') {
+      return;
+    }
 
     final firebaseUid = user['FirebaseUID'] as String?;
     if (firebaseUid == null || firebaseUid.isEmpty) {
@@ -244,13 +418,11 @@ class _UserDetailPageState extends State<UserDetailPage> {
 
     final user = _user!;
     final role = (user['Role'] as String?) ?? '';
-    final isActive = (user['IsActive'] as int?) ?? 0;
     final fullName = (user['FullName'] as String?) ?? '';
     final email = (user['Email'] as String?) ?? '';
     final phone = (user['Phone'] as String?) ?? '';
     final address = (user['Address'] as String?) ?? '';
     final loyaltyPoints = (user['LoyaltyPoints'] as int?) ?? 0;
-    final verifiedAt = user['VerifiedAt'] as String?;
     final createdAt = user['CreatedAt'] as String?;
     final updatedAt = user['UpdatedAt'] as String?;
     final firebaseUid = user['FirebaseUID'] as String?;
@@ -331,12 +503,36 @@ class _UserDetailPageState extends State<UserDetailPage> {
                 const Divider(),
                 _InfoRow(label: 'User ID', value: '#${user['UserID']}'),
                 _InfoRow(label: 'Email', value: email),
-                _InfoRow(label: 'Trạng thái', value: isActive == 1 ? 'Đã xác thực' : 'Chờ xác thực',
-                    valueColor: isActive == 1 ? Colors.green : Colors.orange),
                 _InfoRow(label: 'Firebase UID', value: firebaseUid ?? 'Chưa có'),
                 _InfoRow(label: 'Ngày tạo', value: _formatDateTime(createdAt)),
                 _InfoRow(label: 'Cập nhật', value: _formatDateTime(updatedAt)),
-                _InfoRow(label: 'Xác thực lúc', value: verifiedAt != null ? _formatDateTime(verifiedAt) : 'Chưa xác thực'),
+                const SizedBox(height: 8),
+                if (role.toLowerCase() != 'admin')
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      onPressed: _promoteToAdmin,
+                      icon: const Icon(Icons.admin_panel_settings),
+                      label: const Text('Chuyển thành admin'),
+                    ),
+                  )
+                else
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.deepPurple.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Text(
+                      'Người dùng này đã là admin',
+                      style: TextStyle(
+                        color: Colors.deepPurple,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
               ],
             ),
           ),
