@@ -30,6 +30,7 @@ class AppDatabase {
         await db.execute('PRAGMA foreign_keys = ON;');
       },
       onOpen: (db) async {
+        await MigrationV13FavoritesAndNotifications.up(db);
         try {
           final refs = await db.rawQuery("SELECT name, type, sql FROM sqlite_master WHERE sql LIKE '%Invoice_old%';");
           for (final r in refs) {
@@ -392,6 +393,8 @@ class AppDatabase {
         for (final sql in statements) {
           await db.execute(sql);
         }
+
+        await MigrationV13FavoritesAndNotifications.up(db);
 
         await db.insert('User', {
           'Role': 'customer',
