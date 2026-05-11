@@ -12,6 +12,7 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
+  final _formKey = GlobalKey<FormState>();
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _obscure = true;
@@ -25,6 +26,10 @@ class _LoginPageState extends State<LoginPage> {
   }
 
   Future<void> _onLogin() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
     setState(() => _loading = true);
     try {
       await AuthRepository.instance.login(
@@ -106,119 +111,133 @@ class _LoginPageState extends State<LoginPage> {
                 color: AppColors.white,
                 borderRadius: BorderRadius.circular(18),
               ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text(
-                    'Đăng nhập',
-                    style: TextStyle(
-                      fontSize: 28,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  TextField(
-                    controller: _emailCtrl,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: const InputDecoration(
-                      labelText: 'E-mail',
-                      border: OutlineInputBorder(),
-                      isDense: true,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: _passCtrl,
-                    obscureText: _obscure,
-                    decoration: InputDecoration(
-                      labelText: 'Mật khẩu',
-                      border: const OutlineInputBorder(),
-                      isDense: true,
-                      suffixIcon: IconButton(
-                        icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
-                        onPressed: () => setState(() => _obscure = !_obscure),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text(
+                      'Đăng nhập',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  Align(
-                    alignment: Alignment.centerRight,
-                    child: TextButton(
-                      onPressed: _loading ? null : _onResendVerification,
-                      child: const Text('Gửi lại link xác thực'),
+                    const SizedBox(height: 18),
+                    TextFormField(
+                      controller: _emailCtrl,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: const InputDecoration(
+                        labelText: 'E-mail',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
+                      validator: (value) {
+                        final normalized = value?.trim() ?? '';
+                        if (normalized.isEmpty) return 'Vui lòng nhập email';
+                        final regex = RegExp(r'^[^@]+@[^@]+\.[^@]+');
+                        if (!regex.hasMatch(normalized)) return 'Email không hợp lệ';
+                        return null;
+                      },
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 48,
-                    child: ElevatedButton(
-                      onPressed: _loading ? null : _onLogin,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.secondary,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(24),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _passCtrl,
+                      obscureText: _obscure,
+                      decoration: InputDecoration(
+                        labelText: 'Mật khẩu',
+                        border: const OutlineInputBorder(),
+                        isDense: true,
+                        suffixIcon: IconButton(
+                          icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility),
+                          onPressed: () => setState(() => _obscure = !_obscure),
                         ),
                       ),
-                      child: _loading
-                          ? const CircularProgressIndicator(color: AppColors.white)
-                          : const Text(
-                              'Đăng nhập',
-                              style: TextStyle(
-                                color: AppColors.white,
-                                fontSize: 16,
-                              ),
-                            ),
+                      validator: (value) {
+                        if (value == null || value.isEmpty) return 'Vui lòng nhập mật khẩu';
+                        return null;
+                      },
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    'Hoặc tiếp tục bằng',
-                    style: TextStyle(color: AppColors.textLight),
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: _loading ? null : _onGoogleLogin,
-                      icon: const Icon(
-                        Icons.g_translate,
-                        color: Colors.black,
-                      ),
-                      label: const Text(
-                        'Tiếp tục với Google',
-                        style: TextStyle(color: Colors.black),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        side: const BorderSide(color: Colors.black12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: _loading ? null : _onResendVerification,
+                        child: const Text('Gửi lại link xác thực'),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 14),
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const RegisterPage()),
-                      );
-                    },
-                    child: const Text.rich(
-                      TextSpan(
-                        text: 'Bạn chưa có tài khoản? ',
-                        children: [
-                          TextSpan(
-                            text: 'Đăng ký',
-                            style: TextStyle(color: AppColors.primary),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 48,
+                      child: ElevatedButton(
+                        onPressed: _loading ? null : _onLogin,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.secondary,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(24),
                           ),
-                        ],
+                        ),
+                        child: _loading
+                            ? const CircularProgressIndicator(color: AppColors.white)
+                            : const Text(
+                                'Đăng nhập',
+                                style: TextStyle(
+                                  color: AppColors.white,
+                                  fontSize: 16,
+                                ),
+                              ),
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Hoặc tiếp tục bằng',
+                      style: TextStyle(color: AppColors.textLight),
+                    ),
+                    const SizedBox(height: 10),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _loading ? null : _onGoogleLogin,
+                        icon: const Icon(
+                          Icons.g_translate,
+                          color: Colors.black,
+                        ),
+                        label: const Text(
+                          'Tiếp tục với Google',
+                          style: TextStyle(color: Colors.black),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          side: const BorderSide(color: Colors.black12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    GestureDetector(
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const RegisterPage()),
+                        );
+                      },
+                      child: const Text.rich(
+                        TextSpan(
+                          text: 'Bạn chưa có tài khoản? ',
+                          children: [
+                            TextSpan(
+                              text: 'Đăng ký',
+                              style: TextStyle(color: AppColors.primary),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

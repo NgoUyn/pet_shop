@@ -28,7 +28,7 @@ class AuthRepository {
 
     final rows = await db.query(
       'User',
-      columns: ['UserID', 'Email', 'FullName'],
+      columns: ['UserID', 'Email', 'FullName', 'Role'],
       where: 'lower(Email) = ?',
       whereArgs: [normalizedEmail],
       limit: 1,

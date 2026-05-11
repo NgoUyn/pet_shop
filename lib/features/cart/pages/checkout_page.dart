@@ -72,6 +72,16 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   Future<void> _confirm() async {
     if (_items.isEmpty) return;
+
+    final shippingAddress = _addressCtrl.text.trim();
+    final phone = _profile?.phone?.trim() ?? '';
+    if (_profile == null || phone.isEmpty || shippingAddress.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vui lòng cập nhật đầy đủ thông tin hồ sơ trước khi mua hàng')),
+      );
+      return;
+    }
+
     setState(() => _isProcessing = true);
     try {
       if (_paymentMethod == 'Bank Transfer') {
@@ -82,7 +92,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
               subtotalAmount: _total,
               discountAmount: _useLoyaltyPoints ? _maxRedeemableDiscount : 0,
               payableAmount: _finalTotal,
-              shippingAddress: _addressCtrl.text.trim().isEmpty ? null : _addressCtrl.text.trim(),
+              shippingAddress: shippingAddress,
               useLoyaltyPoints: _useLoyaltyPoints,
               selectedCartItemIds: widget.selectedCartItemIds,
             ),
@@ -98,7 +108,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
       final result = await CartRepository.instance.checkoutCurrentUser(
         paymentMethod: _paymentMethod,
-        shippingAddress: _addressCtrl.text.trim().isEmpty ? null : _addressCtrl.text.trim(),
+        shippingAddress: shippingAddress,
         useLoyaltyPoints: _useLoyaltyPoints,
         selectedCartItemIds: widget.selectedCartItemIds,
       );

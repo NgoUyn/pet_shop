@@ -3,11 +3,15 @@
     "activeCommit": 0,
     "commits": [
         {
-            "activePatchIndex": 0,
+            "activePatchIndex": 1,
             "patches": [
                 {
                     "date": 1778406868577,
                     "content": "Index: \n===================================================================\n--- \n+++ \n"
+                },
+                {
+                    "date": 1778496741767,
+                    "content": "Index: \n===================================================================\n--- \n+++ \n@@ -2,8 +2,9 @@\n import 'package:sqflite/sqflite.dart';\r\n \r\n import '../../../core/db/app_database.dart';\r\n import '../../auth/services/auth_session.dart';\r\n+import '../../profile/services/profile_repository.dart';\r\n import '../../notifications/services/notification_repository.dart';\r\n \r\n class CartProductEntry {\r\n   CartProductEntry({\r\n@@ -689,8 +690,19 @@\n     if (userId == null) {\r\n       throw StateError('Vui lòng đăng nhập để thanh toán');\r\n     }\r\n \r\n+    final profile = await ProfileRepository.instance.getCurrentProfile();\r\n+    final profilePhone = profile?.phone?.trim() ?? '';\r\n+    final profileAddress = profile?.address?.trim() ?? '';\r\n+    final resolvedShippingAddress = shippingAddress?.trim().isNotEmpty == true\r\n+        ? shippingAddress!.trim()\r\n+        : profileAddress;\r\n+\r\n+    if (profile == null || profilePhone.isEmpty || profileAddress.isEmpty || resolvedShippingAddress.isEmpty) {\r\n+      throw StateError('Vui lòng cập nhật đầy đủ thông tin hồ sơ trước khi mua hàng');\r\n+    }\r\n+\r\n     final db = await AppDatabase.instance;\r\n     final customerId = await _resolveCustomerId(userId);\r\n \r\n     var invoiceId = 0;\r\n@@ -788,9 +800,9 @@\n \r\n         // Insert invoice with computed total amount\r\n         invoiceId = await txn.insert('Invoice', {\r\n           'CustomerID': customerId,\r\n-          'ShippingAddress': shippingAddress,\r\n+          'ShippingAddress': resolvedShippingAddress,\r\n           'PaymentMethod': paymentMethod,\r\n           'PaymentStatus': invoicePaymentStatus,\r\n           'OrderStatus': 'Preparing',\r\n           'TotalAmount': totalAmount,\r\n"
                 }
             ],
             "date": 1778406868577,

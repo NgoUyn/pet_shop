@@ -3,6 +3,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../auth/services/auth_session.dart';
+import '../../profile/services/profile_repository.dart';
 import '../../notifications/services/notification_repository.dart';
 
 class CartProductEntry {
@@ -690,6 +691,17 @@ class CartRepository {
       throw StateError('Vui lòng đăng nhập để thanh toán');
     }
 
+    final profile = await ProfileRepository.instance.getCurrentProfile();
+    final profilePhone = profile?.phone?.trim() ?? '';
+    final profileAddress = profile?.address?.trim() ?? '';
+    final resolvedShippingAddress = shippingAddress?.trim().isNotEmpty == true
+        ? shippingAddress!.trim()
+        : profileAddress;
+
+    if (profile == null || profilePhone.isEmpty || profileAddress.isEmpty || resolvedShippingAddress.isEmpty) {
+      throw StateError('Vui lòng cập nhật đầy đủ thông tin hồ sơ trước khi mua hàng');
+    }
+
     final db = await AppDatabase.instance;
     final customerId = await _resolveCustomerId(userId);
 
@@ -789,7 +801,7 @@ class CartRepository {
         // Insert invoice with computed total amount
         invoiceId = await txn.insert('Invoice', {
           'CustomerID': customerId,
-          'ShippingAddress': shippingAddress,
+          'ShippingAddress': resolvedShippingAddress,
           'PaymentMethod': paymentMethod,
           'PaymentStatus': invoicePaymentStatus,
           'OrderStatus': 'Preparing',

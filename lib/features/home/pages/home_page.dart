@@ -10,6 +10,7 @@ import '../../favorites/services/favorite_repository.dart';
 import '../services/pet_repository.dart';
 import '../services/product_repository.dart';
 import 'pet_list_page.dart';
+import 'pet_detail_page.dart';
 import 'product_detail_page.dart';
 import 'shop_list_page.dart';
 
@@ -329,9 +330,19 @@ class _HomePageState extends State<HomePage> {
     final isFavorited = _favoritePetIds.contains(item.petId);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => PetDetailPage(pet: item),
+            ),
+          );
+        },
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           Container(
             width: 72, height: 72,
             decoration: const BoxDecoration(color: Colors.transparent, shape: BoxShape.circle),
@@ -380,7 +391,8 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
           ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -454,11 +466,20 @@ class _HomePageState extends State<HomePage> {
       imageUrl = item.product!.imageUrl;
     }
 
-    return Container(
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)]),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
+      onTap: () {
+        if (isPet) {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => PetDetailPage(pet: item.pet!)));
+        } else {
+          Navigator.push(context, MaterialPageRoute(builder: (_) => ProductDetailPage(product: item.product!)));
+        }
+      },
+      child: Container(
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10)]),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
           Expanded(
             child: ClipRRect(
               borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
@@ -497,7 +518,8 @@ class _HomePageState extends State<HomePage> {
               ],
             ),
           ),
-        ],
+          ],
+        ),
       ),
     );
   }

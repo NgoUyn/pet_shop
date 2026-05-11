@@ -4,6 +4,7 @@ import '../../auth/pages/login_page.dart';
 import '../../auth/services/auth_session.dart';
 import '../../cart/services/cart_repository.dart';
 import '../../favorites/services/favorite_repository.dart';
+import 'pet_detail_page.dart';
 import '../services/pet_repository.dart';
 
 class PetListPage extends StatefulWidget {
@@ -249,7 +250,14 @@ class _PetListPageState extends State<PetListPage> {
               final item = items[index];
               return InkWell(
                 borderRadius: BorderRadius.circular(14),
-                onTap: () {},
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PetDetailPage(pet: item),
+                    ),
+                  );
+                },
                 child: _buildPetCard(item),
               );
             },
