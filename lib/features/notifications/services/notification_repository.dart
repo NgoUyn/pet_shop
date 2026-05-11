@@ -93,6 +93,7 @@ class NotificationRepository {
   Future<List<AppNotificationItem>> listForCurrentUser({int limit = 50}) async {
     final currentUserId = AuthSession.instance.currentUserId.value;
     if (currentUserId == null) {
+      print('NotificationRepository: currentUserId is null');
       return [];
     }
 
@@ -105,6 +106,7 @@ class NotificationRepository {
       limit: limit,
     );
 
+    print('NotificationRepository.listForCurrentUser: userId=$currentUserId, found ${rows.length} notifications');
     return rows.map(AppNotificationItem.fromRow).toList();
   }
 

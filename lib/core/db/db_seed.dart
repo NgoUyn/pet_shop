@@ -269,4 +269,41 @@ Future<void> seedInitialData(Database db) async {
   for (final pet in pets) {
     await db.insert('Pet', pet);
   }
+
+  // Seed sample notifications
+  await db.insert('AppNotification', {
+    'UserID': 1,
+    'Type': 'order',
+    'Title': 'Đơn hàng được xác nhận',
+    'Content': 'Đơn hàng #001 của bạn đã được xác nhận',
+    'CreatedAt': DateTime.now().toIso8601String(),
+    'IsRead': 0,
+    'ReadAt': null,
+    'ReferenceID': null,
+    'ReferenceType': 'order',
+  });
+
+  await db.insert('AppNotification', {
+    'UserID': 1,
+    'Type': 'general',
+    'Title': 'Chào mừng đến Pet Shop',
+    'Content': 'Cảm ơn bạn đã tham gia cộng đồng của chúng tôi',
+    'CreatedAt': DateTime.now().subtract(const Duration(hours: 1)).toIso8601String(),
+    'IsRead': 0,
+    'ReadAt': null,
+    'ReferenceID': null,
+    'ReferenceType': null,
+  });
+
+  await db.insert('AppNotification', {
+    'UserID': 1,
+    'Type': 'promotion',
+    'Title': 'Khuyến mãi mới: Giảm 20% cho sản phẩm',
+    'Content': 'Tất cả sản phẩm được giảm giá 20% trong 24 giờ',
+    'CreatedAt': DateTime.now().subtract(const Duration(days: 1)).toIso8601String(),
+    'IsRead': 1,
+    'ReadAt': DateTime.now().subtract(const Duration(days: 1)).toIso8601String(),
+    'ReferenceID': null,
+    'ReferenceType': null,
+  });
 }
