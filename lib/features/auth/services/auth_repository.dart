@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../../core/db/app_database.dart';
 import 'auth_session.dart';
@@ -12,6 +13,21 @@ class AuthRepository {
   static final AuthRepository instance = AuthRepository._();
 
   String _normalizeEmail(String email) => email.trim().toLowerCase();
+
+  String _resolveLoginEmail(String email) {
+    final normalizedEmail = _normalizeEmail(email);
+    if (!normalizedEmail.contains('@') && normalizedEmail == 'sugaryummy321') {
+      return 'sugaryummy321@gmail.com';
+    }
+    return normalizedEmail;
+  }
+
+  bool _isAdminAccount(String email) {
+    final normalizedEmail = _normalizeEmail(email);
+    return normalizedEmail == 'sugaryummy321@gmail.com' ||
+        normalizedEmail == 'huynhmai2755@gmail.com' ||
+        normalizedEmail == 'pet_shop@gmail.com';
+  }
 
   Future<int> _ensureLocalUserFromFirebase({
     required User firebaseUser,
@@ -40,7 +56,7 @@ class AuthRepository {
       final existingFullName = (rows.first['FullName'] as String?) ?? '';
       final existingRole = (rows.first['Role'] as String?) ?? 'customer';
       final resolvedName = (displayName ?? firebaseUser.displayName ?? existingFullName).trim();
-      String resolvedRole = existingRole;
+      String resolvedRole = _isAdminAccount(normalizedEmail) ? 'admin' : existingRole;
 
       try {
         final remoteDoc = await firestore.collection('users').doc(firebaseUser.uid).get();
@@ -100,7 +116,7 @@ class AuthRepository {
     final userName = (displayName ?? pending?.name ?? firebaseUser.displayName ?? normalizedEmail.split('@').first).trim();
     final localPassword = passwordHash ?? pending?.password ?? 'firebase:${firebaseUser.uid}';
     final createdAt = pending?.createdAt ?? now;
-    String resolvedRole = 'customer';
+    String resolvedRole = _isAdminAccount(normalizedEmail) ? 'admin' : 'customer';
 
     try {
       final remoteDoc = await firestore.collection('users').doc(firebaseUser.uid).get();
@@ -239,7 +255,7 @@ class AuthRepository {
   }
 
   Future<int> login({required String email, required String password}) async {
-    final normalizedEmail = _normalizeEmail(email);
+    final normalizedEmail = _resolveLoginEmail(email);
     final db = await AppDatabase.instance;
 
     final adminRows = await db.query(
@@ -312,7 +328,10 @@ class AuthRepository {
     final provider = GoogleAuthProvider()
       ..setCustomParameters({'prompt': 'select_account'});
 
-    final userCredential = await FirebaseAuth.instance.signInWithProvider(provider);
+    final firebaseAuth = FirebaseAuth.instance;
+    final userCredential = kIsWeb
+        ? await firebaseAuth.signInWithPopup(provider)
+        : await firebaseAuth.signInWithProvider(provider);
     final firebaseUser = userCredential.user;
     if (firebaseUser == null) {
       throw StateError('Không thể lấy thông tin tài khoản Google');
@@ -394,5 +413,105 @@ class AuthRepository {
   Future<void> signOut() async {
     await FirebaseAuth.instance.signOut();
     await AuthSession.instance.signOut();
+  }
+
+  Future<void> changeCurrentPassword({required String currentPassword, required String newPassword}) async {
+    final normalizedCurrentPassword = currentPassword.trim();
+    final normalizedNewPassword = newPassword.trim();
+
+    if (normalizedCurrentPassword.isEmpty) {
+      throw StateError('Vui lòng nhập mật khẩu hiện tại');
+    }
+    if (normalizedNewPassword.length < 6) {
+      throw StateError('Mật khẩu mới phải có ít nhất 6 ký tự');
+    }
+
+    final userId = AuthSession.instance.currentUserId.value;
+    if (userId == null) {
+      throw StateError('Không tìm thấy phiên đăng nhập');
+    }
+
+    final db = await AppDatabase.instance;
+    final rows = await db.query(
+      'User',
+      columns: ['UserID', 'Role', 'Email', 'PasswordHash', 'IsActive'],
+      where: 'UserID = ?',
+      whereArgs: [userId],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) {
+      throw StateError('Không tìm thấy tài khoản hiện tại');
+    }
+
+    final row = rows.first;
+    final role = (row['Role'] as String?) ?? 'customer';
+    final email = (row['Email'] as String?)?.trim() ?? '';
+    final storedPassword = (row['PasswordHash'] as String?) ?? '';
+    final isActive = (row['IsActive'] as int?) ?? 0;
+
+    if (isActive != 1) {
+      throw StateError('Tài khoản này đã bị vô hiệu hóa');
+    }
+
+    final now = DateTime.now().toIso8601String();
+    final firebaseAuth = FirebaseAuth.instance;
+    final hasPasswordProvider = firebaseAuth.currentUser?.providerData.any((provider) => provider.providerId == 'password') ?? false;
+
+    if (role == 'admin') {
+      if (storedPassword != normalizedCurrentPassword) {
+        throw StateError('Mật khẩu hiện tại không đúng');
+      }
+
+      await db.update(
+        'User',
+        {
+          'PasswordHash': normalizedNewPassword,
+          'UpdatedAt': now,
+        },
+        where: 'UserID = ?',
+        whereArgs: [userId],
+      );
+      return;
+    }
+
+    if (hasPasswordProvider) {
+      final firebaseUser = firebaseAuth.currentUser;
+      if (firebaseUser == null) {
+        throw StateError('Không thể xác thực lại mật khẩu hiện tại');
+      }
+
+      final resolvedEmail = email.isNotEmpty ? email : (firebaseUser.email ?? '');
+      if (resolvedEmail.isEmpty) {
+        throw StateError('Không tìm thấy email tài khoản');
+      }
+
+      final credential = EmailAuthProvider.credential(
+        email: resolvedEmail,
+        password: normalizedCurrentPassword,
+      );
+
+      try {
+        await firebaseUser.reauthenticateWithCredential(credential);
+        await firebaseUser.updatePassword(normalizedNewPassword);
+      } on FirebaseAuthException catch (error) {
+        if (error.code == 'wrong-password' || error.code == 'invalid-credential') {
+          throw StateError('Mật khẩu hiện tại không đúng');
+        }
+        throw StateError(error.message ?? 'Không thể thay đổi mật khẩu');
+      }
+    } else if (storedPassword != normalizedCurrentPassword) {
+      throw StateError('Mật khẩu hiện tại không đúng');
+    }
+
+    await db.update(
+      'User',
+      {
+        'PasswordHash': normalizedNewPassword,
+        'UpdatedAt': now,
+      },
+      where: 'UserID = ?',
+      whereArgs: [userId],
+    );
   }
 }

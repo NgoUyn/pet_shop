@@ -1,0 +1,16 @@
+# Tự động nhận diện file văn bản và chuẩn hóa xuống dòng thành LF khi commit
+* text=auto
+
+# Ép các file code cụ thể luôn dùng LF (tốt cho Flutter/Dart)
+*.dart text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+
+# Đảm bảo các file shell script trên Linux không bị hỏng khi chạy trên Windows
+*.sh text eol=lf
+
+# Giữ nguyên định dạng cho các file nhị phân (ảnh, font)
+*.png binary
+*.jpg binary
+*.gif binary
+*.ttf binary

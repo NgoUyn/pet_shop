@@ -54,11 +54,28 @@ class ProductRepository {
     final db = await AppDatabase.instance;
     final rows = await db.query(
       'Product',
+      where: 'IsActive = 1',
       orderBy: 'CreatedAt DESC, ProductID DESC',
       limit: limit,
     );
 
     return rows.map(ProductItem.fromRow).toList();
+  }
+
+  Future<ProductItem?> getProductById(int productId) async {
+    final db = await AppDatabase.instance;
+    final rows = await db.query(
+      'Product',
+      where: 'ProductID = ?',
+      whereArgs: [productId],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) {
+      return null;
+    }
+
+    return ProductItem.fromRow(rows.first);
   }
 
   Future<int> addProduct({
@@ -68,6 +85,7 @@ class ProductRepository {
     required int stockQuantity,
     String? description,
     String? imageUrl,
+    bool isActive = true,
   }) async {
     final db = await AppDatabase.instance;
     final now = DateTime.now().toIso8601String();
@@ -78,12 +96,69 @@ class ProductRepository {
       'StockQuantity': stockQuantity,
       'Description': description,
       'ImageURL': imageUrl,
-      'IsActive': 1,
+      'IsActive': isActive ? 1 : 0,
       'CreatedAt': now,
       'UpdatedAt': null,
     });
     _notifyChanged();
     return id;
+  }
+
+  Future<ProductItem> updateProduct({
+    required int productId,
+    required int categoryId,
+    required String productName,
+    required double price,
+    required int stockQuantity,
+    String? description,
+    String? imageUrl,
+    bool? isActive,
+  }) async {
+    final db = await AppDatabase.instance;
+    final current = await getProductById(productId);
+    final nextIsActive = isActive ?? current?.isActive ?? true;
+    await db.update(
+      'Product',
+      {
+        'CategoryID': categoryId,
+        'ProductName': productName,
+        'Price': price,
+        'StockQuantity': stockQuantity,
+        'Description': description,
+        'ImageURL': imageUrl,
+        'IsActive': nextIsActive ? 1 : 0,
+        'UpdatedAt': DateTime.now().toIso8601String(),
+      },
+      where: 'ProductID = ?',
+      whereArgs: [productId],
+    );
+
+    final rows = await db.query(
+      'Product',
+      where: 'ProductID = ?',
+      whereArgs: [productId],
+      limit: 1,
+    );
+    if (rows.isEmpty) {
+      throw StateError('Không tìm thấy sản phẩm cần cập nhật');
+    }
+
+    _notifyChanged();
+    return ProductItem.fromRow(rows.first);
+  }
+
+  Future<void> deleteProduct(int productId) async {
+    final db = await AppDatabase.instance;
+    await db.update(
+      'Product',
+      {
+        'IsActive': 0,
+        'UpdatedAt': DateTime.now().toIso8601String(),
+      },
+      where: 'ProductID = ?',
+      whereArgs: [productId],
+    );
+    _notifyChanged();
   }
 
   Future<String?> getCategoryName(int categoryId) async {

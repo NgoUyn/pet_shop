@@ -8,6 +8,7 @@ import 'migrations/migration_v11_firebase_uid.dart';
 import 'migrations/migration_v12_admin_seed.dart';
 import 'migrations/migration_v13_favorites_and_notifications.dart';
 import 'migrations/migration_v14_review.dart';
+import 'migrations/migration_v15_promotions.dart';
 
 Future<void> runMigrations(Database db, int oldVersion, int newVersion) async {
   if (oldVersion < 2) {
@@ -295,5 +296,9 @@ Future<void> runMigrations(Database db, int oldVersion, int newVersion) async {
 
   if (oldVersion < 14) {
     await MigrationV14Review.up(db);
+  }
+
+  if (oldVersion < 15) {
+    await MigrationV15Promotions.up(db);
   }
 }

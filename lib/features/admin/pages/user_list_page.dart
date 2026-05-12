@@ -5,8 +5,6 @@ import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/db/app_database.dart';
-import '../../chat/pages/admin_chat_inbox_page.dart';
-import '../../chat/services/chat_repository.dart';
 import 'user_detail_page.dart';
 
 class UserListPage extends StatefulWidget {
@@ -19,18 +17,15 @@ class UserListPage extends StatefulWidget {
 class _UserListPageState extends State<UserListPage> {
   late Future<List<Map<String, Object?>>> _usersFuture;
   bool _deletingUser = false;
-  int _unreadConversations = 0;
   Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _usersFuture = _loadUsers();
-    _loadUnreadConversations();
-    // Tự động refresh danh sách user và tin nhắn chưa phản hồi mỗi 30 giây
+    // Tự động refresh danh sách user mỗi 30 giây
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _refreshUsers();
-      _loadUnreadConversations();
     });
   }
 
@@ -38,20 +33,6 @@ class _UserListPageState extends State<UserListPage> {
   void dispose() {
     _refreshTimer?.cancel();
     super.dispose();
-  }
-
-  Future<void> _loadUnreadConversations() async {
-    try {
-      final conversations = await ChatRepository.instance.watchAdminConversations().first;
-      final unreadCount = conversations.where((c) => c.adminUnreadCount > 0).length;
-      if (mounted) {
-        setState(() {
-          _unreadConversations = unreadCount;
-        });
-      }
-    } catch (_) {
-      // ignore
-    }
   }
 
   Future<List<Map<String, Object?>>> _loadUsers() async {
@@ -103,7 +84,7 @@ class _UserListPageState extends State<UserListPage> {
         'Email': (data['email'] as String?) ?? '',
         'FullName': (data['fullName'] as String?) ?? '',
         'CreatedAt': createdAt is Timestamp ? createdAt.toDate().toIso8601String() : (createdAt as String?) ?? '',
-        'UpdatedAt': updatedAt is Timestamp ? updatedAt.toDate().toIso8601String() : (updatedAt as String?) ?? null,
+        'UpdatedAt': updatedAt is Timestamp ? updatedAt.toDate().toIso8601String() : (updatedAt as String?),
         'FirebaseUID': uid,
         'Source': 'firestore',
       };
@@ -122,7 +103,6 @@ class _UserListPageState extends State<UserListPage> {
     merged.addAll(usersByEmail.values);
 
     for (final entry in usersByUid.entries) {
-      final uid = entry.key;
       final row = entry.value;
       final email = (row['Email'] as String?)?.trim().toLowerCase();
       if (email != null && email.isNotEmpty && usersByEmail.containsKey(email)) {
@@ -220,60 +200,6 @@ class _UserListPageState extends State<UserListPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text('Danh sách người dùng'),
-        backgroundColor: AppColors.white,
-        foregroundColor: AppColors.textDark,
-        elevation: 0,
-        actions: [
-          // Chat icon with badge - số nhỏ ở góc
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              IconButton(
-                onPressed: () async {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const AdminChatInboxPage()),
-                  );
-                  if (mounted) {
-                    _loadUnreadConversations();
-                  }
-                },
-                icon: const Icon(Icons.chat_bubble_outline),
-                tooltip: 'Chat',
-              ),
-              if (_unreadConversations > 0)
-                Positioned(
-                  right: 4,
-                  top: 4,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                    constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.red,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      _unreadConversations > 99 ? '99+' : _unreadConversations.toString(),
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 9,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-            ],
-          ),
-          IconButton(
-            onPressed: _refreshUsers,
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Làm mới',
-          ),
-        ],
-      ),
       body: FutureBuilder<List<Map<String, Object?>>>(
         future: _usersFuture,
         builder: (context, snapshot) {

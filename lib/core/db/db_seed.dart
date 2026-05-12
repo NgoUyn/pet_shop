@@ -25,6 +25,18 @@ Future<void> seedInitialData(Database db) async {
     'UpdatedAt': null,
   });
 
+  await db.insert('User', {
+    'Role': 'admin',
+    'Email': 'sugaryummy321@gmail.com',
+    'PasswordHash': 'hash_admin',
+    'FullName': 'Admin Shop',
+    'IsActive': 1,
+    'VerificationToken': null,
+    'VerifiedAt': null,
+    'CreatedAt': DateTime.now().toIso8601String(),
+    'UpdatedAt': null,
+  });
+
   await db.insert('Customer', {
     'UserID': 1,
     'Phone': '0123456789',

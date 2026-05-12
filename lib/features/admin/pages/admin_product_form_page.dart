@@ -4,63 +4,89 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/constants/app_colors.dart';
-import '../../home/services/pet_repository.dart';
+import '../../../core/db/app_database.dart';
+import '../../home/services/product_repository.dart';
 
-class AdminPetFormPage extends StatefulWidget {
-  const AdminPetFormPage({super.key, this.pet});
+class AdminProductFormPage extends StatefulWidget {
+  const AdminProductFormPage({super.key, this.product});
 
-  final PetItem? pet;
+  final ProductItem? product;
 
   @override
-  State<AdminPetFormPage> createState() => _AdminPetFormPageState();
+  State<AdminProductFormPage> createState() => _AdminProductFormPageState();
 }
 
-class _AdminPetFormPageState extends State<AdminPetFormPage> {
+class _AdminProductFormPageState extends State<AdminProductFormPage> {
   final _formKey = GlobalKey<FormState>();
-  final _petNameController = TextEditingController();
-  final _speciesController = TextEditingController();
+  final _productNameController = TextEditingController();
   final _priceController = TextEditingController();
-  final _ageController = TextEditingController();
-  final _personalityController = TextEditingController();
+  final _stockController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _imageUrlController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
 
-  String? _initialImageUrl;
-  String _gender = 'Cái';
-  bool _isDewormed = false;
-  bool _isVaccinated = false;
-  bool _isSaving = false;
+  String _status = 'Đang bán';
   String? _imagePath;
+  bool _isSaving = false;
+  int? _selectedCategoryId;
+  List<_CategoryChoice> _categories = const [];
 
-  bool get _isEditing => widget.pet != null;
+  bool get _isEditing => widget.product != null;
 
   @override
   void initState() {
     super.initState();
-    final pet = widget.pet;
-    if (pet != null) {
-      _petNameController.text = pet.petName;
-      _speciesController.text = pet.species;
-      _priceController.text = pet.price?.toStringAsFixed(0) ?? '';
-      _ageController.text = pet.age?.toString() ?? '';
-      _personalityController.text = pet.personality ?? '';
-      _descriptionController.text = pet.description ?? '';
-      _gender = pet.gender ?? 'Chưa xác định';
-      _isDewormed = pet.isDewormed;
-      _isVaccinated = pet.isVaccinated;
-      _initialImageUrl = pet.imageUrl;
+    final product = widget.product;
+    if (product != null) {
+      _productNameController.text = product.productName;
+      _priceController.text = product.price.toStringAsFixed(0);
+      _stockController.text = product.stockQuantity.toString();
+      _descriptionController.text = product.description ?? '';
+      _imageUrlController.text = product.imageUrl ?? '';
+      _selectedCategoryId = product.categoryId;
+      _status = _deriveStatus(product);
     }
+    _loadCategories();
   }
 
   @override
   void dispose() {
-    _petNameController.dispose();
-    _speciesController.dispose();
+    _productNameController.dispose();
     _priceController.dispose();
-    _ageController.dispose();
-    _personalityController.dispose();
+    _stockController.dispose();
     _descriptionController.dispose();
+    _imageUrlController.dispose();
     super.dispose();
+  }
+
+  String _deriveStatus(ProductItem product) {
+    if (!product.isActive) return 'Không bán';
+    if (product.stockQuantity <= 0) return 'Hết hàng';
+    return 'Đang bán';
+  }
+
+  Future<void> _loadCategories() async {
+    final db = await AppDatabase.instance;
+    final rows = await db.query(
+      'Category',
+      columns: ['CategoryID', 'CategoryName'],
+      orderBy: 'CategoryName ASC',
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _categories = rows
+          .map(
+            (row) => _CategoryChoice(
+              id: row['CategoryID'] as int,
+              name: (row['CategoryName'] as String?) ?? '',
+            ),
+          )
+          .toList();
+      if (_selectedCategoryId == null && _categories.isNotEmpty) {
+        _selectedCategoryId = _categories.first.id;
+      }
+    });
   }
 
   Future<void> _pickImage() async {
@@ -94,7 +120,7 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
       child: const Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.image_outlined, size: 44, color: Color(0xFF9AA5B1)),
+          Icon(Icons.shopping_bag_outlined, size: 44, color: Color(0xFF9AA5B1)),
           SizedBox(height: 8),
           Text(
             'Chưa chọn ảnh',
@@ -120,26 +146,12 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
       );
     }
 
-    final initialImageUrl = (_initialImageUrl ?? '').trim();
-    if (initialImageUrl.isNotEmpty) {
-      final isNetwork = initialImageUrl.startsWith('http://') || initialImageUrl.startsWith('https://');
-      if (isNetwork) {
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: Image.network(
-            initialImageUrl,
-            height: 180,
-            width: double.infinity,
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => _buildPreviewPlaceholder(),
-          ),
-        );
-      }
-
+    final imageUrl = _imageUrlController.text.trim();
+    if (imageUrl.isNotEmpty && (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))) {
       return ClipRRect(
         borderRadius: BorderRadius.circular(20),
-        child: Image.file(
-          File(initialImageUrl),
+        child: Image.network(
+          imageUrl,
           height: 180,
           width: double.infinity,
           fit: BoxFit.cover,
@@ -151,8 +163,14 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
     return _buildPreviewPlaceholder();
   }
 
-  Future<void> _savePet() async {
+  Future<void> _saveProduct() async {
     if (!(_formKey.currentState?.validate() ?? false)) {
+      return;
+    }
+    if (_selectedCategoryId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Chưa có danh mục phù hợp')),
+      );
       return;
     }
 
@@ -161,34 +179,32 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
     });
 
     try {
-      final imageUrl = (_imagePath?.trim().isNotEmpty ?? false) ? _imagePath!.trim() : _initialImageUrl;
+      final imageUrl = (_imagePath?.trim().isNotEmpty ?? false) ? _imagePath!.trim() : _imageUrlController.text.trim();
+      final enteredStock = int.parse(_stockController.text.trim());
+      final status = _status;
+      final isActive = status != 'Không bán';
+      final stockQuantity = status == 'Hết hàng' ? 0 : enteredStock;
 
       if (_isEditing) {
-        await PetRepository.instance.updatePet(
-          petId: widget.pet!.petId,
-          petName: _petNameController.text.trim(),
-          species: _speciesController.text.trim(),
-          gender: _gender,
+        await ProductRepository.instance.updateProduct(
+          productId: widget.product!.productId,
+          categoryId: _selectedCategoryId!,
+          productName: _productNameController.text.trim(),
           price: double.parse(_priceController.text.trim()),
+          stockQuantity: stockQuantity,
           description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
-          age: int.tryParse(_ageController.text.trim()),
-          personality: _personalityController.text.trim().isEmpty ? null : _personalityController.text.trim(),
-          isDewormed: _isDewormed,
-          isVaccinated: _isVaccinated,
-          imageUrl: imageUrl,
+          imageUrl: imageUrl.isEmpty ? null : imageUrl,
+          isActive: isActive,
         );
       } else {
-        await PetRepository.instance.addPet(
-          petName: _petNameController.text.trim(),
-          species: _speciesController.text.trim(),
-          gender: _gender,
+        await ProductRepository.instance.addProduct(
+          categoryId: _selectedCategoryId!,
+          productName: _productNameController.text.trim(),
           price: double.parse(_priceController.text.trim()),
+          stockQuantity: stockQuantity,
           description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
-          age: int.tryParse(_ageController.text.trim()),
-          personality: _personalityController.text.trim().isEmpty ? null : _personalityController.text.trim(),
-          isDewormed: _isDewormed,
-          isVaccinated: _isVaccinated,
-          imageUrl: imageUrl,
+          imageUrl: imageUrl.isEmpty ? null : imageUrl,
+          isActive: isActive,
         );
       }
 
@@ -197,7 +213,7 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Không thể lưu thú cưng: $e')),
+        SnackBar(content: Text('Không thể lưu cập nhật: $e')),
       );
     } finally {
       if (mounted) {
@@ -210,10 +226,14 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
 
   @override
   Widget build(BuildContext context) {
+    if (_categories.isNotEmpty && _selectedCategoryId == null) {
+      _selectedCategoryId = _categories.first.id;
+    }
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: Text(_isEditing ? 'Chỉnh sửa thú cưng' : 'Nhập thú cưng mới'),
+        title: Text(_isEditing ? 'Chỉnh sửa phụ kiện' : 'Thêm phụ kiện'),
         backgroundColor: AppColors.white,
         foregroundColor: AppColors.textDark,
         elevation: 0,
@@ -237,39 +257,52 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                         child: OutlinedButton.icon(
                           onPressed: _isSaving ? null : _pickImage,
                           icon: const Icon(Icons.upload_outlined),
-                          label: const Text('Tải ảnh thú cưng'),
+                          label: const Text('Tải ảnh phụ kiện'),
                         ),
                       ),
                       const SizedBox(height: 16),
                       _buildTextField(
-                        controller: _petNameController,
-                        label: 'Tên thú cưng',
-                        hintText: 'Ví dụ: Milu',
-                        validator: (value) => value == null || value.trim().isEmpty ? 'Vui lòng nhập tên thú cưng' : null,
+                        controller: _productNameController,
+                        label: 'Tên sản phẩm',
+                        hintText: 'Ví dụ: Vitamin cho chó mèo',
+                        validator: (value) => value == null || value.trim().isEmpty ? 'Vui lòng nhập tên sản phẩm' : null,
                       ),
                       const SizedBox(height: 12),
-                      _buildTextField(
-                        controller: _speciesController,
-                        label: 'Giống / loài',
-                        hintText: 'Ví dụ: Chó Poodle',
-                        validator: (value) => value == null || value.trim().isEmpty ? 'Vui lòng nhập giống / loài' : null,
+                      DropdownButtonFormField<int>(
+                        value: _selectedCategoryId,
+                        decoration: InputDecoration(
+                          labelText: 'Danh mục',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        items: _categories
+                            .map(
+                              (category) => DropdownMenuItem<int>(
+                                value: category.id,
+                                child: Text(category.name),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: _isSaving ? null : (value) => setState(() => _selectedCategoryId = value),
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        initialValue: _gender,
+                        value: _status,
                         decoration: InputDecoration(
-                          labelText: 'Giới tính',
+                          labelText: 'Trạng thái',
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
                         ),
                         items: const [
-                          DropdownMenuItem(value: 'Đực', child: Text('Đực')),
-                          DropdownMenuItem(value: 'Cái', child: Text('Cái')),
-                          DropdownMenuItem(value: 'Chưa xác định', child: Text('Chưa xác định')),
+                          DropdownMenuItem(value: 'Đang bán', child: Text('Đang bán')),
+                          DropdownMenuItem(value: 'Hết hàng', child: Text('Hết hàng')),
+                          DropdownMenuItem(value: 'Không bán', child: Text('Không bán')),
                         ],
                         onChanged: _isSaving ? null : (value) {
                           if (value == null) return;
                           setState(() {
-                            _gender = value;
+                            _status = value;
+                            if (value == 'Hết hàng') {
+                              _stockController.text = '0';
+                            }
                           });
                         },
                       ),
@@ -280,7 +313,7 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                             child: _buildTextField(
                               controller: _priceController,
                               label: 'Giá',
-                              hintText: '3500000',
+                              hintText: '150000',
                               keyboardType: TextInputType.number,
                               validator: (value) {
                                 final parsed = double.tryParse((value ?? '').trim());
@@ -294,16 +327,14 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: _buildTextField(
-                              controller: _ageController,
-                              label: 'Tuổi',
-                              hintText: '3',
+                              controller: _stockController,
+                              label: 'Tồn kho',
+                              hintText: '18',
                               keyboardType: TextInputType.number,
                               validator: (value) {
-                                final text = (value ?? '').trim();
-                                if (text.isEmpty) return null;
-                                final parsed = int.tryParse(text);
+                                final parsed = int.tryParse((value ?? '').trim());
                                 if (parsed == null || parsed < 0) {
-                                  return 'Tuổi không hợp lệ';
+                                  return 'Vui lòng nhập tồn kho hợp lệ';
                                 }
                                 return null;
                               },
@@ -313,57 +344,24 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                       ),
                       const SizedBox(height: 12),
                       _buildTextField(
-                        controller: _personalityController,
-                        label: 'Tính cách',
-                        hintText: 'Thân thiện, hiền, năng động...',
-                        maxLines: 2,
+                        controller: _imageUrlController,
+                        label: 'URL ảnh',
+                        hintText: 'https://...',
+                        keyboardType: TextInputType.url,
                       ),
                       const SizedBox(height: 12),
                       _buildTextField(
                         controller: _descriptionController,
-                        label: 'Mô tả chi tiết',
-                        hintText: 'Ghi chú thêm về ngoại hình, thói quen, sức khỏe...',
+                        label: 'Mô tả',
+                        hintText: 'Mô tả ngắn về phụ kiện',
                         maxLines: 4,
-                      ),
-                      const SizedBox(height: 16),
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: AppColors.white,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Tình trạng y tế',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                            ),
-                            const SizedBox(height: 12),
-                            SwitchListTile.adaptive(
-                              contentPadding: EdgeInsets.zero,
-                              value: _isDewormed,
-                              onChanged: _isSaving ? null : (value) => setState(() => _isDewormed = value),
-                              title: const Text('Đã tẩy giun'),
-                              subtitle: const Text('Tắt nếu thú cưng chưa được tẩy giun'),
-                            ),
-                            const Divider(height: 1),
-                            SwitchListTile.adaptive(
-                              contentPadding: EdgeInsets.zero,
-                              value: _isVaccinated,
-                              onChanged: _isSaving ? null : (value) => setState(() => _isVaccinated = value),
-                              title: const Text('Đã tiêm phòng'),
-                              subtitle: const Text('Tắt nếu thú cưng chưa tiêm phòng'),
-                            ),
-                          ],
-                        ),
                       ),
                       const SizedBox(height: 20),
                       SizedBox(
                         width: double.infinity,
                         height: 52,
                         child: ElevatedButton.icon(
-                          onPressed: _isSaving ? null : _savePet,
+                          onPressed: _isSaving ? null : _saveProduct,
                           icon: _isSaving
                               ? const SizedBox(
                                   width: 18,
@@ -371,7 +369,7 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                                   child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                                 )
                               : const Icon(Icons.save_outlined),
-                          label: Text(_isSaving ? 'Đang lưu...' : (_isEditing ? 'Cập nhật thú cưng' : 'Lưu thú cưng')),
+                          label: Text(_isSaving ? 'Đang lưu...' : (_isEditing ? 'Cập nhật phụ kiện' : 'Lưu phụ kiện')),
                         ),
                       ),
                     ],
@@ -405,4 +403,11 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
       ),
     );
   }
+}
+
+class _CategoryChoice {
+  _CategoryChoice({required this.id, required this.name});
+
+  final int id;
+  final String name;
 }
