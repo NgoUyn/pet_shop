@@ -1,12 +1,13 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:latlong2/latlong.dart';
+import 'package:http/http.dart' as http;
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/widgets/main_wrapper.dart';
 import '../../auth/services/auth_repository.dart';
 import '../services/profile_repository.dart';
-import 'location_picker_page.dart';
 
 class ProfileDetailPage extends StatefulWidget {
   const ProfileDetailPage({super.key});
@@ -60,38 +61,78 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
   }
 
   Future<void> _getCurrentLocation() async {
-    LatLng? initialPos;
     try {
-      // Try to get current GPS position for map initial center
       final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (serviceEnabled) {
-        var permission = await Geolocator.checkPermission();
-        if (permission == LocationPermission.denied) {
-          permission = await Geolocator.requestPermission();
+      if (!serviceEnabled) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Vui lòng bật GPS để lấy địa chỉ')),
+          );
         }
-        if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
-          try {
-            final position = await Geolocator.getCurrentPosition(
-              locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+        return;
+      }
+
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Cần cấp quyền truy cập vị trí')),
             );
-            if (!position.isMocked) {
-              initialPos = LatLng(position.latitude, position.longitude);
-            }
-          } catch (_) {}
+          }
+          return;
         }
       }
-    } catch (_) {}
+      if (permission == LocationPermission.deniedForever) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Quyền truy cập vị trí đã bị từ chối vĩnh viễn')),
+          );
+        }
+        return;
+      }
 
-    if (!mounted) return;
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+      );
+      if (position.isMocked) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Không thể lấy vị trí thực. Hãy bật GPS và thử lại.')),
+          );
+        }
+        return;
+      }
 
-    final result = await Navigator.push<Map<String, dynamic>>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => LocationPickerPage(initialPosition: initialPos),
-      ),
-    );
-    if (result != null && mounted) {
-      _addressController.text = result['address'] as String? ?? '';
+      // Reverse geocode via Nominatim
+      final uri = Uri.parse(
+        'https://nominatim.openstreetmap.org/reverse'
+        '?format=json'
+        '&lat=${position.latitude}'
+        '&lon=${position.longitude}'
+        '&accept-language=vi'
+        '&zoom=16',
+      );
+      final response = await http.get(uri, headers: {'User-Agent': 'PetShopApp/1.0'});
+      if (response.statusCode != 200) return;
+
+      final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final displayName = data['display_name'] as String?;
+      if (displayName == null || displayName.isEmpty) return;
+
+      _addressController.text = displayName;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đã lấy địa chỉ hiện tại'), duration: Duration(seconds: 1)),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Không thể lấy địa chỉ: $e')),
+        );
+      }
     }
   }
 
