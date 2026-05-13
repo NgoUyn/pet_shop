@@ -1,11 +1,15 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/cloudinary_helper.dart';
 import '../services/review_repository.dart';
+
+const _apiBaseUrl = 'http://10.0.2.2:3000';
 
 class ReviewPage extends StatefulWidget {
   final int invoiceId;
@@ -84,6 +88,23 @@ class _ReviewPageState extends State<ReviewPage> {
         }
       }
 
+      // Check images for inappropriate content
+      if (imageUrls.isNotEmpty) {
+        final passed = await _checkImagesModeration(imageUrls);
+        if (!passed) {
+          if (mounted) {
+            setState(() => _isSubmitting = false);
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Ảnh của bạn chứa nội dung không phù hợp. Vui lòng chọn ảnh khác.'),
+                duration: Duration(seconds: 3),
+              ),
+            );
+          }
+          return;
+        }
+      }
+
       await ReviewRepository.instance.create(
         invoiceId: widget.invoiceId,
         rating: _rating,
@@ -103,6 +124,25 @@ class _ReviewPageState extends State<ReviewPage> {
           SnackBar(content: Text('Lỗi: $e')),
         );
       }
+    }
+  }
+
+  Future<bool> _checkImagesModeration(List<String> imageUrls) async {
+    try {
+      final response = await http.post(
+        Uri.parse('$_apiBaseUrl/check-review-images'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'imageUrls': imageUrls}),
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['passed'] == true;
+      }
+      // If API unavailable, allow submission (fail open)
+      return true;
+    } catch (e) {
+      print('Moderation check failed, allowing submission: $e');
+      return true; // Fail open if API unreachable
     }
   }
 

@@ -18,6 +18,8 @@ class ReviewItem {
     this.customerName,
     this.imageUrls = const [],
     this.firestoreDocId,
+    this.isFlagged = false,
+    this.moderationStatus,
   });
 
   final int reviewId;
@@ -30,6 +32,8 @@ class ReviewItem {
   final String? customerName;
   final List<String> imageUrls;
   final String? firestoreDocId;
+  final bool isFlagged;
+  final String? moderationStatus;
 
   static ReviewItem fromRow(Map<String, Object?> row, {List<String>? imageUrls}) {
     final createdAtRaw = row['CreatedAt'] as String;
@@ -44,6 +48,8 @@ class ReviewItem {
       updatedAt: updatedAtRaw == null ? null : DateTime.parse(updatedAtRaw),
       customerName: row['CustomerName'] as String?,
       imageUrls: imageUrls ?? [],
+      isFlagged: row['IsFlagged'] is int ? (row['IsFlagged'] as int) == 1 : false,
+      moderationStatus: row['ModerationStatus'] as String?,
     );
   }
 
@@ -62,6 +68,8 @@ class ReviewItem {
       customerName: data['customerName'] as String?,
       imageUrls: imageUrls,
       firestoreDocId: doc.id,
+      isFlagged: data['isFlagged'] as bool? ?? false,
+      moderationStatus: data['moderationStatus'] as String?,
     );
   }
 }
@@ -192,6 +200,8 @@ class ReviewRepository {
         'imageUrls': imageUrls ?? [],
         'productIds': productIds,
         'createdAt': now,
+        'moderationStatus': 'pending',
+        'isFlagged': false,
       });
     } catch (e) {
       print('ReviewRepository._doSyncToFirestore: $e');
@@ -327,16 +337,21 @@ class ReviewRepository {
     final localItems = results[0];
     final firestoreItems = results[1];
 
-    // Merge: dedup by (invoiceId, customerName) — one review per order per user
-    final seen = <String>{};
-    final merged = <ReviewItem>[];
-
-    for (final item in [...localItems, ...firestoreItems]) {
+    // Merge: dedup by (invoiceId, customerName) — Firestore takes precedence
+    // so moderationStatus from Cloud Function is preserved
+    final map = <String, ReviewItem>{};
+    for (final item in localItems) {
       final key = '${item.invoiceId}_${item.customerName ?? ''}';
-      if (seen.add(key)) {
-        merged.add(item);
-      }
+      map[key] = item;
     }
+    for (final item in firestoreItems) {
+      final key = '${item.invoiceId}_${item.customerName ?? ''}';
+      map[key] = item; // Overwrite local with Firestore (has moderation data)
+    }
+    var merged = map.values.toList();
+
+    // Filter out rejected/moderated-out reviews
+    merged.removeWhere((item) => item.isFlagged && item.moderationStatus == 'rejected');
 
     merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return merged;
