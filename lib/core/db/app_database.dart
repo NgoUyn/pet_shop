@@ -9,10 +9,20 @@ import 'migrations/migration_v13_favorites_and_notifications.dart';
 
 class AppDatabase {
   static Database? _db;
+  static bool _repairsApplied = false;
 
   static Future<Database> get instance async {
-    if (_db != null) return _db!;
-    _db = await _initDb();
+    if (_db == null) {
+      _db = await _initDb();
+      _repairsApplied = true;
+      return _db!;
+    }
+
+    if (!_repairsApplied) {
+      await runOpenRepairs(_db!);
+      _repairsApplied = true;
+    }
+
     return _db!;
   }
 
@@ -22,7 +32,7 @@ class AppDatabase {
 
     return openDatabase(
       path,
-      version: 18,
+      version: 19,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON;');
       },

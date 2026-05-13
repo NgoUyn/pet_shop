@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-
 import '../../../core/constants/app_colors.dart';
 import '../../auth/pages/login_page.dart';
 import '../../auth/services/auth_session.dart';
@@ -7,7 +6,6 @@ import '../../cart/services/cart_repository.dart';
 import '../../favorites/services/favorite_repository.dart';
 import 'pet_detail_page.dart';
 import '../services/pet_repository.dart';
-import '../widgets/pet_card.dart';
 
 class PetListPage extends StatefulWidget {
   const PetListPage({super.key});
@@ -19,13 +17,6 @@ class PetListPage extends StatefulWidget {
 class _PetListPageState extends State<PetListPage> {
   late Future<List<PetItem>> _future;
   Set<int> _favoritePetIds = {};
-
-  void _handlePetsChanged() {
-    if (!mounted) return;
-    setState(() {
-      _future = PetRepository.instance.listActivePets();
-    });
-  }
 
   @override
   void initState() {
@@ -57,10 +48,24 @@ class _PetListPageState extends State<PetListPage> {
   }
 
   String _formatPrice(double value) {
-    if (value >= 1000000) {
-      return '${(value / 1000000).toStringAsFixed(1).replaceFirst('.0', '')}tr';
+    final formatted = value.toStringAsFixed(0);
+    final buffer = StringBuffer();
+    for (var i = 0; i < formatted.length; i++) {
+      final fromEnd = formatted.length - i;
+      buffer.write(formatted[i]);
+      if (fromEnd > 1 && fromEnd % 3 == 1) {
+        buffer.write('.');
+      }
     }
-    return '${value.toStringAsFixed(0).replaceAllMapped(RegExp(r"(\d{1,3})(?=(\d{3})+(?!\d))"), (Match m) => "${m[1]}.")}đ';
+    return '$bufferđ';
+  }
+
+  Widget _buildPetImage() {
+    return Container(
+      color: AppColors.background,
+      alignment: Alignment.center,
+      child: const Icon(Icons.pets, color: AppColors.textLight, size: 44),
+    );
   }
 
   Future<void> _ensureLoggedIn() async {

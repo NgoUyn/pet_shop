@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../auth/pages/login_page.dart';
@@ -19,13 +17,6 @@ class ShopListPage extends StatefulWidget {
 class _ShopListPageState extends State<ShopListPage> {
   late Future<List<ProductItem>> _future;
   Set<int> _favoriteProductIds = {};
-
-  void _handleProductsChanged() {
-    if (!mounted) return;
-    setState(() {
-      _future = ProductRepository.instance.listActiveProducts();
-    });
-  }
 
   @override
   void initState() {
@@ -79,23 +70,8 @@ class _ShopListPageState extends State<ShopListPage> {
       );
     }
 
-    if (normalized.startsWith('http://') || normalized.startsWith('https://')) {
-      return Image.network(
-        normalized,
-        width: double.infinity,
-        fit: BoxFit.cover,
-        errorBuilder: (context, error, stackTrace) {
-          return Container(
-            color: AppColors.background,
-            alignment: Alignment.center,
-            child: const Icon(Icons.broken_image_outlined, color: AppColors.textLight, size: 44),
-          );
-        },
-      );
-    }
-
-    return Image.file(
-      File(normalized),
+    return Image.network(
+      normalized,
       width: double.infinity,
       fit: BoxFit.cover,
       errorBuilder: (context, error, stackTrace) {

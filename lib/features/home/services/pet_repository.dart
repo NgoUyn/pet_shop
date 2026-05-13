@@ -67,11 +67,28 @@ class PetRepository {
     final db = await AppDatabase.instance;
     final rows = await db.query(
       'Pet',
+      where: 'IsActive = 1',
       orderBy: 'CreatedAt DESC, PetID DESC',
       limit: limit,
     );
 
     return rows.map(PetItem.fromRow).toList();
+  }
+
+  Future<PetItem?> getPetById(int petId) async {
+    final db = await AppDatabase.instance;
+    final rows = await db.query(
+      'Pet',
+      where: 'PetID = ?',
+      whereArgs: [petId],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) {
+      return null;
+    }
+
+    return PetItem.fromRow(rows.first);
   }
 
   Future<int> addPet({
@@ -107,5 +124,75 @@ class PetRepository {
     });
     _notifyChanged();
     return id;
+  }
+
+  Future<PetItem> updatePet({
+    required int petId,
+    int? customerId,
+    required String petName,
+    required String species,
+    required String gender,
+    required double price,
+    String? description,
+    int? age,
+    String? personality,
+    required bool isDewormed,
+    required bool isVaccinated,
+    String? imageUrl,
+    bool? isActive,
+  }) async {
+    final db = await AppDatabase.instance;
+    final affected = await db.update(
+      'Pet',
+      {
+        'CustomerID': customerId,
+        'PetName': petName,
+        'Species': species,
+        'Gender': gender,
+        'Description': description,
+        'Price': price,
+        'Age': age,
+        'Personality': personality,
+        'IsDewormed': isDewormed ? 1 : 0,
+        'IsVaccinated': isVaccinated ? 1 : 0,
+        'ImageURL': imageUrl,
+        'IsActive': (isActive ?? true) ? 1 : 0,
+        'UpdatedAt': DateTime.now().toIso8601String(),
+      },
+      where: 'PetID = ?',
+      whereArgs: [petId],
+    );
+
+    if (affected == 0) {
+      throw StateError('Không tìm thấy thú cưng để cập nhật');
+    }
+
+    _notifyChanged();
+
+    final updated = await getPetById(petId);
+    if (updated == null) {
+      throw StateError('Không thể tải lại dữ liệu thú cưng');
+    }
+
+    return updated;
+  }
+
+  Future<void> deletePet(int petId) async {
+    final db = await AppDatabase.instance;
+    final affected = await db.update(
+      'Pet',
+      {
+        'IsActive': 0,
+        'UpdatedAt': DateTime.now().toIso8601String(),
+      },
+      where: 'PetID = ?',
+      whereArgs: [petId],
+    );
+
+    if (affected == 0) {
+      throw StateError('Không tìm thấy thú cưng để xóa');
+    }
+
+    _notifyChanged();
   }
 }

@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+
 import '../../../core/db/app_database.dart';
 import '../../auth/services/auth_session.dart';
 
@@ -63,8 +64,9 @@ class NotificationRepository {
     DateTime? createdAt,
     int? referenceId,
     String? referenceType,
+    DatabaseExecutor? txn,
   }) async {
-    final db = await AppDatabase.instance;
+    final db = txn ?? await AppDatabase.instance;
 
     final normalizedTitle = title.trim();
     final normalizedContent = content.trim();

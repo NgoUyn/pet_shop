@@ -12,6 +12,7 @@ import 'migrations/migration_v15_review_image.dart';
 import 'migrations/migration_v16_add_admin.dart';
 import 'migrations/migration_v17_pet_details.dart';
 import 'migrations/migration_v18_pet_gender.dart';
+import 'migrations/migration_v19_promotions.dart';
 
 Future<void> runMigrations(Database db, int oldVersion, int newVersion) async {
   if (oldVersion < 2) {
@@ -315,5 +316,9 @@ Future<void> runMigrations(Database db, int oldVersion, int newVersion) async {
 
   if (oldVersion < 18) {
     await migrateV18PetGender(db);
+  }
+
+  if (oldVersion < 19) {
+    await MigrationV19Promotions.up(db);
   }
 }

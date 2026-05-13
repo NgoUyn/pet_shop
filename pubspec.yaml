@@ -33,7 +33,7 @@ dependencies:
   sqflite: ^2.3.3
   path: ^1.9.0
   flutter_dotenv: ^6.0.1
-  firebase_core: any
+  firebase_core: ^4.8.0
   firebase_auth: any
   cloud_firestore: any
   google_sign_in: any

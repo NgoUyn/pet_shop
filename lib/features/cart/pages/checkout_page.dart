@@ -75,9 +75,31 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
     final shippingAddress = _addressCtrl.text.trim();
     final phone = _profile?.phone?.trim() ?? '';
-    if (_profile == null || phone.isEmpty || shippingAddress.isEmpty) {
+
+    debugPrint('--- UI Confirm Logic Debug ---');
+    debugPrint('Profile exists: ${_profile != null}');
+    debugPrint('Phone: "$phone"');
+    debugPrint('Shipping Address: "$shippingAddress"');
+
+    if (_profile == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Vui lòng cập nhật đầy đủ thông tin hồ sơ trước khi mua hàng')),
+        const SnackBar(content: Text('Không tìm thấy thông tin hồ sơ')),
+      );
+      return;
+    }
+
+    if (phone.isEmpty) {
+      debugPrint('UI Validation failed: Phone is empty');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vui lòng cập nhật số điện thoại trong hồ sơ trước khi đặt hàng')),
+      );
+      return;
+    }
+
+    if (shippingAddress.isEmpty) {
+      debugPrint('UI Validation failed: Shipping Address is empty');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vui lòng nhập địa chỉ nhận hàng')),
       );
       return;
     }

@@ -742,9 +742,28 @@ class CartRepository {
         ? shippingAddress!.trim()
         : profileAddress;
 
-    if (profile == null || profilePhone.isEmpty || profileAddress.isEmpty || resolvedShippingAddress.isEmpty) {
-      throw StateError('Vui lòng cập nhật đầy đủ thông tin hồ sơ trước khi mua hàng');
+    debugPrint('--- Checkout Logic Debug ---');
+    debugPrint('User ID: $userId');
+    debugPrint('Profile found: ${profile != null}');
+    debugPrint('Profile Phone: "$profilePhone"');
+    debugPrint('Profile Address: "$profileAddress"');
+    debugPrint('Input Shipping Address: "$shippingAddress"');
+    debugPrint('Resolved Shipping Address: "$resolvedShippingAddress"');
+
+    if (profile == null) {
+      debugPrint('Checkout failed: Profile is null');
+      throw StateError('Không tìm thấy thông tin người dùng');
     }
+    if (profilePhone.isEmpty) {
+      debugPrint('Checkout failed: Phone number is empty');
+      throw StateError('Vui lòng cập nhật số điện thoại trong hồ sơ trước khi mua hàng');
+    }
+    if (resolvedShippingAddress.isEmpty) {
+      debugPrint('Checkout failed: Shipping address is empty');
+      throw StateError('Vui lòng nhập địa chỉ nhận hàng');
+    }
+
+    debugPrint('Validation passed, proceeding to checkout...');
 
     final db = await AppDatabase.instance;
     final customerId = await _resolveCustomerId(userId);
