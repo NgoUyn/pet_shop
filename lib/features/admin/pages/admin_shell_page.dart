@@ -21,6 +21,7 @@ import 'admin_pet_form_page.dart';
 import 'admin_product_form_page.dart';
 import 'admin_warehouse_page.dart';
 import 'order_management_page.dart';
+import 'review_management_page.dart';
 import 'user_list_page.dart';
 import '../services/promotion_repository.dart';
 
@@ -171,6 +172,7 @@ class _AdminShellPageState extends State<AdminShellPage> {
       const OrderManagementPage(),
       const AdminWarehousePage(),
       const UserListPage(),
+      const ReviewManagementPage(),
       _AdminAccountPage(onLogoutTap: _logout),
     ];
 
@@ -187,6 +189,7 @@ class _AdminShellPageState extends State<AdminShellPage> {
             1 => 'Đơn hàng',
             2 => 'Kho hàng',
             3 => 'Khách hàng',
+            4 => 'Đánh giá',
             _ => 'Tài khoản',
           },
           style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
@@ -240,6 +243,11 @@ class _AdminShellPageState extends State<AdminShellPage> {
             icon: Icon(Icons.groups_outlined),
             selectedIcon: Icon(Icons.groups),
             label: 'Khách',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.rate_review_outlined),
+            selectedIcon: Icon(Icons.rate_review),
+            label: 'Đánh giá',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_outline),

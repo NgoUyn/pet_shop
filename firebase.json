@@ -3,14 +3,14 @@
     "platforms": {
       "android": {
         "default": {
-          "projectId": "pet-shop-613da",
+          "projectId": "pet-shop-7eee2",
           "appId": "1:97670076187:android:34f1bb5cbdf86e61d965be",
           "fileOutput": "android/app/google-services.json"
         }
       },
       "dart": {
         "lib/firebase_options.dart": {
-          "projectId": "pet-shop-613da",
+          "projectId": "pet-shop-7eee2",
           "configurations": {
             "android": "1:97670076187:android:34f1bb5cbdf86e61d965be",
             "web": "1:97670076187:web:ff888ac80853ae8bd965be",

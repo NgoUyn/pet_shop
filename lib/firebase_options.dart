@@ -47,30 +47,30 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'AIzaSyBhCUkYDGtI3_AfijsMJpUDYq_c4Uj9uSw',
-    appId: '1:97670076187:web:ff888ac80853ae8bd965be',
-    messagingSenderId: '97670076187',
-    projectId: 'pet-shop-613da',
-    authDomain: 'pet-shop-613da.firebaseapp.com',
-    storageBucket: 'pet-shop-613da.firebasestorage.app',
+    apiKey: 'AIzaSyAX_Ydqma6mx2lUsJq0rN_vTyzV8rA7-Oc',
+    appId: '1:645806549287:web:ff888ac80853ae8bd965be',
+    messagingSenderId: '645806549287',
+    projectId: 'pet-shop-7eee2',
+    authDomain: 'pet-shop-7eee2.firebaseapp.com',
+    storageBucket: 'pet-shop-7eee2.firebasestorage.app',
     measurementId: 'G-VNDWM1ZSGL',
   );
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyDJ3py2LDpq7W5bx7DPlJXJ-TOAHsToHvU',
-    appId: '1:97670076187:android:34f1bb5cbdf86e61d965be',
-    messagingSenderId: '97670076187',
-    projectId: 'pet-shop-613da',
-    storageBucket: 'pet-shop-613da.firebasestorage.app',
+    apiKey: 'AIzaSyAX_Ydqma6mx2lUsJq0rN_vTyzV8rA7-Oc',
+    appId: '1:645806549287:android:543bf33156a5fe8aa36102',
+    messagingSenderId: '645806549287',
+    projectId: 'pet-shop-7eee2',
+    storageBucket: 'pet-shop-7eee2.firebasestorage.app',
   );
 
   static const FirebaseOptions windows = FirebaseOptions(
-    apiKey: 'AIzaSyBhCUkYDGtI3_AfijsMJpUDYq_c4Uj9uSw',
-    appId: '1:97670076187:web:e8f929acf93c91d0d965be',
-    messagingSenderId: '97670076187',
-    projectId: 'pet-shop-613da',
-    authDomain: 'pet-shop-613da.firebaseapp.com',
-    storageBucket: 'pet-shop-613da.firebasestorage.app',
+    apiKey: 'AIzaSyAX_Ydqma6mx2lUsJq0rN_vTyzV8rA7-Oc',
+    appId: '1:645806549287:web:e8f929acf93c91d0d965be',
+    messagingSenderId: '645806549287',
+    projectId: 'pet-shop-7eee2',
+    authDomain: 'pet-shop-7eee2.firebaseapp.com',
+    storageBucket: 'pet-shop-7eee2.firebasestorage.app',
     measurementId: 'G-JNBB4SSN8R',
   );
 }

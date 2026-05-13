@@ -20,6 +20,7 @@ class ReviewItem {
     this.firestoreDocId,
     this.isFlagged = false,
     this.moderationStatus,
+    this.firebaseUid,
   });
 
   final int reviewId;
@@ -34,6 +35,7 @@ class ReviewItem {
   final String? firestoreDocId;
   final bool isFlagged;
   final String? moderationStatus;
+  final String? firebaseUid;
 
   static ReviewItem fromRow(Map<String, Object?> row, {List<String>? imageUrls}) {
     final createdAtRaw = row['CreatedAt'] as String;
@@ -70,6 +72,7 @@ class ReviewItem {
       firestoreDocId: doc.id,
       isFlagged: data['isFlagged'] as bool? ?? false,
       moderationStatus: data['moderationStatus'] as String?,
+      firebaseUid: data['firebaseUid'] as String?,
     );
   }
 }
@@ -84,6 +87,7 @@ class ReviewRepository {
     required int rating,
     String? content,
     List<String>? imageUrls,
+    String moderationStatus = 'pending',
   }) async {
     final db = await AppDatabase.instance;
     final resolvedUserId = userId ?? AuthSession.instance.currentUserId.value;
@@ -127,6 +131,7 @@ class ReviewRepository {
       content: content,
       imageUrls: imageUrls,
       now: now,
+      moderationStatus: moderationStatus,
     );
 
     return reviewId;
@@ -140,6 +145,7 @@ class ReviewRepository {
     String? content,
     List<String>? imageUrls,
     required String now,
+    required String moderationStatus,
   }) {
     // Fire-and-forget: don't block the user
     _doSyncToFirestore(
@@ -150,6 +156,7 @@ class ReviewRepository {
       content: content,
       imageUrls: imageUrls,
       now: now,
+      moderationStatus: moderationStatus,
     );
   }
 
@@ -161,6 +168,7 @@ class ReviewRepository {
     String? content,
     List<String>? imageUrls,
     required String now,
+    required String moderationStatus,
   }) async {
     try {
       final firebaseUser = FirebaseAuth.instance.currentUser;
@@ -190,6 +198,8 @@ class ReviewRepository {
           .map((id) => id!)
           .toList();
 
+      final isFlagged = moderationStatus == 'flagged' || moderationStatus == 'rejected';
+
       await FirebaseFirestore.instance.collection('reviews').add({
         'reviewId': reviewId,
         'invoiceId': invoiceId,
@@ -200,8 +210,8 @@ class ReviewRepository {
         'imageUrls': imageUrls ?? [],
         'productIds': productIds,
         'createdAt': now,
-        'moderationStatus': 'pending',
-        'isFlagged': false,
+        'moderationStatus': moderationStatus,
+        'isFlagged': isFlagged,
       });
     } catch (e) {
       print('ReviewRepository._doSyncToFirestore: $e');
@@ -396,6 +406,60 @@ class ReviewRepository {
     } catch (e) {
       print('ReviewRepository._getFirestoreByProductId error: $e');
       return [];
+    }
+  }
+
+  // ── Admin methods ──────────────────────────────────────────────────
+
+  /// Get all reviews from Firestore (optionally filtered by moderationStatus)
+  Future<List<ReviewItem>> getAllReviews({String? statusFilter}) async {
+    try {
+      Query query = FirebaseFirestore.instance.collection('reviews');
+
+      if (statusFilter != null && statusFilter.isNotEmpty) {
+        query = query.where('moderationStatus', isEqualTo: statusFilter);
+      }
+
+      final snapshot = await query.get();
+
+      final items = snapshot.docs
+          .map((doc) => ReviewItem.fromFirestore(doc))
+          .toList();
+
+      items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return items;
+    } catch (e) {
+      print('ReviewRepository.getAllReviews error: $e');
+      return [];
+    }
+  }
+
+  /// Update moderation status on Firestore
+  Future<void> updateModerationStatus(String firestoreDocId, String status) async {
+    try {
+      final isFlagged = status == 'flagged' || status == 'rejected';
+      await FirebaseFirestore.instance
+          .collection('reviews')
+          .doc(firestoreDocId)
+          .update({
+        'moderationStatus': status,
+        'isFlagged': isFlagged,
+      });
+    } catch (e) {
+      print('ReviewRepository.updateModerationStatus error: $e');
+    }
+  }
+
+  /// Delete review from Firestore. Local SQLite row is not deleted
+  /// (cascades from Invoice if invoice is deleted)
+  Future<void> deleteFirestoreReview(String firestoreDocId) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('reviews')
+          .doc(firestoreDocId)
+          .delete();
+    } catch (e) {
+      print('ReviewRepository.deleteFirestoreReview error: $e');
     }
   }
 

@@ -89,19 +89,19 @@ class _ReviewPageState extends State<ReviewPage> {
       }
 
       // Check images for inappropriate content
+      var moderationStatus = 'approved';
       if (imageUrls.isNotEmpty) {
         final passed = await _checkImagesModeration(imageUrls);
         if (!passed) {
+          moderationStatus = 'flagged';
           if (mounted) {
-            setState(() => _isSubmitting = false);
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
-                content: Text('Ảnh của bạn chứa nội dung không phù hợp. Vui lòng chọn ảnh khác.'),
-                duration: Duration(seconds: 3),
+                content: Text('Cảnh báo: Ảnh của bạn có thể chứa nội dung không phù hợp và đang được xem xét.'),
+                duration: Duration(seconds: 4),
               ),
             );
           }
-          return;
         }
       }
 
@@ -110,6 +110,7 @@ class _ReviewPageState extends State<ReviewPage> {
         rating: _rating,
         content: _contentController.text,
         imageUrls: imageUrls.isNotEmpty ? imageUrls : null,
+        moderationStatus: moderationStatus,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
