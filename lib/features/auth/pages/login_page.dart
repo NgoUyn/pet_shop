@@ -159,14 +159,6 @@ class _LoginPageState extends State<LoginPage> {
                       },
                     ),
                     const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: _loading ? null : _onResendVerification,
-                        child: const Text('Gửi lại link xác thực'),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
                     SizedBox(
                       width: double.infinity,
                       height: 48,

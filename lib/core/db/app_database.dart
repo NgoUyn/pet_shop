@@ -22,7 +22,7 @@ class AppDatabase {
 
     return openDatabase(
       path,
-      version: 14,
+      version: 15,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON;');
       },

@@ -1,5 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/cloudinary_helper.dart';
 import '../services/review_repository.dart';
 
 class ReviewPage extends StatefulWidget {
@@ -17,6 +22,8 @@ class _ReviewPageState extends State<ReviewPage> {
   bool _isLoading = true;
   bool _isSubmitting = false;
   ReviewItem? _existingReview;
+  final List<File> _images = [];
+  final ImagePicker _picker = ImagePicker();
 
   @override
   void initState() {
@@ -43,14 +50,45 @@ class _ReviewPageState extends State<ReviewPage> {
     }
   }
 
+  Future<void> _pickImages() async {
+    if (_images.length >= 3) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tối đa 3 ảnh')),
+      );
+      return;
+    }
+
+    final picked = await _picker.pickMultiImage(limit: 3 - _images.length);
+    if (picked.isNotEmpty) {
+      setState(() {
+        for (final file in picked) {
+          if (_images.length < 3) {
+            _images.add(File(file.path));
+          }
+        }
+      });
+    }
+  }
+
   Future<void> _submit() async {
     if (_rating == 0) return;
     setState(() => _isSubmitting = true);
+
     try {
+      // Upload images to Cloudinary
+      final imageUrls = <String>[];
+      for (final image in _images) {
+        final url = await CloudinaryHelper.uploadImage(image.path);
+        if (url != null) {
+          imageUrls.add(url);
+        }
+      }
+
       await ReviewRepository.instance.create(
         invoiceId: widget.invoiceId,
         rating: _rating,
         content: _contentController.text,
+        imageUrls: imageUrls.isNotEmpty ? imageUrls : null,
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -77,6 +115,82 @@ class _ReviewPageState extends State<ReviewPage> {
         size: 40,
         color: filled ? const Color(0xFFFFB300) : Colors.grey.shade300,
       ),
+    );
+  }
+
+  Widget _buildImagePreview() {
+    if (_images.isEmpty) return const SizedBox.shrink();
+    return Column(
+      children: [
+        const SizedBox(height: 16),
+        SizedBox(
+          height: 100,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: _images.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              return Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(8),
+                    child: Image.file(
+                      _images[index],
+                      width: 100,
+                      height: 100,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  Positioned(
+                    top: 2,
+                    right: 2,
+                    child: GestureDetector(
+                      onTap: () => setState(() => _images.removeAt(index)),
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          color: Colors.black54,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.close, size: 18, color: Colors.white),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReviewImages(List<String> urls) {
+    if (urls.isEmpty) return const SizedBox.shrink();
+    return Column(
+      children: [
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 100,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: urls.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, index) {
+              return ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Image.network(
+                  urls[index],
+                  width: 100,
+                  height: 100,
+                  fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) =>
+                      const Icon(Icons.broken_image, size: 40, color: Colors.grey),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -137,6 +251,7 @@ class _ReviewPageState extends State<ReviewPage> {
                         ),
                       ),
                     ],
+                    _buildReviewImages(_existingReview!.imageUrls),
                   ] else ...[
                     const Text(
                       'Bạn thấy đơn hàng này thế nào?',
@@ -163,6 +278,24 @@ class _ReviewPageState extends State<ReviewPage> {
                         ),
                       ),
                     ),
+                    const SizedBox(height: 16),
+
+                    // Image picker button
+                    Row(
+                      children: [
+                        IconButton.outlined(
+                          onPressed: _images.length >= 3 ? null : _pickImages,
+                          icon: const Icon(Icons.add_photo_alternate_outlined),
+                          tooltip: 'Thêm ảnh (tối đa 3)',
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${_images.length}/3 ảnh',
+                          style: const TextStyle(fontSize: 13, color: AppColors.textLight),
+                        ),
+                      ],
+                    ),
+                    _buildImagePreview(),
                     const SizedBox(height: 24),
 
                     // Submit button
