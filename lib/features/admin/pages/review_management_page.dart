@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/db/app_database.dart';
 import '../../reviews/services/review_repository.dart';
 
 const _statusFilters = [
@@ -30,12 +31,85 @@ class _ReviewManagementPageState extends State<ReviewManagementPage> {
 
   Future<List<ReviewItem>> _loadWithCleanup() async {
     await ReviewRepository.instance.cleanOrphanedLocalReviews();
-    return ReviewRepository.instance.getAllReviews();
+    return _loadAndHydrate();
+  }
+
+  Future<List<ReviewItem>> _loadAndHydrate({String? statusFilter}) async {
+    final reviews = await ReviewRepository.instance.getAllReviews(statusFilter: statusFilter);
+    return _hydrateOrderItems(reviews);
+  }
+
+  /// Fill in missing orderItems for old reviews by loading from local SQLite
+  /// or Firestore orders collection.
+  Future<List<ReviewItem>> _hydrateOrderItems(List<ReviewItem> reviews) async {
+    final needsHydration = reviews.where((r) => r.orderItems.isEmpty).toList();
+    if (needsHydration.isEmpty) return reviews;
+
+    try {
+      final db = await AppDatabase.instance;
+
+      for (final review in needsHydration) {
+        // Try local SQLite first
+        final localRows = await db.rawQuery('''
+          SELECT
+            id.ProductID, p.ProductName, p.ImageURL,
+            id.Quantity, id.UnitPrice,
+            pet.PetName, pet.PetID
+          FROM InvoiceDetail id
+          LEFT JOIN Product p ON p.ProductID = id.ProductID
+          LEFT JOIN Pet pet ON pet.PetID = id.PetID
+          WHERE id.InvoiceID = ?
+        ''', [review.invoiceId]);
+
+        if (localRows.isNotEmpty) {
+          review.orderItems.addAll(localRows.map((r) {
+            final pid = r['ProductID'] as int?;
+            final petId = r['PetID'] as int?;
+            return {
+              'productId': pid,
+              'petId': petId,
+              'name': (pid != null ? (r['ProductName'] as String?) : (r['PetName'] as String?)) ?? 'Sản phẩm',
+              'imageUrl': r['ImageURL'] as String?,
+              'quantity': (r['Quantity'] as num?)?.toInt() ?? 1,
+              'unitPrice': (r['UnitPrice'] as num?)?.toDouble() ?? 0.0,
+            };
+          }));
+          continue;
+        }
+
+        // Fallback: Firestore orders doc
+        try {
+          final doc = await FirebaseFirestore.instance
+              .collection('orders')
+              .doc(review.invoiceId.toString())
+              .get();
+          if (doc.exists) {
+            final data = doc.data()!;
+            final items = (data['items'] as List<dynamic>?) ?? [];
+            review.orderItems.addAll(items.map((item) {
+              final m = Map<String, dynamic>.from(item as Map);
+              final pid = (m['productId'] as num?)?.toInt();
+              final petId = (m['petId'] as num?)?.toInt();
+              return {
+                'productId': pid,
+                'petId': petId,
+                'name': m['productName'] ?? m['petName'] ?? 'Sản phẩm',
+                'imageUrl': null,
+                'quantity': (m['quantity'] as num?)?.toInt() ?? 1,
+                'unitPrice': (m['unitPrice'] as num?)?.toDouble() ?? 0.0,
+              };
+            }));
+          }
+        } catch (_) {}
+      }
+    } catch (_) {}
+
+    return reviews;
   }
 
   void _loadReviews() {
     setState(() {
-      _future = ReviewRepository.instance.getAllReviews(statusFilter: _selectedFilter);
+      _future = _loadAndHydrate(statusFilter: _selectedFilter);
     });
   }
 
