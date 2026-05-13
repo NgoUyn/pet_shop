@@ -22,6 +22,7 @@ class ReviewItem {
     this.moderationStatus,
     this.firebaseUid,
     this.isDeleted = false,
+    this.orderItems = const [],
   });
 
   final int reviewId;
@@ -38,6 +39,7 @@ class ReviewItem {
   final String? moderationStatus;
   final String? firebaseUid;
   final bool isDeleted;
+  final List<Map<String, dynamic>> orderItems;
 
   static ReviewItem fromRow(Map<String, Object?> row, {List<String>? imageUrls}) {
     final createdAtRaw = row['CreatedAt'] as String;
@@ -78,6 +80,10 @@ class ReviewItem {
       moderationStatus: data['moderationStatus'] as String?,
       firebaseUid: data['firebaseUid'] as String?,
       isDeleted: data['isDeleted'] as bool? ?? false,
+      orderItems: (data['orderItems'] as List<dynamic>?)
+              ?.map((e) => Map<String, dynamic>.from(e as Map))
+              .toList() ??
+          [],
     );
   }
 }
@@ -191,17 +197,37 @@ class ReviewRepository {
         customerName = userRows.isNotEmpty ? (userRows.first['FullName'] as String?) : null;
       } catch (_) {}
 
-      // Get product IDs for this invoice (for querying by product)
-      final detailRows = await db.query('InvoiceDetail',
-        columns: ['ProductID'],
-        where: 'InvoiceID = ?',
-        whereArgs: [invoiceId],
-      );
-      final productIds = detailRows
-          .map((r) => r['ProductID'] as int?)
-          .where((id) => id != null)
-          .map((id) => id!)
-          .toList();
+      // Get product/order details for display
+      final detailRows = await db.rawQuery('''
+        SELECT
+          id.ProductID,
+          p.ProductName,
+          p.ImageURL,
+          id.Quantity,
+          id.UnitPrice,
+          pet.PetName,
+          pet.PetID
+        FROM InvoiceDetail id
+        LEFT JOIN Product p ON p.ProductID = id.ProductID
+        LEFT JOIN Pet pet ON pet.PetID = id.PetID
+        WHERE id.InvoiceID = ?
+      ''', [invoiceId]);
+      final productIds = <int>[];
+      final orderItems = <Map<String, dynamic>>[];
+      for (final r in detailRows) {
+        final pid = r['ProductID'] as int?;
+        final petId = r['PetID'] as int?;
+        final itemName = (pid != null ? (r['ProductName'] as String?) : (r['PetName'] as String?)) ?? 'Sản phẩm';
+        if (pid != null) productIds.add(pid);
+        orderItems.add({
+          'productId': pid,
+          'petId': petId,
+          'name': itemName,
+          'imageUrl': r['ImageURL'] as String?,
+          'quantity': (r['Quantity'] as num?)?.toInt() ?? 1,
+          'unitPrice': (r['UnitPrice'] as num?)?.toDouble() ?? 0.0,
+        });
+      }
 
       final isFlagged = moderationStatus == 'flagged' || moderationStatus == 'rejected';
 
@@ -214,6 +240,7 @@ class ReviewRepository {
         'content': content?.trim().isEmpty == true ? null : content?.trim(),
         'imageUrls': imageUrls ?? [],
         'productIds': productIds,
+        'orderItems': orderItems,
         'createdAt': now,
         'moderationStatus': moderationStatus,
         'isFlagged': isFlagged,

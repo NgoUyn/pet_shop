@@ -147,6 +147,69 @@ class _ReviewManagementPageState extends State<ReviewManagementPage> {
     );
   }
 
+  String _formatPrice(dynamic value) {
+    final numVal = value is double ? value : (value as num).toDouble();
+    final formatted = numVal.toStringAsFixed(0);
+    final buffer = StringBuffer();
+    for (var i = 0; i < formatted.length; i++) {
+      final fromEnd = formatted.length - i;
+      buffer.write(formatted[i]);
+      if (fromEnd > 1 && fromEnd % 3 == 1) {
+        buffer.write('.');
+      }
+    }
+    return '$bufferđ';
+  }
+
+  Widget _buildOrderItems(List<Map<String, dynamic>> items) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Sản phẩm đã mua:',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textLight)),
+          const SizedBox(height: 4),
+          ...items.map((item) => Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: item['imageUrl'] is String
+                          ? Image.network(item['imageUrl'] as String, width: 40, height: 40, fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  Container(width: 40, height: 40, color: Colors.grey.shade200,
+                                      child: const Icon(Icons.image_outlined, size: 20, color: Colors.grey)))
+                          : Container(width: 40, height: 40, color: Colors.grey.shade200,
+                              child: const Icon(Icons.pets, size: 20, color: Colors.grey)),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(item['name'] as String? ?? 'Sản phẩm',
+                              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500, color: AppColors.textDark),
+                              maxLines: 1, overflow: TextOverflow.ellipsis),
+                          Text('SL: ${item['quantity']} x ${_formatPrice(item['unitPrice'])}',
+                              style: const TextStyle(fontSize: 12, color: AppColors.textLight)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+
   Widget _buildReviewCard(ReviewItem item) {
     final statusColor = _statusColor(item.moderationStatus);
 
@@ -200,6 +263,10 @@ class _ReviewManagementPageState extends State<ReviewManagementPage> {
               ],
             ),
             const SizedBox(height: 8),
+
+            // Order items
+            if (item.orderItems.isNotEmpty)
+              _buildOrderItems(item.orderItems),
 
             // Content
             if (item.content != null && item.content!.trim().isNotEmpty)

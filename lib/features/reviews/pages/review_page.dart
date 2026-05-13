@@ -1,11 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/db/app_database.dart';
 import '../../../core/utils/cloudinary_helper.dart';
 import '../services/review_repository.dart';
 
@@ -28,6 +30,7 @@ class _ReviewPageState extends State<ReviewPage> {
   ReviewItem? _existingReview;
   final List<File> _images = [];
   final ImagePicker _picker = ImagePicker();
+  List<Map<String, dynamic>> _orderItems = [];
 
   @override
   void initState() {
@@ -42,15 +45,81 @@ class _ReviewPageState extends State<ReviewPage> {
   }
 
   Future<void> _checkExisting() async {
-    final review = await ReviewRepository.instance.getByInvoiceId(widget.invoiceId);
+    final results = await Future.wait([
+      ReviewRepository.instance.getByInvoiceId(widget.invoiceId),
+      _loadOrderItems(),
+    ]);
+    final review = results[0] as ReviewItem?;
+    final items = results[1] as List<Map<String, dynamic>>;
     if (mounted) {
       setState(() {
         _existingReview = review;
         if (review != null) {
           _rating = review.rating;
         }
+        _orderItems = items;
         _isLoading = false;
       });
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> _loadOrderItems() async {
+    try {
+      final db = await AppDatabase.instance;
+      final rows = await db.rawQuery('''
+        SELECT
+          id.ProductID,
+          p.ProductName,
+          p.ImageURL,
+          id.Quantity,
+          id.UnitPrice,
+          pet.PetName,
+          pet.PetID
+        FROM InvoiceDetail id
+        LEFT JOIN Product p ON p.ProductID = id.ProductID
+        LEFT JOIN Pet pet ON pet.PetID = id.PetID
+        WHERE id.InvoiceID = ?
+      ''', [widget.invoiceId]);
+
+      if (rows.isNotEmpty) {
+        return rows.map((r) {
+          final pid = r['ProductID'] as int?;
+          final petId = r['PetID'] as int?;
+          return {
+            'productId': pid,
+            'petId': petId,
+            'name': (pid != null ? (r['ProductName'] as String?) : (r['PetName'] as String?)) ?? 'Sản phẩm',
+            'imageUrl': r['ImageURL'] as String?,
+            'quantity': (r['Quantity'] as num?)?.toInt() ?? 1,
+            'unitPrice': (r['UnitPrice'] as num?)?.toDouble() ?? 0.0,
+          };
+        }).toList();
+      }
+
+      // Fallback: load from Firestore orders doc
+      final doc = await FirebaseFirestore.instance
+          .collection('orders')
+          .doc(widget.invoiceId.toString())
+          .get();
+      if (!doc.exists) return [];
+      final data = doc.data()!;
+      final items = (data['items'] as List<dynamic>?) ?? [];
+      return items.map((item) {
+        final m = Map<String, dynamic>.from(item as Map);
+        final pid = (m['productId'] as num?)?.toInt();
+        final petId = (m['petId'] as num?)?.toInt();
+        return {
+          'productId': pid,
+          'petId': petId,
+          'name': m['productName'] ?? m['petName'] ?? 'Sản phẩm',
+          'imageUrl': null,
+          'quantity': (m['quantity'] as num?)?.toInt() ?? 1,
+          'unitPrice': (m['unitPrice'] as num?)?.toDouble() ?? 0.0,
+        };
+      }).toList();
+    } catch (e) {
+      print('ReviewPage._loadOrderItems error: $e');
+      return [];
     }
   }
 
@@ -139,12 +208,73 @@ class _ReviewPageState extends State<ReviewPage> {
         final data = jsonDecode(response.body) as Map<String, dynamic>;
         return data['passed'] == true;
       }
-      // If API unavailable, allow submission (fail open)
       return true;
     } catch (e) {
       print('Moderation check failed, allowing submission: $e');
-      return true; // Fail open if API unreachable
+      return true;
     }
+  }
+
+  String _formatPrice(dynamic value) {
+    final numVal = value is double ? value : (value as num).toDouble();
+    final formatted = numVal.toStringAsFixed(0);
+    final buffer = StringBuffer();
+    for (var i = 0; i < formatted.length; i++) {
+      final fromEnd = formatted.length - i;
+      buffer.write(formatted[i]);
+      if (fromEnd > 1 && fromEnd % 3 == 1) {
+        buffer.write('.');
+      }
+    }
+    return '$bufferđ';
+  }
+
+  Widget _buildOrderItems() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Sản phẩm trong đơn hàng:',
+              style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.textLight)),
+          const SizedBox(height: 8),
+          ..._orderItems.map((item) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(6),
+                      child: item['imageUrl'] is String
+                          ? Image.network(item['imageUrl'] as String, width: 48, height: 48, fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(width: 48, height: 48, color: Colors.grey.shade200,
+                                  child: const Icon(Icons.image_outlined, size: 24, color: Colors.grey)))
+                          : Container(width: 48, height: 48, color: Colors.grey.shade200,
+                              child: const Icon(Icons.pets, size: 24, color: Colors.grey)),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(item['name'] as String? ?? 'Sản phẩm',
+                              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: AppColors.textDark)),
+                          const SizedBox(height: 2),
+                          Text('SL: ${item['quantity']} x ${_formatPrice(item['unitPrice'])}',
+                              style: const TextStyle(fontSize: 13, color: AppColors.textLight)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              )),
+        ],
+      ),
+    );
   }
 
   Widget _buildStar(int index) {
@@ -261,6 +391,11 @@ class _ReviewPageState extends State<ReviewPage> {
                       color: AppColors.textDark,
                     ),
                   ),
+                  const SizedBox(height: 16),
+
+                  // Order items
+                  if (_orderItems.isNotEmpty) _buildOrderItems(),
+
                   const SizedBox(height: 24),
 
                   // Star rating
