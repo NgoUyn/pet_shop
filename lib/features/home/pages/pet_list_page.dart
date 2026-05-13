@@ -32,6 +32,10 @@ class _PetListPageState extends State<PetListPage> {
     super.dispose();
   }
 
+  void _handlePetsChanged() {
+    _reload();
+  }
+
   void _reload() {
     setState(() {
       _future = PetRepository.instance.listActivePets();
@@ -58,14 +62,6 @@ class _PetListPageState extends State<PetListPage> {
       }
     }
     return '$bufferđ';
-  }
-
-  Widget _buildPetImage() {
-    return Container(
-      color: AppColors.background,
-      alignment: Alignment.center,
-      child: const Icon(Icons.pets, color: AppColors.textLight, size: 44),
-    );
   }
 
   Future<void> _ensureLoggedIn() async {

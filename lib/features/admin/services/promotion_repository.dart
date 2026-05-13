@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 import '../../../core/db/app_database.dart';
 import '../../notifications/services/notification_repository.dart';
@@ -39,9 +40,52 @@ class PromotionRepository {
   }
 
   Future<List<PromotionItem>> listAll() async {
+    final results = await Future.wait([
+      _listLocalPromotions(),
+      _listFirestorePromotions(),
+    ]);
+
+    final localItems = results[0] as List<PromotionItem>;
+    final firestoreItems = results[1] as List<PromotionItem>;
+
+    // Dedup by promotionId
+    final seen = <int>{};
+    final merged = <PromotionItem>[];
+    for (final item in [...localItems, ...firestoreItems]) {
+      if (seen.add(item.promotionId)) {
+        merged.add(item);
+      }
+    }
+    merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return merged;
+  }
+
+  Future<List<PromotionItem>> _listLocalPromotions() async {
     final db = await AppDatabase.instance;
     final rows = await db.query('Promotion', orderBy: 'CreatedAt DESC');
     return rows.map(PromotionItem.fromRow).toList();
+  }
+
+  Future<List<PromotionItem>> _listFirestorePromotions() async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('promotions')
+          .get();
+
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        return PromotionItem(
+          promotionId: (data['promotionId'] as num).toInt(),
+          code: (data['code'] as String?) ?? '',
+          description: (data['description'] as String?) ?? '',
+          status: (data['status'] as String?) ?? 'Active',
+          createdAt: DateTime.parse((data['createdAt'] as String)),
+        );
+      }).toList();
+    } catch (e) {
+      print('PromotionRepository._listFirestorePromotions error: $e');
+      return [];
+    }
   }
 
   Future<void> create({
@@ -51,19 +95,21 @@ class PromotionRepository {
   }) async {
     final db = await AppDatabase.instance;
     final now = DateTime.now();
+    final nowIso = now.toIso8601String();
+    var promotionId = 0;
 
     await db.transaction((txn) async {
       // 1. Insert promotion
-      await txn.insert('Promotion', {
+      promotionId = await txn.insert('Promotion', {
         'Code': code,
         'Description': description,
         'Status': status,
-        'CreatedAt': now.toIso8601String(),
+        'CreatedAt': nowIso,
       });
 
       // 2. Notify all customers
       final customers = await txn.rawQuery("SELECT UserID FROM User WHERE lower(Role) = 'customer' AND IsActive = 1");
-      
+
       for (final row in customers) {
         final userId = row['UserID'] as int;
         await NotificationRepository.instance.create(
@@ -76,6 +122,38 @@ class PromotionRepository {
       }
     });
 
+    // Sync to Firestore
+    _syncPromotionToFirestore(PromotionItem(
+      promotionId: promotionId,
+      code: code,
+      description: description,
+      status: status,
+      createdAt: now,
+    ));
+
     _notifyChanged();
+  }
+
+  // ── Firestore sync ──────────────────────────────────────────────────
+
+  void _syncPromotionToFirestore(PromotionItem item) {
+    _doSyncPromotionToFirestore(item);
+  }
+
+  Future<void> _doSyncPromotionToFirestore(PromotionItem item) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('promotions')
+          .doc(item.promotionId.toString())
+          .set({
+        'promotionId': item.promotionId,
+        'code': item.code,
+        'description': item.description,
+        'status': item.status,
+        'createdAt': item.createdAt.toIso8601String(),
+      });
+    } catch (e) {
+      print('PromotionRepository._doSyncPromotionToFirestore error: $e');
+    }
   }
 }

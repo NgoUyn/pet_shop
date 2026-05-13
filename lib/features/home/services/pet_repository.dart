@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/db/app_database.dart';
@@ -64,6 +65,33 @@ class PetRepository {
   }
 
   Future<List<PetItem>> listActivePets({int limit = 200}) async {
+    final results = await Future.wait([
+      _listLocalActivePets(limit),
+      _listFirestoreActivePets(limit),
+    ]);
+
+    final localItems = results[0] as List<PetItem>;
+    final firestoreItems = results[1] as List<PetItem>;
+
+    // Dedup by petId (Firestore takes precedence for same ID)
+    final map = <int, PetItem>{};
+    for (final item in localItems) {
+      map[item.petId] = item;
+    }
+    for (final item in firestoreItems) {
+      map[item.petId] = item;
+    }
+
+    var merged = map.values.toList();
+    merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    if (limit < merged.length) {
+      return merged.sublist(0, limit);
+    }
+    return merged;
+  }
+
+  Future<List<PetItem>> _listLocalActivePets(int limit) async {
     final db = await AppDatabase.instance;
     final rows = await db.query(
       'Pet',
@@ -71,8 +99,39 @@ class PetRepository {
       orderBy: 'CreatedAt DESC, PetID DESC',
       limit: limit,
     );
-
     return rows.map(PetItem.fromRow).toList();
+  }
+
+  Future<List<PetItem>> _listFirestoreActivePets(int limit) async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('pets')
+          .where('isActive', isEqualTo: true)
+          .limit(limit)
+          .get();
+
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        return PetItem(
+          petId: (data['petId'] as num).toInt(),
+          petName: (data['petName'] as String?) ?? '',
+          species: (data['species'] as String?) ?? '',
+          gender: data['gender'] as String?,
+          description: data['description'] as String?,
+          price: (data['price'] as num?)?.toDouble(),
+          age: (data['age'] as num?)?.toInt(),
+          personality: data['personality'] as String?,
+          imageUrl: data['imageUrl'] as String?,
+          isDewormed: data['isDewormed'] as bool? ?? false,
+          isVaccinated: data['isVaccinated'] as bool? ?? false,
+          isActive: data['isActive'] as bool? ?? true,
+          createdAt: DateTime.parse((data['createdAt'] as String)),
+        );
+      }).toList();
+    } catch (e) {
+      print('PetRepository._listFirestoreActivePets error: $e');
+      return [];
+    }
   }
 
   Future<PetItem?> getPetById(int petId) async {
@@ -84,11 +143,37 @@ class PetRepository {
       limit: 1,
     );
 
-    if (rows.isEmpty) {
-      return null;
+    if (rows.isNotEmpty) {
+      return PetItem.fromRow(rows.first);
     }
 
-    return PetItem.fromRow(rows.first);
+    // Fallback to Firestore (may have been created on another device)
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('pets')
+          .doc(petId.toString())
+          .get();
+      if (!doc.exists) return null;
+      final data = doc.data()!;
+      return PetItem(
+        petId: petId,
+        petName: (data['petName'] as String?) ?? '',
+        species: (data['species'] as String?) ?? '',
+        gender: data['gender'] as String?,
+        description: data['description'] as String?,
+        price: (data['price'] as num?)?.toDouble(),
+        age: (data['age'] as num?)?.toInt(),
+        personality: data['personality'] as String?,
+        imageUrl: data['imageUrl'] as String?,
+        isDewormed: data['isDewormed'] as bool? ?? false,
+        isVaccinated: data['isVaccinated'] as bool? ?? false,
+        isActive: data['isActive'] as bool? ?? true,
+        createdAt: DateTime.parse((data['createdAt'] as String)),
+      );
+    } catch (e) {
+      print('PetRepository.getPetById Firestore fallback error: $e');
+      return null;
+    }
   }
 
   Future<int> addPet({
@@ -122,6 +207,21 @@ class PetRepository {
       'CreatedAt': now,
       'UpdatedAt': null,
     });
+    _syncPetToFirestore(PetItem(
+      petId: id,
+      petName: petName,
+      species: species,
+      gender: gender,
+      description: description,
+      price: price,
+      age: age,
+      personality: personality,
+      imageUrl: imageUrl,
+      isDewormed: isDewormed,
+      isVaccinated: isVaccinated,
+      isActive: true,
+      createdAt: DateTime.parse(now),
+    ));
     _notifyChanged();
     return id;
   }
@@ -174,6 +274,7 @@ class PetRepository {
       throw StateError('Không thể tải lại dữ liệu thú cưng');
     }
 
+    _syncPetToFirestore(updated);
     return updated;
   }
 
@@ -193,6 +294,49 @@ class PetRepository {
       throw StateError('Không tìm thấy thú cưng để xóa');
     }
 
+    _syncPetDeletionToFirestore(petId);
     _notifyChanged();
+  }
+
+  // ── Firestore sync ──────────────────────────────────────────────────
+
+  void _syncPetToFirestore(PetItem pet) {
+    _doSyncPetToFirestore(pet);
+  }
+
+  Future<void> _doSyncPetToFirestore(PetItem pet) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('pets')
+          .doc(pet.petId.toString())
+          .set({
+        'petId': pet.petId,
+        'petName': pet.petName,
+        'species': pet.species,
+        'gender': pet.gender,
+        'description': pet.description,
+        'price': pet.price,
+        'age': pet.age,
+        'personality': pet.personality,
+        'imageUrl': pet.imageUrl,
+        'isDewormed': pet.isDewormed,
+        'isVaccinated': pet.isVaccinated,
+        'isActive': pet.isActive,
+        'createdAt': pet.createdAt.toIso8601String(),
+      });
+    } catch (e) {
+      print('PetRepository._doSyncPetToFirestore error: $e');
+    }
+  }
+
+  Future<void> _syncPetDeletionToFirestore(int petId) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('pets')
+          .doc(petId.toString())
+          .update({'isActive': false});
+    } catch (e) {
+      print('PetRepository._syncPetDeletionToFirestore error: $e');
+    }
   }
 }

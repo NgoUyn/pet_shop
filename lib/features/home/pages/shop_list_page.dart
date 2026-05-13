@@ -32,6 +32,10 @@ class _ShopListPageState extends State<ShopListPage> {
     super.dispose();
   }
 
+  void _handleProductsChanged() {
+    _reload();
+  }
+
   void _reload() {
     setState(() {
       _future = ProductRepository.instance.listActiveProducts();

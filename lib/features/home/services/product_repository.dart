@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/db/app_database.dart';
@@ -51,6 +52,33 @@ class ProductRepository {
   }
 
   Future<List<ProductItem>> listActiveProducts({int limit = 200}) async {
+    final results = await Future.wait([
+      _listLocalActiveProducts(limit),
+      _listFirestoreActiveProducts(limit),
+    ]);
+
+    final localItems = results[0] as List<ProductItem>;
+    final firestoreItems = results[1] as List<ProductItem>;
+
+    // Dedup by productId (Firestore takes precedence for same ID)
+    final map = <int, ProductItem>{};
+    for (final item in localItems) {
+      map[item.productId] = item;
+    }
+    for (final item in firestoreItems) {
+      map[item.productId] = item;
+    }
+
+    var merged = map.values.toList();
+    merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    if (limit < merged.length) {
+      return merged.sublist(0, limit);
+    }
+    return merged;
+  }
+
+  Future<List<ProductItem>> _listLocalActiveProducts(int limit) async {
     final db = await AppDatabase.instance;
     final rows = await db.query(
       'Product',
@@ -58,8 +86,35 @@ class ProductRepository {
       orderBy: 'CreatedAt DESC, ProductID DESC',
       limit: limit,
     );
-
     return rows.map(ProductItem.fromRow).toList();
+  }
+
+  Future<List<ProductItem>> _listFirestoreActiveProducts(int limit) async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('products')
+          .where('isActive', isEqualTo: true)
+          .limit(limit)
+          .get();
+
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        return ProductItem(
+          productId: (data['productId'] as num).toInt(),
+          categoryId: (data['categoryId'] as num).toInt(),
+          productName: (data['productName'] as String?) ?? '',
+          price: (data['price'] as num).toDouble(),
+          stockQuantity: (data['stockQuantity'] as num?)?.toInt() ?? 0,
+          description: data['description'] as String?,
+          imageUrl: data['imageUrl'] as String?,
+          isActive: data['isActive'] as bool? ?? true,
+          createdAt: DateTime.parse((data['createdAt'] as String)),
+        );
+      }).toList();
+    } catch (e) {
+      print('ProductRepository._listFirestoreActiveProducts error: $e');
+      return [];
+    }
   }
 
   Future<ProductItem?> getProductById(int productId) async {
@@ -71,11 +126,33 @@ class ProductRepository {
       limit: 1,
     );
 
-    if (rows.isEmpty) {
-      return null;
+    if (rows.isNotEmpty) {
+      return ProductItem.fromRow(rows.first);
     }
 
-    return ProductItem.fromRow(rows.first);
+    // Fallback to Firestore (may have been created on another device)
+    try {
+      final doc = await FirebaseFirestore.instance
+          .collection('products')
+          .doc(productId.toString())
+          .get();
+      if (!doc.exists) return null;
+      final data = doc.data()!;
+      return ProductItem(
+        productId: productId,
+        categoryId: (data['categoryId'] as num).toInt(),
+        productName: (data['productName'] as String?) ?? '',
+        price: (data['price'] as num).toDouble(),
+        stockQuantity: (data['stockQuantity'] as num?)?.toInt() ?? 0,
+        description: data['description'] as String?,
+        imageUrl: data['imageUrl'] as String?,
+        isActive: data['isActive'] as bool? ?? true,
+        createdAt: DateTime.parse((data['createdAt'] as String)),
+      );
+    } catch (e) {
+      print('ProductRepository.getProductById Firestore fallback error: $e');
+      return null;
+    }
   }
 
   Future<int> addProduct({
@@ -100,6 +177,17 @@ class ProductRepository {
       'CreatedAt': now,
       'UpdatedAt': null,
     });
+    _syncProductToFirestore(ProductItem(
+      productId: id,
+      categoryId: categoryId,
+      productName: productName,
+      price: price,
+      stockQuantity: stockQuantity,
+      description: description,
+      imageUrl: imageUrl,
+      isActive: isActive,
+      createdAt: DateTime.parse(now),
+    ));
     _notifyChanged();
     return id;
   }
@@ -143,8 +231,10 @@ class ProductRepository {
       throw StateError('Không tìm thấy sản phẩm cần cập nhật');
     }
 
+    final product = ProductItem.fromRow(rows.first);
+    _syncProductToFirestore(product);
     _notifyChanged();
-    return ProductItem.fromRow(rows.first);
+    return product;
   }
 
   Future<void> deleteProduct(int productId) async {
@@ -158,7 +248,46 @@ class ProductRepository {
       where: 'ProductID = ?',
       whereArgs: [productId],
     );
+    _syncProductDeletionToFirestore(productId);
     _notifyChanged();
+  }
+
+  // ── Firestore sync ──────────────────────────────────────────────────
+
+  void _syncProductToFirestore(ProductItem product) {
+    _doSyncProductToFirestore(product);
+  }
+
+  Future<void> _doSyncProductToFirestore(ProductItem product) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('products')
+          .doc(product.productId.toString())
+          .set({
+        'productId': product.productId,
+        'categoryId': product.categoryId,
+        'productName': product.productName,
+        'price': product.price,
+        'stockQuantity': product.stockQuantity,
+        'description': product.description,
+        'imageUrl': product.imageUrl,
+        'isActive': product.isActive,
+        'createdAt': product.createdAt.toIso8601String(),
+      });
+    } catch (e) {
+      print('ProductRepository._doSyncProductToFirestore error: $e');
+    }
+  }
+
+  Future<void> _syncProductDeletionToFirestore(int productId) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('products')
+          .doc(productId.toString())
+          .update({'isActive': false});
+    } catch (e) {
+      print('ProductRepository._syncProductDeletionToFirestore error: $e');
+    }
   }
 
   Future<String?> getCategoryName(int categoryId) async {

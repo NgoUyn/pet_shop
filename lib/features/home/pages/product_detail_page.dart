@@ -9,9 +9,10 @@ import '../../reviews/services/review_repository.dart';
 import '../services/product_repository.dart';
 
 class ProductDetailPage extends StatefulWidget {
-  const ProductDetailPage({super.key, required this.product});
+  const ProductDetailPage({super.key, required this.product, this.showAdminActions = false});
 
   final ProductItem product;
+  final bool showAdminActions;
 
   @override
   State<ProductDetailPage> createState() => _ProductDetailPageState();
