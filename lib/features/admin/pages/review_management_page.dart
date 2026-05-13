@@ -25,7 +25,12 @@ class _ReviewManagementPageState extends State<ReviewManagementPage> {
   @override
   void initState() {
     super.initState();
-    _future = ReviewRepository.instance.getAllReviews();
+    _future = _loadWithCleanup();
+  }
+
+  Future<List<ReviewItem>> _loadWithCleanup() async {
+    await ReviewRepository.instance.cleanOrphanedLocalReviews();
+    return ReviewRepository.instance.getAllReviews();
   }
 
   void _loadReviews() {
@@ -116,7 +121,10 @@ class _ReviewManagementPageState extends State<ReviewManagementPage> {
     if (confirmed != true) return;
 
     if (item.firestoreDocId != null) {
-      await ReviewRepository.instance.deleteFirestoreReview(item.firestoreDocId!);
+      await ReviewRepository.instance.deleteFirestoreReview(
+        item.firestoreDocId!,
+        reviewId: item.reviewId,
+      );
     }
     _loadReviews();
     if (mounted) {

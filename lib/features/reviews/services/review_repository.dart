@@ -21,6 +21,7 @@ class ReviewItem {
     this.isFlagged = false,
     this.moderationStatus,
     this.firebaseUid,
+    this.isDeleted = false,
   });
 
   final int reviewId;
@@ -36,6 +37,7 @@ class ReviewItem {
   final bool isFlagged;
   final String? moderationStatus;
   final String? firebaseUid;
+  final bool isDeleted;
 
   static ReviewItem fromRow(Map<String, Object?> row, {List<String>? imageUrls}) {
     final createdAtRaw = row['CreatedAt'] as String;
@@ -52,6 +54,8 @@ class ReviewItem {
       imageUrls: imageUrls ?? [],
       isFlagged: row['IsFlagged'] is int ? (row['IsFlagged'] as int) == 1 : false,
       moderationStatus: row['ModerationStatus'] as String?,
+      isDeleted: row['IsDeleted'] is int ? (row['IsDeleted'] as int) == 1 : false,
+      firestoreDocId: row['FirestoreDocID'] as String?,
     );
   }
 
@@ -73,6 +77,7 @@ class ReviewItem {
       isFlagged: data['isFlagged'] as bool? ?? false,
       moderationStatus: data['moderationStatus'] as String?,
       firebaseUid: data['firebaseUid'] as String?,
+      isDeleted: data['isDeleted'] as bool? ?? false,
     );
   }
 }
@@ -200,7 +205,7 @@ class ReviewRepository {
 
       final isFlagged = moderationStatus == 'flagged' || moderationStatus == 'rejected';
 
-      await FirebaseFirestore.instance.collection('reviews').add({
+      final docRef = await FirebaseFirestore.instance.collection('reviews').add({
         'reviewId': reviewId,
         'invoiceId': invoiceId,
         'firebaseUid': firebaseUser?.uid ?? '',
@@ -213,6 +218,16 @@ class ReviewRepository {
         'moderationStatus': moderationStatus,
         'isFlagged': isFlagged,
       });
+
+      // Store Firestore doc ID locally so we can detect hard-deletes later
+      try {
+        await db.rawUpdate(
+          'UPDATE Review SET FirestoreDocID = ? WHERE ReviewID = ?',
+          [docRef.id, reviewId],
+        );
+      } catch (_) {
+        // Column may not exist yet — non-fatal
+      }
     } catch (e) {
       print('ReviewRepository._doSyncToFirestore: $e');
     }
@@ -329,7 +344,9 @@ class ReviewRepository {
     if (rows.isEmpty) return null;
     final reviewId = rows.first['ReviewID'] as int;
     final images = await _loadImages(db, reviewId);
-    return ReviewItem.fromRow(rows.first, imageUrls: images);
+    final review = ReviewItem.fromRow(rows.first, imageUrls: images);
+    if (review.isDeleted) return null;
+    return review;
   }
 
   Future<bool> hasReviewed(int invoiceId) async {
@@ -349,9 +366,20 @@ class ReviewRepository {
 
     // Merge: dedup by (invoiceId, customerName) — Firestore takes precedence
     // so moderationStatus from Cloud Function is preserved
+    final firestoreKeys = <String>{};
+    for (final item in firestoreItems) {
+      final key = '${item.invoiceId}_${item.customerName ?? ''}';
+      firestoreKeys.add(key);
+    }
+
     final map = <String, ReviewItem>{};
     for (final item in localItems) {
       final key = '${item.invoiceId}_${item.customerName ?? ''}';
+      // If local item was synced to Firestore but Firestore no longer has it,
+      // it was hard-deleted — skip it
+      if (item.firestoreDocId != null && !firestoreKeys.contains(key)) {
+        continue;
+      }
       map[key] = item;
     }
     for (final item in firestoreItems) {
@@ -360,8 +388,10 @@ class ReviewRepository {
     }
     var merged = map.values.toList();
 
-    // Filter out rejected/moderated-out reviews
-    merged.removeWhere((item) => item.isFlagged && item.moderationStatus == 'rejected');
+    // Filter out rejected and deleted reviews
+    merged.removeWhere((item) =>
+        item.isDeleted ||
+        (item.isFlagged && item.moderationStatus == 'rejected'));
 
     merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return merged;
@@ -411,6 +441,43 @@ class ReviewRepository {
 
   // ── Admin methods ──────────────────────────────────────────────────
 
+  /// Clean up orphaned local reviews whose Firestore docs no longer exist
+  /// (from old hard-deletes before soft-delete was implemented)
+  Future<int> cleanOrphanedLocalReviews() async {
+    try {
+      final db = await AppDatabase.instance;
+
+      // Get all Firestore reviewIds (capped at 500 for performance)
+      final snapshot = await FirebaseFirestore.instance
+          .collection('reviews')
+          .limit(500)
+          .get();
+      final firestoreReviewIds = snapshot.docs
+          .map((doc) => (doc.data()['reviewId'] as num?)?.toInt())
+          .where((id) => id != null)
+          .toSet();
+
+      if (firestoreReviewIds.isEmpty) return 0;
+
+      // Get all local reviewIds
+      final localRows = await db.query('Review', columns: ['ReviewID']);
+      var deleted = 0;
+      for (final row in localRows) {
+        final localId = row['ReviewID'] as int;
+        if (!firestoreReviewIds.contains(localId)) {
+          // This local review has no Firestore counterpart — orphaned from old hard-delete
+          await db.delete('ReviewImage', where: 'ReviewID = ?', whereArgs: [localId]);
+          await db.delete('Review', where: 'ReviewID = ?', whereArgs: [localId]);
+          deleted++;
+        }
+      }
+      return deleted;
+    } catch (e) {
+      print('ReviewRepository.cleanOrphanedLocalReviews error: $e');
+      return 0;
+    }
+  }
+
   /// Get all reviews from Firestore (optionally filtered by moderationStatus)
   Future<List<ReviewItem>> getAllReviews({String? statusFilter}) async {
     try {
@@ -424,6 +491,7 @@ class ReviewRepository {
 
       final items = snapshot.docs
           .map((doc) => ReviewItem.fromFirestore(doc))
+          .where((item) => !item.isDeleted)
           .toList();
 
       items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -450,16 +518,34 @@ class ReviewRepository {
     }
   }
 
-  /// Delete review from Firestore. Local SQLite row is not deleted
-  /// (cascades from Invoice if invoice is deleted)
-  Future<void> deleteFirestoreReview(String firestoreDocId) async {
+  /// Soft-delete review: mark as deleted in Firestore so it disappears
+  /// everywhere. Also mark local SQLite row as deleted if reviewId provided.
+  Future<void> deleteFirestoreReview(String firestoreDocId, {int? reviewId}) async {
     try {
       await FirebaseFirestore.instance
           .collection('reviews')
           .doc(firestoreDocId)
-          .delete();
+          .update({
+        'isDeleted': true,
+        'moderationStatus': 'deleted',
+        'isFlagged': true,
+      });
     } catch (e) {
       print('ReviewRepository.deleteFirestoreReview error: $e');
+    }
+
+    // Also mark local SQLite row as soft-deleted (add IsDeleted column if not exists)
+    if (reviewId != null && reviewId > 0) {
+      try {
+        final db = await AppDatabase.instance;
+        await db.rawUpdate(
+          'UPDATE Review SET IsDeleted = 1 WHERE ReviewID = ?',
+          [reviewId],
+        );
+      } catch (e) {
+        // Column may not exist — ignore
+        print('ReviewRepository.deleteFirestoreReview local update: $e');
+      }
     }
   }
 

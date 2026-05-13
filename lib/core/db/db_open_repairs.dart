@@ -4,6 +4,7 @@ import 'migrations/migration_v13_favorites_and_notifications.dart';
 Future<void> runOpenRepairs(Database db) async {
   await MigrationV13FavoritesAndNotifications.up(db);
   await _repairPetTable(db);
+  await _repairReviewTable(db);
   await _dropInvoiceOldReferences(db);
   await _repairInvoiceDetail(db);
   await _repairPayment(db);
@@ -31,6 +32,29 @@ Future<void> _repairPetTable(Database db) async {
     await addColumnIfMissing('ImageURL', 'ALTER TABLE Pet ADD COLUMN ImageURL TEXT;');
   } catch (e) {
     print('onOpen: failed to repair Pet table: $e');
+  }
+}
+
+Future<void> _repairReviewTable(Database db) async {
+  try {
+    final tableInfo = await db.rawQuery("PRAGMA table_info('Review');");
+    final existingColumns = tableInfo
+        .map((row) => (row['name'] as String?) ?? '')
+        .where((column) => column.isNotEmpty)
+        .toSet();
+
+    Future<void> addColumnIfMissing(String columnName, String sql) async {
+      if (!existingColumns.contains(columnName)) {
+        await db.execute(sql);
+      }
+    }
+
+    await addColumnIfMissing('FirestoreDocID', 'ALTER TABLE Review ADD COLUMN FirestoreDocID TEXT;');
+    await addColumnIfMissing('IsDeleted', 'ALTER TABLE Review ADD COLUMN IsDeleted INTEGER NOT NULL DEFAULT 0;');
+    await addColumnIfMissing('IsFlagged', 'ALTER TABLE Review ADD COLUMN IsFlagged INTEGER NOT NULL DEFAULT 0;');
+    await addColumnIfMissing('ModerationStatus', 'ALTER TABLE Review ADD COLUMN ModerationStatus TEXT;');
+  } catch (e) {
+    print('onOpen: failed to repair Review table: $e');
   }
 }
 
