@@ -31,13 +31,14 @@ class _LocationPickerPageState extends State<LocationPickerPage> {
   }
 
   void _onMapEvent(MapEvent event) {
-    if (event is! MapEventMove && event is! MapEventFlingAnimation) return;
-    _debounce?.cancel();
-    _debounce = Timer(const Duration(milliseconds: 500), () {
-      final center = _mapController.camera.center;
-      setState(() => _currentPosition = center);
-      _reverseGeocode(center);
-    });
+    if (event is MapEventMove || event is MapEventFlingAnimation) {
+      _debounce?.cancel();
+      _debounce = Timer(const Duration(milliseconds: 500), () {
+        final center = _mapController.camera.center;
+        setState(() => _currentPosition = center);
+        _reverseGeocode(center);
+      });
+    }
   }
 
   Future<void> _reverseGeocode(LatLng pos) async {
