@@ -291,6 +291,32 @@ class _NotificationPageState extends State<NotificationPage> {
               onPressed: _markAllRead,
               child: const Text('Đã đọc tất cả'),
             ),
+          if (_notifications.isNotEmpty)
+            PopupMenuButton<String>(
+              onSelected: (value) async {
+                if (value == 'delete_all') {
+                  final confirmed = await showDialog<bool>(
+                    context: context,
+                    builder: (ctx) => AlertDialog(
+                      title: const Text('Xác nhận'),
+                      content: const Text('Xoá tất cả thông báo?'),
+                      actions: [
+                        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Huỷ')),
+                        TextButton(onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text('Xoá', style: TextStyle(color: Colors.red))),
+                      ],
+                    ),
+                  );
+                  if (confirmed == true) {
+                    await NotificationRepository.instance.deleteAllForCurrentUser();
+                    _load();
+                  }
+                }
+              },
+              itemBuilder: (context) => const [
+                PopupMenuItem(value: 'delete_all', child: Text('Xoá tất cả')),
+              ],
+            ),
         ],
       ),
       body: _isLoading
@@ -354,24 +380,46 @@ class _NotificationPageState extends State<NotificationPage> {
                                       ),
                                     ),
                                     subtitle: Text(item.content, maxLines: 2, overflow: TextOverflow.ellipsis),
-                                    trailing: Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      crossAxisAlignment: CrossAxisAlignment.end,
+                                    trailing: Row(
+                                      mainAxisSize: MainAxisSize.min,
                                       children: [
-                                        Text(
-                                          _formatDate(item.createdAt),
-                                          style: const TextStyle(fontSize: 11, color: AppColors.textLight),
-                                        ),
-                                        if (!item.isRead)
-                                          Container(
-                                            margin: const EdgeInsets.only(top: 4),
-                                            width: 8,
-                                            height: 8,
-                                            decoration: const BoxDecoration(
-                                              color: Colors.red,
-                                              shape: BoxShape.circle,
+                                        Column(
+                                          mainAxisAlignment: MainAxisAlignment.center,
+                                          crossAxisAlignment: CrossAxisAlignment.end,
+                                          children: [
+                                            Text(
+                                              _formatDate(item.createdAt),
+                                              style: const TextStyle(fontSize: 11, color: AppColors.textLight),
                                             ),
-                                          ),
+                                            if (!item.isRead)
+                                              Container(
+                                                margin: const EdgeInsets.only(top: 4),
+                                                width: 8,
+                                                height: 8,
+                                                decoration: const BoxDecoration(
+                                                  color: Colors.red,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                        PopupMenuButton<String>(
+                                          padding: EdgeInsets.zero,
+                                          icon: const Icon(Icons.more_vert, size: 18, color: AppColors.textLight),
+                                          onSelected: (value) async {
+                                            if (value == 'delete') {
+                                              await NotificationRepository.instance.delete(
+                                                item.notificationId,
+                                                firestoreDocId: item.firestoreDocId,
+                                              );
+                                              _load();
+                                            }
+                                          },
+                                          itemBuilder: (context) => const [
+                                            PopupMenuItem(value: 'delete',
+                                              child: Text('Xoá', style: TextStyle(color: Colors.red))),
+                                          ],
+                                        ),
                                       ],
                                     ),
                                     onTap: () => _onTap(item),

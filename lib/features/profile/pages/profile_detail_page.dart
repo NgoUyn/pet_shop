@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/widgets/main_wrapper.dart';
 import '../../auth/services/auth_repository.dart';
 import '../services/profile_repository.dart';
+import 'location_picker_page.dart';
 
 class ProfileDetailPage extends StatefulWidget {
   const ProfileDetailPage({super.key});
@@ -54,6 +57,42 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
         _addressController.text = profile.address ?? '';
       }
     });
+  }
+
+  Future<void> _getCurrentLocation() async {
+    LatLng? initialPos;
+    try {
+      // Try to get current GPS position for map initial center
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (serviceEnabled) {
+        var permission = await Geolocator.checkPermission();
+        if (permission == LocationPermission.denied) {
+          permission = await Geolocator.requestPermission();
+        }
+        if (permission == LocationPermission.always || permission == LocationPermission.whileInUse) {
+          try {
+            final position = await Geolocator.getCurrentPosition(
+              locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+            );
+            if (!position.isMocked) {
+              initialPos = LatLng(position.latitude, position.longitude);
+            }
+          } catch (_) {}
+        }
+      }
+    } catch (_) {}
+
+    if (!mounted) return;
+
+    final result = await Navigator.push<Map<String, dynamic>>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => LocationPickerPage(initialPosition: initialPos),
+      ),
+    );
+    if (result != null && mounted) {
+      _addressController.text = result['address'] as String? ?? '';
+    }
   }
 
   Future<void> _saveProfile() async {
@@ -250,7 +289,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                       return 'Địa chỉ không được vượt quá 120 ký tự';
                     }
 
-                    final allowed = RegExp(r'^[\p{L}\p{M}0-9 ]+$', unicode: true);
+                    final allowed = RegExp(r'^[\p{L}\p{M}0-9 ,./-]+$', unicode: true);
                     if (!allowed.hasMatch(normalized)) {
                       return 'Địa chỉ không được chứa ký tự đặc biệt';
                     }
@@ -258,6 +297,16 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                     return null;
                   },
                 ),
+                if (_isEditing)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: TextButton.icon(
+                      onPressed: _getCurrentLocation,
+                      icon: const Icon(Icons.my_location, size: 18),
+                      label: const Text('Lấy địa chỉ hiện tại'),
+                      style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+                    ),
+                  ),
                 const SizedBox(height: 8),
 
                 const SizedBox(height: 24),

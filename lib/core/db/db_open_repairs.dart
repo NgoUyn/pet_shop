@@ -8,6 +8,7 @@ Future<void> runOpenRepairs(Database db) async {
   await _dropInvoiceOldReferences(db);
   await _repairInvoiceDetail(db);
   await _repairPayment(db);
+  await _removeSeedNotifications(db);
 }
 
 Future<void> _repairPetTable(Database db) async {
@@ -55,6 +56,17 @@ Future<void> _repairReviewTable(Database db) async {
     await addColumnIfMissing('ModerationStatus', 'ALTER TABLE Review ADD COLUMN ModerationStatus TEXT;');
   } catch (e) {
     print('onOpen: failed to repair Review table: $e');
+  }
+}
+
+Future<void> _removeSeedNotifications(Database db) async {
+  try {
+    // Remove sample notifications seeded for testing (only for user 1)
+    await db.delete('AppNotification',
+      where: "UserID = 1 AND Title IN ('Đơn hàng được xác nhận', 'Chào mừng đến Pet Shop', 'Khuyến mãi mới: Giảm 20% cho sản phẩm')",
+    );
+  } catch (e) {
+    print('onOpen: failed to remove seed notifications: $e');
   }
 }
 

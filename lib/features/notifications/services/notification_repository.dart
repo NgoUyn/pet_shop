@@ -305,4 +305,40 @@ class NotificationRepository {
       print('NotificationRepository._markAllFirestoreRead error: $e');
     }
   }
+
+  Future<void> delete(int notificationId, {String? firestoreDocId}) async {
+    if (notificationId > 0) {
+      final db = await AppDatabase.instance;
+      await db.delete('AppNotification', where: 'NotificationID = ?', whereArgs: [notificationId]);
+    }
+    if (firestoreDocId != null && firestoreDocId.isNotEmpty) {
+      try {
+        await FirebaseFirestore.instance.collection('notifications').doc(firestoreDocId).delete();
+      } catch (e) {
+        print('NotificationRepository.delete Firestore error: $e');
+      }
+    }
+  }
+
+  Future<void> deleteAllForCurrentUser() async {
+    final currentUserId = AuthSession.instance.currentUserId.value;
+    if (currentUserId != null) {
+      final db = await AppDatabase.instance;
+      await db.delete('AppNotification', where: 'UserID = ?', whereArgs: [currentUserId]);
+    }
+    try {
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      if (firebaseUser != null) {
+        final snapshot = await FirebaseFirestore.instance
+            .collection('notifications')
+            .where('firebaseUid', isEqualTo: firebaseUser.uid)
+            .get();
+        for (final doc in snapshot.docs) {
+          await doc.reference.delete();
+        }
+      }
+    } catch (e) {
+      print('NotificationRepository.deleteAllForCurrentUser Firestore error: $e');
+    }
+  }
 }
