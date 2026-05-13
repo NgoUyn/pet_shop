@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import '../../features/admin/pages/admin_page.dart';
 import '../../features/home/pages/home_page.dart';
 import '../../features/favorites/pages/favorites_page.dart';
 import '../../features/home/pages/pet_list_page.dart';
@@ -8,6 +10,7 @@ import '../../features/cart/services/cart_repository.dart';
 import '../../features/notifications/pages/notification_page.dart';
 import '../../features/notifications/services/notification_repository.dart';
 import '../../features/profile/pages/profile_page.dart';
+import '../../features/profile/services/profile_repository.dart';
 import '../../features/auth/pages/login_page.dart';
 import '../../features/auth/services/auth_session.dart';
 import '../constants/app_colors.dart';
@@ -26,6 +29,7 @@ class _MainWrapperState extends State<MainWrapper> {
   late int _selectedIndex;
   int _notificationCount = 0;
   int _cartCount = 0;
+  bool? _isAdmin;
 
   @override
   void initState() {
@@ -33,17 +37,47 @@ class _MainWrapperState extends State<MainWrapper> {
     _selectedIndex = widget.initialIndex;
     AuthSession.instance.currentUserId.addListener(_loadNotificationCount);
     AuthSession.instance.currentUserId.addListener(_refreshCartCount);
+    AuthSession.instance.currentUserId.addListener(_checkAdminRole);
     CartRepository.instance.cartCount.addListener(_onCartCountChanged);
     _loadNotificationCount();
     _refreshCartCount();
+    _checkAdminRole();
   }
 
   @override
   void dispose() {
     AuthSession.instance.currentUserId.removeListener(_loadNotificationCount);
     AuthSession.instance.currentUserId.removeListener(_refreshCartCount);
+    AuthSession.instance.currentUserId.removeListener(_checkAdminRole);
     CartRepository.instance.cartCount.removeListener(_onCartCountChanged);
     super.dispose();
+  }
+
+  Future<void> _checkAdminRole() async {
+    final userId = AuthSession.instance.currentUserId.value;
+    if (userId == null) {
+      if (mounted) {
+        setState(() {
+          _isAdmin = false;
+        });
+      }
+      return;
+    }
+
+    try {
+      final profile = await ProfileRepository.instance.getProfileByUserId(userId);
+      if (mounted) {
+        setState(() {
+          _isAdmin = profile?.role.toLowerCase() == 'admin';
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _isAdmin = false;
+        });
+      }
+    }
   }
 
   Future<void> _loadNotificationCount() async {
@@ -87,6 +121,11 @@ class _MainWrapperState extends State<MainWrapper> {
 
   @override
   Widget build(BuildContext context) {
+    // If user is admin, show admin page instead of normal pages
+    if (_isAdmin == true) {
+      return const AdminPage();
+    }
+
     return Scaffold(
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(kToolbarHeight),
@@ -129,12 +168,6 @@ class _MainWrapperState extends State<MainWrapper> {
               if (mounted) {
                 await _loadNotificationCount();
               }
-            },
-            onFavoritesPressed: () {
-              if (!mounted) return;
-              setState(() {
-                _selectedIndex = 1;
-              });
             },
             onCartPressed: () async {
               await Navigator.push(

@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../../core/db/app_database.dart';
@@ -18,6 +19,7 @@ class AuthRepository {
     String? displayName,
   }) async {
     final db = await AppDatabase.instance;
+    final firestore = FirebaseFirestore.instance;
     final normalizedEmail = _normalizeEmail(firebaseUser.email ?? '');
 
     if (normalizedEmail.isEmpty) {
@@ -26,7 +28,7 @@ class AuthRepository {
 
     final rows = await db.query(
       'User',
-      columns: ['UserID', 'Email', 'FullName'],
+      columns: ['UserID', 'Email', 'FullName', 'Role'],
       where: 'lower(Email) = ?',
       whereArgs: [normalizedEmail],
       limit: 1,
@@ -36,24 +38,41 @@ class AuthRepository {
       final existingUserId = rows.first['UserID'] as int;
       final existingEmail = (rows.first['Email'] as String?)?.trim().toLowerCase();
       final existingFullName = (rows.first['FullName'] as String?) ?? '';
+      final existingRole = (rows.first['Role'] as String?) ?? 'customer';
       final resolvedName = (displayName ?? firebaseUser.displayName ?? existingFullName).trim();
+      String resolvedRole = existingRole;
 
-      final updates = <String, Object?>{};
+      try {
+        final remoteDoc = await firestore.collection('users').doc(firebaseUser.uid).get();
+        if (remoteDoc.exists) {
+          final remoteRole = (remoteDoc.data()?['role'] as String?)?.trim().toLowerCase();
+          if (remoteRole != null && remoteRole.isNotEmpty) {
+            resolvedRole = remoteRole;
+          }
+        }
+      } catch (_) {
+        // Keep local role when Firestore is unavailable.
+      }
+
+      final updates = <String, Object?>{
+        'FirebaseUID': firebaseUser.uid,
+      };
       if (existingEmail != normalizedEmail) {
         updates['Email'] = normalizedEmail;
       }
       if (resolvedName.isNotEmpty && resolvedName != existingFullName) {
         updates['FullName'] = resolvedName;
       }
-      if (updates.isNotEmpty) {
-        updates['UpdatedAt'] = DateTime.now().toIso8601String();
-        await db.update(
-          'User',
-          updates,
-          where: 'UserID = ?',
-          whereArgs: [existingUserId],
-        );
+      if (resolvedRole.toLowerCase() != existingRole.toLowerCase()) {
+        updates['Role'] = resolvedRole;
       }
+      updates['UpdatedAt'] = DateTime.now().toIso8601String();
+      await db.update(
+        'User',
+        updates,
+        where: 'UserID = ?',
+        whereArgs: [existingUserId],
+      );
 
       final customerRows = await db.query(
         'Customer',
@@ -81,10 +100,23 @@ class AuthRepository {
     final userName = (displayName ?? pending?.name ?? firebaseUser.displayName ?? normalizedEmail.split('@').first).trim();
     final localPassword = passwordHash ?? pending?.password ?? 'firebase:${firebaseUser.uid}';
     final createdAt = pending?.createdAt ?? now;
+    String resolvedRole = 'customer';
+
+    try {
+      final remoteDoc = await firestore.collection('users').doc(firebaseUser.uid).get();
+      if (remoteDoc.exists) {
+        final remoteRole = (remoteDoc.data()?['role'] as String?)?.trim().toLowerCase();
+        if (remoteRole != null && remoteRole.isNotEmpty) {
+          resolvedRole = remoteRole;
+        }
+      }
+    } catch (_) {
+      // Keep default customer role when Firestore is unavailable.
+    }
 
     final userId = await db.transaction((txn) async {
       final insertedUserId = await txn.insert('User', {
-        'Role': 'customer',
+        'Role': resolvedRole,
         'Email': normalizedEmail,
         'PasswordHash': localPassword,
         'FullName': userName,
@@ -271,6 +303,24 @@ class AuthRepository {
       firebaseUser: refreshedUser,
       passwordHash: password,
       displayName: refreshedUser.displayName,
+    );
+    await AuthSession.instance.signIn(userId);
+    return userId;
+  }
+
+  Future<int> signInWithGoogle() async {
+    final provider = GoogleAuthProvider()
+      ..setCustomParameters({'prompt': 'select_account'});
+
+    final userCredential = await FirebaseAuth.instance.signInWithProvider(provider);
+    final firebaseUser = userCredential.user;
+    if (firebaseUser == null) {
+      throw StateError('Không thể lấy thông tin tài khoản Google');
+    }
+
+    final userId = await _ensureLocalUserFromFirebase(
+      firebaseUser: firebaseUser,
+      displayName: firebaseUser.displayName,
     );
     await AuthSession.instance.signIn(userId);
     return userId;

@@ -1,6 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 
-Future<void> migrateV11PetDetails(Database db) async {
+/// Migration v17: Add detailed columns to Pet table
+Future<void> migrateV17PetDetails(Database db) async {
   final tableInfo = await db.rawQuery("PRAGMA table_info('Pet');");
   final existingColumns = tableInfo
       .map((row) => (row['name'] as String?) ?? '')

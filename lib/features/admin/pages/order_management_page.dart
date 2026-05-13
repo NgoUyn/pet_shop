@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../chat/pages/admin_chat_inbox_page.dart';
+import '../../orders/services/order_firestore_service.dart';
 import '../../orders/services/order_repository.dart';
 
 class OrderManagementPage extends StatefulWidget {
@@ -32,7 +34,7 @@ class _OrderManagementPageState extends State<OrderManagementPage> {
 
   void _loadOrders() {
     setState(() {
-      _ordersFuture = _orderRepo.getAllOrders(statusFilter: _currentFilter);
+      _ordersFuture = OrderFirestoreService.instance.getAllOrdersFromFirestore(statusFilter: _currentFilter);
     });
   }
 
@@ -157,6 +159,16 @@ class _OrderManagementPageState extends State<OrderManagementPage> {
         foregroundColor: AppColors.textDark,
         elevation: 0,
         actions: [
+          IconButton(
+            onPressed: () async {
+              await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const AdminChatInboxPage()),
+              );
+            },
+            icon: const Icon(Icons.chat_bubble_outline),
+            tooltip: 'Chat',
+          ),
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: _loadOrders,
@@ -315,7 +327,7 @@ class _OrderManagementPageState extends State<OrderManagementPage> {
                 const Icon(Icons.person_outline, size: 14, color: AppColors.textLight),
                 const SizedBox(width: 4),
                 Text(
-                  'Khách hàng #${order.invoiceId}', // We don't have customer name in OrderInfo yet
+                  order.customerName ?? 'Khách hàng #${order.invoiceId}',
                   style: const TextStyle(fontSize: 13, color: AppColors.textLight),
                 ),
               ],

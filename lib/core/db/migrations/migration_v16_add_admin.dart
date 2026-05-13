@@ -1,13 +1,12 @@
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
-/// Migration v10: Thêm tài khoản admin mặc định
-Future<void> migrateV10AddAdmin(Database db) async {
-  debugPrint('Running migrateV10AddAdmin...');
-  
+/// Migration v16: Ensure admin account exists
+Future<void> migrateV16AddAdmin(Database db) async {
+  debugPrint('Running migrateV16AddAdmin...');
+
   final email = 'pet_shop@gmail.com';
 
-  // Kiểm tra xem admin đã tồn tại chưa
   final existing = await db.query(
     'User',
     where: 'Email = ?',
@@ -28,8 +27,8 @@ Future<void> migrateV10AddAdmin(Database db) async {
       'CreatedAt': now,
       'UpdatedAt': null,
     });
-    debugPrint('migrateV10: Admin user created');
+    debugPrint('migrateV16: Admin user created');
   } else {
-    debugPrint('migrateV10: Admin user already exists, skipping');
+    debugPrint('migrateV16: Admin user already exists, skipping');
   }
 }
