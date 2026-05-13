@@ -3,11 +3,13 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
+import 'package:latlong2/latlong.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/widgets/main_wrapper.dart';
 import '../../auth/services/auth_repository.dart';
 import '../services/profile_repository.dart';
+import 'location_picker_page.dart';
 
 class ProfileDetailPage extends StatefulWidget {
   const ProfileDetailPage({super.key});
@@ -93,13 +95,25 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
         return;
       }
 
-      final position = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-      );
-      if (position.isMocked) {
+      // Try GPS first, with timeout; fall back to lower accuracy if needed
+      Position? position;
+      try {
+        position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.bestForNavigation,
+            timeLimit: Duration(seconds: 10),
+          ),
+        );
+      } catch (_) {}
+
+      if (position == null) {
+        position = await Geolocator.getLastKnownPosition();
+      }
+
+      if (position == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Không thể lấy vị trí thực. Hãy bật GPS và thử lại.')),
+            const SnackBar(content: Text('Không thể lấy vị trí. Hãy ra ngoài trời và bật GPS.')),
           );
         }
         return;
@@ -121,11 +135,19 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
       final displayName = data['display_name'] as String?;
       if (displayName == null || displayName.isEmpty) return;
 
-      _addressController.text = displayName;
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Đã lấy địa chỉ hiện tại'), duration: Duration(seconds: 1)),
-        );
+      // Open map to confirm and adjust
+      if (!mounted) return;
+      final result = await Navigator.push<Map<String, dynamic>>(
+        context,
+        MaterialPageRoute(
+          builder: (_) => LocationPickerPage(
+            position: LatLng(position!.latitude, position!.longitude),
+            address: displayName,
+          ),
+        ),
+      );
+      if (result != null && mounted) {
+        _addressController.text = result['address'] as String? ?? '';
       }
     } catch (e) {
       if (mounted) {
@@ -330,8 +352,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                       return 'Địa chỉ không được vượt quá 120 ký tự';
                     }
 
-                    final allowed = RegExp(r'^[\p{L}\p{M}0-9 ,./-]+$', unicode: true);
-                    if (!allowed.hasMatch(normalized)) {
+                    if (normalized.contains(RegExp(r'[<>{}[\]\\]'))) {
                       return 'Địa chỉ không được chứa ký tự đặc biệt';
                     }
 
