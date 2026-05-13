@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
@@ -5,6 +6,8 @@ import '../../../core/db/app_database.dart';
 import '../../auth/services/auth_session.dart';
 import '../../profile/services/profile_repository.dart';
 import '../../notifications/services/notification_repository.dart';
+import '../../orders/services/order_firestore_service.dart';
+import '../../profile/services/profile_repository.dart';
 
 class CartProductEntry {
   CartProductEntry({
@@ -387,6 +390,8 @@ class CartRepository {
 
     final db = await AppDatabase.instance;
     final customerId = await _resolveCustomerId(userId);
+    final firestoreItems = <Map<String, dynamic>>[];
+    var totalAmount = 0.0;
 
     final invoiceId = await db.transaction<int>((txn) async {
       final cartId = await _ensureCartIdForCustomer(customerId, txnOrDb: txn);
@@ -422,7 +427,7 @@ class CartRepository {
         throw StateError('Giỏ hàng đang trống');
       }
 
-      var totalAmount = 0.0;
+      totalAmount = 0.0;
       var discountAmount = 0.0;
       var usedPoints = 0;
 
@@ -510,6 +515,16 @@ class CartRepository {
           'Quantity': quantity,
           'UnitPrice': unitPrice,
         });
+
+        firestoreItems.add({
+          'invoiceDetailId': 0,
+          'productId': productId,
+          'productName': row['ProductName'],
+          'petId': petId,
+          'petName': row['PetName'],
+          'quantity': quantity,
+          'unitPrice': unitPrice,
+        });
       }
 
       // Insert payment record with Pending status
@@ -552,6 +567,28 @@ class CartRepository {
     });
 
     await refreshCountForCurrentUser();
+
+    // Sync order to Firestore
+    try {
+      final profile = await ProfileRepository.instance.getProfileByUserId(userId);
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      await OrderFirestoreService.instance.syncOrderToFirestore(
+        invoiceId: invoiceId,
+        customerId: customerId,
+        customerName: profile?.fullName ?? '',
+        customerEmail: profile?.email ?? '',
+        customerFirebaseUid: firebaseUser?.uid ?? '',
+        paymentStatus: 'Unpaid',
+        orderStatus: 'Unpaid',
+        totalAmount: totalAmount,
+        shippingAddress: shippingAddress,
+        paymentMethod: 'Bank Transfer',
+        createdAt: DateTime.now().toIso8601String(),
+        items: firestoreItems,
+      );
+    } catch (e) {
+      print('createPendingOrder: Firestore sync error (non-fatal): $e');
+    }
 
     try {
       await NotificationRepository.instance.create(
@@ -664,6 +701,13 @@ class CartRepository {
       }
     });
 
+    // Sync status to Firestore
+    await OrderFirestoreService.instance.updateOrderStatusInFirestore(
+      invoiceId: invoiceId,
+      orderStatus: 'Preparing',
+      paymentStatus: 'Paid',
+    );
+
     if (customerUserId != null) {
       try {
         await NotificationRepository.instance.create(
@@ -711,6 +755,7 @@ class CartRepository {
     var discountAmount = 0.0;
     var usedPoints = 0;
     var earnedPoints = 0;
+    final firestoreItems = <Map<String, dynamic>>[];
 
     try {
       await db.transaction((txn) async {
@@ -848,6 +893,16 @@ class CartRepository {
               throw StateError('Không thể cập nhật tồn kho, vui lòng thử lại');
             }
           }
+
+          firestoreItems.add({
+            'invoiceDetailId': 0,
+            'productId': productId,
+            'productName': row['ProductName'],
+            'petId': petId,
+            'petName': row['PetName'],
+            'quantity': quantity,
+            'unitPrice': unitPrice,
+          });
         }
 
         await txn.insert('Payment', {
@@ -911,6 +966,28 @@ class CartRepository {
     }
 
     await refreshCountForCurrentUser();
+
+    // Sync order to Firestore
+    try {
+      final profile = await ProfileRepository.instance.getProfileByUserId(userId);
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      await OrderFirestoreService.instance.syncOrderToFirestore(
+        invoiceId: invoiceId,
+        customerId: customerId,
+        customerName: profile?.fullName ?? '',
+        customerEmail: profile?.email ?? '',
+        customerFirebaseUid: firebaseUser?.uid ?? '',
+        paymentStatus: paymentMethod == 'Bank Transfer' ? 'Paid' : 'Pending',
+        orderStatus: 'Preparing',
+        totalAmount: totalAmount,
+        shippingAddress: shippingAddress,
+        paymentMethod: paymentMethod,
+        createdAt: DateTime.now().toIso8601String(),
+        items: firestoreItems,
+      );
+    } catch (e) {
+      print('checkoutCurrentUser: Firestore sync error (non-fatal): $e');
+    }
 
     // Create notification for the user
     try {

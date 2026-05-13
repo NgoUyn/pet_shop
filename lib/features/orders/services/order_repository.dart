@@ -1,9 +1,9 @@
-import 'package:flutter/foundation.dart';
-import 'package:sqflite/sqflite.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../auth/services/auth_session.dart';
 import '../../notifications/services/notification_repository.dart';
+import 'order_firestore_service.dart';
 
 class OrderInfo {
   final int invoiceId;
@@ -15,6 +15,7 @@ class OrderInfo {
   final String createdAt;
   final String? updatedAt;
   final List<OrderItemInfo> items;
+  final String? customerName;
 
   OrderInfo({
     required this.invoiceId,
@@ -26,6 +27,7 @@ class OrderInfo {
     required this.createdAt,
     this.updatedAt,
     required this.items,
+    this.customerName,
   });
 
   String get statusLabel {
@@ -56,6 +58,37 @@ class OrderInfo {
       createdAt: (row['CreatedAt'] as String?) ?? '',
       updatedAt: row['UpdatedAt'] as String?,
       items: items,
+      customerName: row['CustomerName'] as String?,
+    );
+  }
+
+  static OrderInfo fromFirestore(DocumentSnapshot<Object?> doc) {
+    final data = doc.data() as Map<String, dynamic>? ?? <String, dynamic>{};
+    final itemsList = (data['items'] as List<dynamic>?) ?? [];
+    final items = itemsList.map((item) {
+      final map = Map<String, Object?>.from(item as Map);
+      return OrderItemInfo(
+        invoiceDetailId: (map['invoiceDetailId'] as num?)?.toInt() ?? 0,
+        productId: (map['productId'] as num?)?.toInt(),
+        productName: map['productName'] as String?,
+        petId: (map['petId'] as num?)?.toInt(),
+        petName: map['petName'] as String?,
+        quantity: (map['quantity'] as num?)?.toInt() ?? 1,
+        unitPrice: (map['unitPrice'] as num?)?.toDouble() ?? 0.0,
+      );
+    }).toList();
+
+    return OrderInfo(
+      invoiceId: (data['invoiceId'] as num?)?.toInt() ?? 0,
+      paymentStatus: (data['paymentStatus'] as String?) ?? '',
+      orderStatus: (data['orderStatus'] as String?) ?? '',
+      totalAmount: (data['totalAmount'] as num?)?.toDouble() ?? 0.0,
+      shippingAddress: data['shippingAddress'] as String?,
+      paymentMethod: data['paymentMethod'] as String?,
+      createdAt: (data['createdAt'] as String?) ?? '',
+      updatedAt: data['updatedAt'] as String?,
+      items: items,
+      customerName: data['customerName'] as String?,
     );
   }
 }
@@ -130,7 +163,7 @@ class OrderRepository {
 
     final invoiceRows = await db.rawQuery(
       '''
-      SELECT i.*, 
+      SELECT i.*,
         COALESCE(i.OrderStatus, i.PaymentStatus) as EffectiveStatus
       FROM Invoice i
       WHERE $where
@@ -176,7 +209,7 @@ class OrderRepository {
 
     final invoiceRows = await db.rawQuery(
       '''
-      SELECT i.*, 
+      SELECT i.*,
         COALESCE(i.OrderStatus, i.PaymentStatus) as EffectiveStatus,
         c.UserID,
         u.FullName as CustomerName
@@ -228,103 +261,137 @@ class OrderRepository {
 
   /// Admin: Update order status from Preparing to Shipping
   Future<void> confirmPreparing(int invoiceId) async {
-    final db = await AppDatabase.instance;
-    final now = DateTime.now().toIso8601String();
-
-    final affected = await db.update(
-      'Invoice',
-      {
-        'OrderStatus': 'Shipping',
-        'UpdatedAt': now,
-      },
-      where: 'InvoiceID = ? AND OrderStatus = ?',
-      whereArgs: [invoiceId, 'Preparing'],
-    );
-
-    if (affected == 0) {
+    // 1. Validate and update via Firestore (shared source of truth)
+    final doc = await _getOrderDoc(invoiceId);
+    final currentStatus = (doc['orderStatus'] as String?) ?? '';
+    if (currentStatus != 'Preparing') {
       throw StateError('Không thể cập nhật trạng thái. Đơn hàng không ở trạng thái "Đang chuẩn bị".');
     }
 
-    // Create notification for customer
-    final customerUserId = await _getCustomerUserId(invoiceId);
-    if (customerUserId != null) {
-      try {
-        await NotificationRepository.instance.create(
-          userId: customerUserId,
-          type: 'order',
-          title: 'Đơn hàng đang được giao',
-          content: 'Đơn hàng #$invoiceId đã được chuyển sang trạng thái đang vận chuyển.',
-          referenceId: invoiceId,
-          referenceType: 'order',
-        );
-      } catch (_) {}
-    }
+    await OrderFirestoreService.instance.updateOrderStatusInFirestore(
+      invoiceId: invoiceId,
+      orderStatus: 'Shipping',
+    );
+
+    // 2. Try local SQLite (may not exist on admin device)
+    await _tryUpdateLocalStatus(invoiceId, 'Shipping');
+
+    // 3. Notify customer via Firestore
+    await _notifyCustomer(doc, invoiceId, 'order',
+        'Đơn hàng đang được giao',
+        'Đơn hàng #$invoiceId đã được chuyển sang trạng thái đang vận chuyển.');
   }
 
   /// Admin: Mark order as Completed
   Future<void> markCompleted(int invoiceId) async {
-    final db = await AppDatabase.instance;
-    final now = DateTime.now().toIso8601String();
-
-    final affected = await db.update(
-      'Invoice',
-      {
-        'OrderStatus': 'Completed',
-        'UpdatedAt': now,
-      },
-      where: 'InvoiceID = ? AND OrderStatus = ?',
-      whereArgs: [invoiceId, 'Shipping'],
-    );
-
-    if (affected == 0) {
+    // 1. Validate and update via Firestore (shared source of truth)
+    final doc = await _getOrderDoc(invoiceId);
+    final currentStatus = (doc['orderStatus'] as String?) ?? '';
+    if (currentStatus != 'Shipping') {
       throw StateError('Không thể cập nhật trạng thái. Đơn hàng không ở trạng thái "Đang vận chuyển".');
     }
 
-    // Create notification for customer
-    final customerUserId = await _getCustomerUserId(invoiceId);
-    if (customerUserId != null) {
-      try {
-        await NotificationRepository.instance.create(
-          userId: customerUserId,
-          type: 'order',
-          title: 'Đơn hàng đã hoàn thành',
-          content: 'Đơn hàng #$invoiceId đã được giao thành công. Cảm ơn bạn đã mua hàng!',
-          referenceId: invoiceId,
-          referenceType: 'order',
-        );
-      } catch (_) {}
-    }
+    await OrderFirestoreService.instance.updateOrderStatusInFirestore(
+      invoiceId: invoiceId,
+      orderStatus: 'Completed',
+    );
+
+    // 2. Try local SQLite (may not exist on admin device)
+    await _tryUpdateLocalStatus(invoiceId, 'Completed');
+
+    // 3. Notify customer via Firestore
+    await _notifyCustomer(doc, invoiceId, 'order',
+        'Đơn hàng đã hoàn thành',
+        'Đơn hàng #$invoiceId đã được giao thành công. Cảm ơn bạn đã mua hàng!');
   }
 
   /// Admin: Cancel order
   Future<void> cancelOrder(int invoiceId) async {
-    final db = await AppDatabase.instance;
-    final now = DateTime.now().toIso8601String();
+    // 1. Validate and update via Firestore (shared source of truth)
+    final doc = await _getOrderDoc(invoiceId);
+    final currentStatus = (doc['orderStatus'] as String?) ?? '';
+    if (currentStatus == 'Completed' || currentStatus == 'Cancelled') {
+      throw StateError('Không thể hủy đơn hàng ở trạng thái "$currentStatus".');
+    }
 
-    await db.update(
-      'Invoice',
-      {
-        'OrderStatus': 'Cancelled',
-        'PaymentStatus': 'Cancelled',
-        'UpdatedAt': now,
-      },
-      where: 'InvoiceID = ? AND OrderStatus NOT IN (?, ?)',
-      whereArgs: [invoiceId, 'Completed', 'Cancelled'],
+    await OrderFirestoreService.instance.updateOrderStatusInFirestore(
+      invoiceId: invoiceId,
+      orderStatus: 'Cancelled',
+      paymentStatus: 'Cancelled',
     );
 
-    // Create notification for customer
-    final customerUserId = await _getCustomerUserId(invoiceId);
-    if (customerUserId != null) {
-      try {
+    // 2. Try local SQLite (may not exist on admin device)
+    await _tryUpdateLocalStatus(invoiceId, 'Cancelled');
+
+    // 3. Notify customer via Firestore
+    await _notifyCustomer(doc, invoiceId, 'order',
+        'Đơn hàng đã bị hủy',
+        'Đơn hàng #$invoiceId đã bị hủy.');
+  }
+
+  /// Read a single order doc from Firestore, throw if not found
+  Future<Map<String, dynamic>> _getOrderDoc(int invoiceId) async {
+    final doc = await FirebaseFirestore.instance
+        .collection('orders')
+        .doc(invoiceId.toString())
+        .get();
+    if (!doc.exists) {
+      throw StateError('Không tìm thấy đơn hàng #$invoiceId');
+    }
+    return doc.data()!;
+  }
+
+  /// Best-effort update to local SQLite (order may not exist on admin device)
+  Future<void> _tryUpdateLocalStatus(int invoiceId, String orderStatus) async {
+    try {
+      final db = await AppDatabase.instance;
+      await db.update(
+        'Invoice',
+        {
+          'OrderStatus': orderStatus,
+          'UpdatedAt': DateTime.now().toIso8601String(),
+        },
+        where: 'InvoiceID = ?',
+        whereArgs: [invoiceId],
+      );
+    } catch (_) {}
+  }
+
+  /// Write a notification to Firestore so the customer can see it cross-device
+  Future<void> _notifyCustomer(
+    Map<String, dynamic> orderDoc,
+    int invoiceId,
+    String type,
+    String title,
+    String content,
+  ) async {
+    final customerFirebaseUid = (orderDoc['customerFirebaseUid'] as String?) ?? '';
+    if (customerFirebaseUid.isEmpty) return;
+
+    try {
+      await FirebaseFirestore.instance.collection('notifications').add({
+        'firebaseUid': customerFirebaseUid,
+        'type': type,
+        'title': title,
+        'content': content,
+        'referenceId': invoiceId,
+        'referenceType': 'order',
+        'createdAt': DateTime.now().toIso8601String(),
+        'isRead': false,
+      });
+
+      // Also try local notification if the customer user exists locally
+      final localUserId = await _getCustomerUserId(invoiceId);
+      if (localUserId != null) {
         await NotificationRepository.instance.create(
-          userId: customerUserId,
-          type: 'order',
-          title: 'Đơn hàng đã bị hủy',
-          content: 'Đơn hàng #$invoiceId đã bị hủy.',
+          userId: localUserId,
+          type: type,
+          title: title,
+          content: content,
           referenceId: invoiceId,
           referenceType: 'order',
         );
-      } catch (_) {}
-    }
+      }
+    } catch (_) {}
   }
 }

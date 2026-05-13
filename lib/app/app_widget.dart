@@ -56,7 +56,14 @@ class _AppWidgetState extends State<AppWidget> with WidgetsBindingObserver {
 
   Future<void> _bootstrap() async {
     final previousUserId = AuthSession.instance.currentUserId.value;
-    final syncedUserId = await AuthRepository.instance.syncVerifiedFirebaseUser();
+    int? syncedUserId;
+    try {
+      syncedUserId = await AuthRepository.instance.syncVerifiedFirebaseUser().timeout(
+        const Duration(seconds: 10),
+      );
+    } catch (_) {
+      // Firebase / network unavailable — proceed with local session
+    }
     if (mounted) {
       setState(() {
         _bootstrapping = false;

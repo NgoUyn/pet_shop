@@ -1,5 +1,8 @@
+import 'package:sqflite/sqflite.dart';
+
 import '../../../core/db/app_database.dart';
 import '../../auth/services/auth_session.dart';
+import '../../orders/services/order_firestore_service.dart';
 
 class ReviewItem {
   ReviewItem({
@@ -54,6 +57,9 @@ class ReviewRepository {
       throw StateError('Đánh giá phải từ 1 đến 5 sao');
     }
 
+    // Ensure invoice exists locally (may have been created on another device)
+    await _ensureInvoiceExistsLocally(db, invoiceId);
+
     final now = DateTime.now().toIso8601String();
     return db.insert('Review', {
       'InvoiceID': invoiceId,
@@ -63,6 +69,62 @@ class ReviewRepository {
       'CreatedAt': now,
       'UpdatedAt': null,
     });
+  }
+
+  Future<void> _ensureInvoiceExistsLocally(Database db, int invoiceId) async {
+    final rows = await db.query(
+      'Invoice',
+      columns: ['InvoiceID'],
+      where: 'InvoiceID = ?',
+      whereArgs: [invoiceId],
+      limit: 1,
+    );
+    if (rows.isNotEmpty) return; // Already exists locally
+
+    // Try to sync from Firestore
+    try {
+      final doc = await OrderFirestoreService.instance.getOrderDoc(invoiceId);
+      if (doc == null) return;
+
+      // Resolve local CustomerID from current user (may differ from original device)
+      final localCustomerId = await _resolveLocalCustomerId(db);
+      if (localCustomerId == null) return;
+
+      final totalAmount = (doc['totalAmount'] as num?)?.toDouble() ?? 0;
+      final paymentMethod = (doc['paymentMethod'] as String?) ?? '';
+      final paymentStatus = (doc['paymentStatus'] as String?) ?? '';
+      final orderStatus = (doc['orderStatus'] as String?) ?? '';
+      final shippingAddress = doc['shippingAddress'] as String?;
+      final createdAt = (doc['createdAt'] as String?) ?? DateTime.now().toIso8601String();
+      final updatedAt = doc['updatedAt'] as String?;
+
+      await db.insert('Invoice', {
+        'InvoiceID': invoiceId,
+        'CustomerID': localCustomerId,
+        'ShippingAddress': shippingAddress,
+        'PaymentMethod': paymentMethod,
+        'PaymentStatus': paymentStatus,
+        'OrderStatus': orderStatus,
+        'TotalAmount': totalAmount,
+        'CreatedAt': createdAt,
+        'UpdatedAt': updatedAt,
+      });
+    } catch (e) {
+      print('ReviewRepository._ensureInvoiceExistsLocally: $e');
+    }
+  }
+
+  Future<int?> _resolveLocalCustomerId(Database db) async {
+    final userId = AuthSession.instance.currentUserId.value;
+    if (userId == null) return null;
+    final rows = await db.query(
+      'Customer',
+      columns: ['CustomerID'],
+      where: 'UserID = ?',
+      whereArgs: [userId],
+      limit: 1,
+    );
+    return rows.isNotEmpty ? (rows.first['CustomerID'] as int?) : null;
   }
 
   Future<ReviewItem?> getByInvoiceId(int invoiceId) async {

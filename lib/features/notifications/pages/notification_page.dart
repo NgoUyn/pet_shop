@@ -72,7 +72,31 @@ class _NotificationPageState extends State<NotificationPage> {
 
   Future<void> _onTap(AppNotificationItem item) async {
     if (!item.isRead) {
-      await NotificationRepository.instance.markAsRead(item.notificationId);
+      await NotificationRepository.instance.markAsRead(
+        item.notificationId,
+        firestoreDocId: item.firestoreDocId,
+      );
+      // Update local state immediately so UI reflects the change
+      setState(() {
+        _notifications = _notifications.map((n) {
+          if (identical(n, item)) {
+            return AppNotificationItem(
+              notificationId: n.notificationId,
+              userId: n.userId,
+              type: n.type,
+              title: n.title,
+              content: n.content,
+              createdAt: n.createdAt,
+              isRead: true,
+              readAt: DateTime.now(),
+              referenceId: n.referenceId,
+              referenceType: n.referenceType,
+              firestoreDocId: n.firestoreDocId,
+            );
+          }
+          return n;
+        }).toList();
+      });
     }
 
     if (item.type == 'order' && item.referenceId != null) {

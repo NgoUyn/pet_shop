@@ -35,6 +35,9 @@ class _ReviewPageState extends State<ReviewPage> {
     if (mounted) {
       setState(() {
         _existingReview = review;
+        if (review != null) {
+          _rating = review.rating;
+        }
         _isLoading = false;
       });
     }
