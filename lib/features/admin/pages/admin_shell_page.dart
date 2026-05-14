@@ -12,19 +12,19 @@ import '../../chat/pages/admin_chat_inbox_page.dart';
 import '../../chat/services/chat_repository.dart';
 import '../../home/pages/pet_detail_page.dart';
 import '../../home/pages/product_detail_page.dart';
-import '../../home/services/pet_repository.dart';
 import '../../home/services/product_repository.dart';
+import '../../home/services/pet_repository.dart';
+import '../../admin/pages/order_management_page.dart';
+import '../../admin/pages/admin_warehouse_page.dart';
+import '../../admin/pages/user_list_page.dart';
+import '../../admin/pages/review_management_page.dart';
+import '../../admin/pages/revenue_statistics_page.dart';
+import '../../admin/pages/admin_product_form_page.dart';
+import '../../admin/pages/admin_pet_form_page.dart';
+import '../../admin/services/promotion_repository.dart';
 import '../../notifications/services/notification_repository.dart';
 import '../../profile/pages/profile_detail_page.dart';
 import '../../profile/services/profile_repository.dart';
-import 'admin_pet_form_page.dart';
-import 'admin_product_form_page.dart';
-import 'admin_warehouse_page.dart';
-import 'order_management_page.dart';
-import 'review_management_page.dart';
-import 'revenue_statistics_page.dart';
-import 'user_list_page.dart';
-import '../services/promotion_repository.dart';
 
 class AdminShellPage extends StatefulWidget {
   const AdminShellPage({super.key, this.initialTab = 0});
@@ -170,10 +170,10 @@ class _AdminShellPageState extends State<AdminShellPage> {
         unreadNotifications: _unreadNotifications,
         onQuickNavigate: _pushPage,
       ),
-      const OrderManagementPage(),
-      const AdminWarehousePage(),
-      const UserListPage(),
-      const ReviewManagementPage(),
+      OrderManagementPage(),
+      AdminWarehousePage(),
+      UserListPage(),
+      ReviewManagementPage(),
       _AdminAccountPage(onLogoutTap: _logout),
     ];
 
@@ -318,7 +318,7 @@ class _AdminDashboardPage extends StatelessWidget {
                               value: summary.totalOrders.toString(),
                               label: 'Đơn hàng',
                               trend: analytics.orderChangeText,
-                              onTap: () => onQuickNavigate(const OrderManagementPage()),
+                              onTap: () => onQuickNavigate(OrderManagementPage()),
                             ),
                           ),
                           SizedBox(
@@ -329,7 +329,7 @@ class _AdminDashboardPage extends StatelessWidget {
                               value: summary.totalCustomers.toString(),
                               label: 'Khách hàng',
                               trend: '+0%',
-                              onTap: () => onQuickNavigate(const UserListPage()),
+                              onTap: () => onQuickNavigate(UserListPage()),
                             ),
                           ),
                           SizedBox(
@@ -350,7 +350,7 @@ class _AdminDashboardPage extends StatelessWidget {
                               value: summary.lowStockCount.toString(),
                               label: 'Cảnh báo tồn kho',
                               trend: summary.lowStockCount == 0 ? '0%' : '+1%',
-                              onTap: () => onQuickNavigate(const AdminWarehousePage()),
+                              onTap: () => onQuickNavigate(AdminWarehousePage()),
                             ),
                           ),
                         ],
@@ -375,7 +375,7 @@ class _AdminDashboardPage extends StatelessWidget {
                         SizedBox(
                           width: double.infinity,
                           child: OutlinedButton.icon(
-                            onPressed: () => onQuickNavigate(const RevenueStatisticsPage()),
+                            onPressed: () => onQuickNavigate(RevenueStatisticsPage()),
                             icon: const Icon(Icons.trending_up, size: 18),
                             label: const Text('Xem chi tiết thống kê'),
                             style: OutlinedButton.styleFrom(
@@ -478,7 +478,7 @@ class _AdminAccountPageState extends State<_AdminAccountPage> {
 
   Future<void> _openEditProfile() async {
     final changed = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const ProfileDetailPage()),
+      MaterialPageRoute(builder: (_) => ProfileDetailPage()),
     );
     if (changed == true && mounted) {
       _reloadProfile();
@@ -921,7 +921,7 @@ class _AdminPetCatalogPageState extends State<_AdminPetCatalogPage> {
   Future<bool> _showAddProductForm(BuildContext context) async {
     final added = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => const AdminPetFormPage()),
+      MaterialPageRoute(builder: (_) => AdminPetFormPage()),
     );
     return added == true;
   }
@@ -1008,7 +1008,7 @@ class _AdminAccessoryCatalogPageState extends State<_AdminAccessoryCatalogPage> 
   Future<bool> _showAddProductForm(BuildContext context) async {
     final added = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(builder: (_) => const AdminProductFormPage()),
+      MaterialPageRoute(builder: (_) => AdminProductFormPage()),
     );
     return added == true;
   }
@@ -1799,7 +1799,18 @@ class _AdminDashboardSummary {
 
   static Future<_AdminDashboardSummary> load() async {
     final db = await AppDatabase.instance;
-    final orders = await db.rawQuery('SELECT COUNT(*) AS Cnt FROM Invoice');
+
+    // Đếm orders từ Firestore
+    int totalOrders = 0;
+    try {
+      final snapshot = await FirebaseFirestore.instance.collection('orders').get();
+      totalOrders = snapshot.docs.length;
+    } catch (_) {
+      // Fallback về SQLite nếu Firestore lỗi
+      final orders = await db.rawQuery('SELECT COUNT(*) AS Cnt FROM Invoice');
+      totalOrders = (orders.first['Cnt'] as int?) ?? 0;
+    }
+
     final customers = await db.rawQuery("SELECT COUNT(*) AS Cnt FROM User WHERE lower(Role) = 'customer'");
     final pets = await db.rawQuery('SELECT COUNT(*) AS Cnt FROM Pet');
     final products = await db.rawQuery('SELECT COUNT(*) AS Cnt FROM Product');
@@ -1813,7 +1824,7 @@ class _AdminDashboardSummary {
     final unreadNotifications = await NotificationRepository.instance.unreadCountForCurrentUser();
 
     return _AdminDashboardSummary(
-      totalOrders: (orders.first['Cnt'] as int?) ?? 0,
+      totalOrders: totalOrders,
       totalCustomers: (customers.first['Cnt'] as int?) ?? 0,
       totalPets: (pets.first['Cnt'] as int?) ?? 0,
       totalProducts: (products.first['Cnt'] as int?) ?? 0,

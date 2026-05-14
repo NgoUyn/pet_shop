@@ -91,7 +91,8 @@ class _UserListPageState extends State<UserListPage> {
 
       if (email != null && email.isNotEmpty) {
         final existing = usersByEmail[email];
-        if (existing == null || (existing['FirebaseUID'] as String?)?.isEmpty == true) {
+        // Ưu tiên Firestore vì có thông tin đầy đủ hơn
+        if (existing == null || (existing['Source'] as String?) == 'local') {
           usersByEmail[email] = normalized;
         }
       } else if (!usersByUid.containsKey(uid)) {

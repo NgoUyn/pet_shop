@@ -29,12 +29,10 @@ class _UserDetailPageState extends State<UserDetailPage> {
   @override
   void initState() {
     super.initState();
-    _loadUserDetail();
-    _loadRecentOrders();
+    _loadUserDetail().then((_) => _loadRecentOrders());
     // Tự động refresh mỗi 30 giây để cập nhật thông tin khách hàng
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      _loadUserDetail();
-      _loadRecentOrders();
+      _loadUserDetail().then((_) => _loadRecentOrders());
     });
   }
 
@@ -109,8 +107,8 @@ class _UserDetailPageState extends State<UserDetailPage> {
           _user = {
             ...initialUser,
             if (customerRow != null) ...customerRow,
-            'Phone': (customerRow?['Phone'] as String?) ?? initialUser['Phone'] ?? null,
-            'Address': (customerRow?['Address'] as String?) ?? initialUser['Address'] ?? null,
+            'Phone': (customerRow?['Phone'] as String?) ?? initialUser['Phone'],
+            'Address': (customerRow?['Address'] as String?) ?? initialUser['Address'],
             'LoyaltyPoints': (customerRow?['LoyaltyPoints'] as int?) ?? (initialUser['LoyaltyPoints'] as int?) ?? 0,
           };
           _loading = false;
@@ -163,49 +161,62 @@ class _UserDetailPageState extends State<UserDetailPage> {
 
   Future<void> _loadRecentOrders() async {
     try {
-      final db = await AppDatabase.instance;
+      final user = _user;
+      final firebaseUid = user?['FirebaseUID'] as String?;
+      final email = (user?['Email'] as String?)?.trim().toLowerCase();
 
-      // Get customer ID from this user
-      final customerRows = await db.query(
-        'Customer',
-        columns: ['CustomerID'],
-        where: 'UserID = ?',
-        whereArgs: [widget.userId],
-        limit: 1,
-      );
+      // Thử load từ Firestore trước
+      List<Map<String, dynamic>> firestoreOrders = [];
 
-      if (customerRows.isEmpty) return;
+      if (firebaseUid != null && firebaseUid.isNotEmpty) {
+        final snapshot = await FirebaseFirestore.instance
+            .collection('orders')
+            .where('customerFirebaseUid', isEqualTo: firebaseUid)
+            .orderBy('createdAt', descending: true)
+            .get();
+        firestoreOrders = snapshot.docs.map((doc) => doc.data()).toList();
+      }
 
-      final customerId = customerRows.first['CustomerID'] as int;
+      // Nếu không tìm thấy theo UID, thử theo email
+      if (firestoreOrders.isEmpty && email != null && email.isNotEmpty) {
+        final snapshot = await FirebaseFirestore.instance
+            .collection('orders')
+            .where('customerEmail', isEqualTo: email)
+            .orderBy('createdAt', descending: true)
+            .get();
+        firestoreOrders = snapshot.docs.map((doc) => doc.data()).toList();
+      }
 
-      final invoiceRows = await db.rawQuery(
-        '''
-        SELECT i.*, 
-          COALESCE(i.OrderStatus, i.PaymentStatus) as EffectiveStatus
-        FROM Invoice i
-        WHERE i.CustomerID = ?
-        ORDER BY i.CreatedAt DESC
-        LIMIT ?
-        ''',
-        [customerId, _showAllOrders ? 100 : 3],
-      );
+      // Giới hạn số lượng
+      if (!_showAllOrders && firestoreOrders.length > 3) {
+        firestoreOrders = firestoreOrders.take(3).toList();
+      }
 
       final orders = <OrderInfo>[];
-      for (final row in invoiceRows) {
-        final invoiceId = row['InvoiceID'] as int;
+      for (final data in firestoreOrders) {
+        final itemsData = data['items'] as List<dynamic>? ?? [];
+        final items = itemsData.map((item) {
+          final itemMap = item as Map<String, dynamic>;
+          return OrderItemInfo(
+            invoiceDetailId: (itemMap['invoiceDetailId'] as num?)?.toInt() ?? 0,
+            productName: (itemMap['productName'] as String? ?? itemMap['petName'] as String? ?? '').trim(),
+            quantity: (itemMap['quantity'] as num?)?.toInt() ?? 0,
+            unitPrice: (itemMap['unitPrice'] as num?)?.toDouble() ?? 0,
+          );
+        }).toList();
 
-        final detailRows = await db.rawQuery(
-          '''
-          SELECT id.*, p.ProductName
-          FROM InvoiceDetail id
-          LEFT JOIN Product p ON id.ProductID = p.ProductID
-          WHERE id.InvoiceID = ?
-          ''',
-          [invoiceId],
-        );
+        final createdAt = data['createdAt'] as String? ?? '';
+        final totalAmount = (data['totalAmount'] as num?)?.toDouble() ?? 0;
+        final orderStatus = (data['orderStatus'] as String? ?? data['paymentStatus'] as String? ?? '').toLowerCase();
 
-        final items = detailRows.map(OrderItemInfo.fromRow).toList();
-        orders.add(OrderInfo.fromRow(row, items));
+        orders.add(OrderInfo(
+          invoiceId: (data['orderId'] as num?)?.toInt() ?? (data['id'] as num?)?.toInt() ?? 0,
+          totalAmount: totalAmount,
+          createdAt: createdAt,
+          orderStatus: orderStatus,
+          paymentStatus: orderStatus,
+          items: items,
+        ));
       }
 
       if (mounted) {
