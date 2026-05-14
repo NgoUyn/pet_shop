@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../../core/db/app_database.dart';
@@ -222,6 +223,68 @@ class ProfileRepository {
       }
     });
 
+    // Sync profile to Firestore for cross-device access
+    _syncProfileToFirestore(
+      userId: userId,
+      fullName: normalizedFullName,
+      phone: normalizedPhone,
+      address: normalizedAddress,
+      email: currentProfile.email,
+      role: currentProfile.role,
+      loyaltyPoints: currentProfile.loyaltyPoints,
+    );
+
     return true;
+  }
+
+  void _syncProfileToFirestore({
+    required int userId,
+    required String fullName,
+    String? phone,
+    String? address,
+    required String email,
+    required String role,
+    required int loyaltyPoints,
+  }) {
+    _doSyncProfileToFirestore(
+      userId: userId,
+      fullName: fullName,
+      phone: phone,
+      address: address,
+      email: email,
+      role: role,
+      loyaltyPoints: loyaltyPoints,
+    );
+  }
+
+  Future<void> _doSyncProfileToFirestore({
+    required int userId,
+    required String fullName,
+    String? phone,
+    String? address,
+    required String email,
+    required String role,
+    required int loyaltyPoints,
+  }) async {
+    try {
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      if (firebaseUser == null) return;
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(firebaseUser.uid)
+          .set({
+        'localUserId': userId,
+        'fullName': fullName,
+        'email': email,
+        'role': role,
+        'phone': phone,
+        'address': address,
+        'loyaltyPoints': loyaltyPoints,
+        'updatedAt': DateTime.now().toIso8601String(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      print('ProfileRepository._doSyncProfileToFirestore error: $e');
+    }
   }
 }

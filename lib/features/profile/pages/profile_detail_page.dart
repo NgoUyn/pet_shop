@@ -1,6 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:latlong2/latlong.dart';
@@ -30,20 +32,58 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
   bool _saving = false;
   bool _isEditing = false;
   ProfileData? _profile;
+  LatLng? _mapPosition;
+  final _mapController = MapController();
+  Timer? _addressDebounce;
 
   @override
   void initState() {
     super.initState();
+    _addressController.addListener(_onAddressChanged);
     _loadProfile();
   }
 
   @override
   void dispose() {
+    _addressDebounce?.cancel();
     _nameController.dispose();
     _emailController.dispose();
     _phoneController.dispose();
     _addressController.dispose();
     super.dispose();
+  }
+
+  void _onAddressChanged() {
+    if (!_isEditing) return;
+    _addressDebounce?.cancel();
+    _addressDebounce = Timer(const Duration(milliseconds: 800), () {
+      _geocodeAddress(_addressController.text);
+    });
+  }
+
+  Future<void> _geocodeAddress(String query) async {
+    final q = query.trim();
+    if (q.isEmpty) {
+      setState(() => _mapPosition = null);
+      return;
+    }
+    try {
+      final uri = Uri.parse(
+        'https://nominatim.openstreetmap.org/search'
+        '?format=json&q=${Uri.encodeComponent(q)}'
+        '&limit=1&accept-language=vi',
+      );
+      final response = await http.get(uri, headers: {'User-Agent': 'PetShopApp/1.0'});
+      if (response.statusCode != 200) return;
+      final list = jsonDecode(response.body) as List<dynamic>;
+      if (list.isEmpty) return;
+      final lat = double.parse(list[0]['lat'] as String);
+      final lon = double.parse(list[0]['lon'] as String);
+      if (mounted) {
+        setState(() => _mapPosition = LatLng(lat, lon));
+        _mapController.move(LatLng(lat, lon), _mapController.camera.zoom);
+      }
+    } catch (_) {}
   }
 
   Future<void> _loadProfile() async {
@@ -135,19 +175,12 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
       final displayName = data['display_name'] as String?;
       if (displayName == null || displayName.isEmpty) return;
 
-      // Open map to confirm and adjust
-      if (!mounted) return;
-      final result = await Navigator.push<Map<String, dynamic>>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => LocationPickerPage(
-            position: LatLng(position!.latitude, position!.longitude),
-            address: displayName,
-          ),
-        ),
-      );
-      if (result != null && mounted) {
-        _addressController.text = result['address'] as String? ?? '';
+      _addressController.text = displayName;
+      setState(() => _mapPosition = LatLng(position!.latitude, position!.longitude));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Đã lấy địa chỉ hiện tại'), duration: Duration(seconds: 1)),
+        );
       }
     } catch (e) {
       if (mounted) {
@@ -369,6 +402,7 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                       style: TextButton.styleFrom(foregroundColor: AppColors.primary),
                     ),
                   ),
+                if (_mapPosition != null) _buildInlineMap(),
                 const SizedBox(height: 8),
 
                 const SizedBox(height: 24),
@@ -382,6 +416,78 @@ class _ProfileDetailPageState extends State<ProfileDetailPage> {
                       side: const BorderSide(color: Colors.red),
                       padding: const EdgeInsets.symmetric(vertical: 12),
                     ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInlineMap() {
+    if (_mapPosition == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: GestureDetector(
+        onTap: () async {
+          final result = await Navigator.push<Map<String, dynamic>>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => LocationPickerPage(
+                position: _mapPosition!,
+                address: _addressController.text,
+              ),
+            ),
+          );
+          if (result != null && mounted) {
+            _addressController.text = result['address'] as String? ?? '';
+            setState(() => _mapPosition = LatLng(
+              (result['lat'] as num).toDouble(),
+              (result['lng'] as num).toDouble(),
+            ));
+          }
+        },
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: SizedBox(
+            height: 180,
+            child: Stack(
+              children: [
+                FlutterMap(
+                  mapController: _mapController,
+                  options: MapOptions(
+                    initialCenter: _mapPosition!,
+                    initialZoom: 17,
+                    interactionOptions: const InteractionOptions(flags: InteractiveFlag.none),
+                  ),
+                  children: [
+                    TileLayer(
+                      urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                      userAgentPackageName: 'com.example.pet_shop',
+                    ),
+                    MarkerLayer(
+                      markers: [
+                        Marker(
+                          point: _mapPosition!,
+                          width: 80, height: 80,
+                          child: const Icon(Icons.location_on, size: 40, color: Colors.red),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+                Positioned(
+                  right: 8, top: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Text('Nhấn để chỉnh trên bản đồ',
+                      style: TextStyle(color: Colors.white, fontSize: 11)),
                   ),
                 ),
               ],

@@ -84,7 +84,7 @@ class NotificationRepository {
     }
     final createdAtIso = (createdAt ?? DateTime.now()).toIso8601String();
 
-    return db.insert('AppNotification', {
+    final id = await db.insert('AppNotification', {
       'UserID': resolvedUserId,
       'Type': normalizedType,
       'Title': normalizedTitle,
@@ -95,6 +95,15 @@ class NotificationRepository {
       'ReferenceID': referenceId,
       'ReferenceType': referenceType,
     });
+
+    _syncCreateToFirestore(
+      notificationId: id, type: normalizedType, title: normalizedTitle,
+      content: normalizedContent, createdAt: createdAtIso,
+      referenceId: referenceId, referenceType: referenceType,
+      resolvedUserId: resolvedUserId,
+    );
+
+    return id;
   }
 
   Future<List<AppNotificationItem>> listForCurrentUser({int limit = 50}) async {
@@ -339,6 +348,58 @@ class NotificationRepository {
       }
     } catch (e) {
       print('NotificationRepository.deleteAllForCurrentUser Firestore error: $e');
+    }
+  }
+
+  void _syncCreateToFirestore({
+    required int notificationId,
+    required String type,
+    required String title,
+    required String content,
+    required String createdAt,
+    int? referenceId,
+    String? referenceType,
+    required int resolvedUserId,
+  }) {
+    _doSyncCreateToFirestore(
+      notificationId: notificationId, type: type, title: title,
+      content: content, createdAt: createdAt, referenceId: referenceId,
+      referenceType: referenceType, resolvedUserId: resolvedUserId,
+    );
+  }
+
+  Future<void> _doSyncCreateToFirestore({
+    required int notificationId,
+    required String type,
+    required String title,
+    required String content,
+    required String createdAt,
+    int? referenceId,
+    String? referenceType,
+    required int resolvedUserId,
+  }) async {
+    try {
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      if (firebaseUser == null) return;
+      String? targetUid;
+      if (resolvedUserId == AuthSession.instance.currentUserId.value) {
+        targetUid = firebaseUser.uid;
+      } else {
+        final db = await AppDatabase.instance;
+        final rows = await db.query('User',
+          columns: ['FirebaseUID'],
+          where: 'UserID = ?', whereArgs: [resolvedUserId], limit: 1);
+        targetUid = rows.isNotEmpty ? (rows.first['FirebaseUID'] as String?) : null;
+      }
+      await FirebaseFirestore.instance.collection('notifications').add({
+        'notificationId': notificationId,
+        'firebaseUid': targetUid ?? firebaseUser.uid,
+        'type': type, 'title': title, 'content': content,
+        'createdAt': createdAt, 'isRead': false,
+        'referenceId': referenceId, 'referenceType': referenceType,
+      });
+    } catch (e) {
+      print('NotificationRepository._doSyncCreateToFirestore error: $e');
     }
   }
 }

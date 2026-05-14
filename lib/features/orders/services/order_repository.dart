@@ -191,6 +191,19 @@ class OrderRepository {
       orders.add(OrderInfo.fromRow(row, items));
     }
 
+    // Merge with Firestore orders (cross-device)
+    try {
+      final firestoreOrders = await OrderFirestoreService.instance
+          .getOrdersForCurrentFirebaseUser(statusFilter: statusFilter);
+      final localInvoiceIds = orders.map((o) => o.invoiceId).toSet();
+      for (final fo in firestoreOrders) {
+        if (!localInvoiceIds.contains(fo.invoiceId)) {
+          orders.add(fo);
+        }
+      }
+    } catch (_) {}
+
+    orders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return orders;
   }
 
@@ -241,6 +254,19 @@ class OrderRepository {
       orders.add(OrderInfo.fromRow(row, items));
     }
 
+    // Merge with Firestore orders (cross-device)
+    try {
+      final firestoreOrders = await OrderFirestoreService.instance
+          .getOrdersForCurrentFirebaseUser(statusFilter: statusFilter);
+      final localInvoiceIds = orders.map((o) => o.invoiceId).toSet();
+      for (final fo in firestoreOrders) {
+        if (!localInvoiceIds.contains(fo.invoiceId)) {
+          orders.add(fo);
+        }
+      }
+    } catch (_) {}
+
+    orders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return orders;
   }
 
