@@ -18,6 +18,7 @@ import '../../admin/pages/order_management_page.dart';
 import '../../admin/pages/admin_warehouse_page.dart';
 import '../../admin/pages/user_list_page.dart';
 import '../../admin/pages/review_management_page.dart';
+import '../../admin/pages/review_statistics_page.dart';
 import '../../admin/pages/revenue_statistics_page.dart';
 import '../../admin/pages/admin_product_form_page.dart';
 import '../../admin/pages/admin_pet_form_page.dart';
@@ -389,6 +390,26 @@ class _AdminDashboardPage extends StatelessWidget {
                           ),
                         ),
                       ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  _SectionCard(
+                    title: 'Thống kê đánh giá',
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: () => onQuickNavigate(const ReviewStatisticsPage()),
+                        icon: const Icon(Icons.rate_review_outlined, size: 18),
+                        label: const Text('Xem thống kê đánh giá'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.primary,
+                          side: const BorderSide(color: AppColors.primary),
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
                     ),
                   ),
                   const SizedBox(height: 12),
