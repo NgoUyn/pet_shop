@@ -1,7 +1,7 @@
 import 'dart:async';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
-import 'package:sqflite/sqflite.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/db/app_database.dart';
@@ -22,6 +22,7 @@ import 'admin_product_form_page.dart';
 import 'admin_warehouse_page.dart';
 import 'order_management_page.dart';
 import 'review_management_page.dart';
+import 'revenue_statistics_page.dart';
 import 'user_list_page.dart';
 import '../services/promotion_repository.dart';
 
@@ -369,6 +370,23 @@ class _AdminDashboardPage extends StatelessWidget {
                             Text('Doanh thu tháng này', style: const TextStyle(fontWeight: FontWeight.w600, color: AppColors.textLight)),
                             Text(_formatCurrency(analytics.monthRevenue), style: const TextStyle(fontWeight: FontWeight.w700)),
                           ],
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () => onQuickNavigate(const RevenueStatisticsPage()),
+                            icon: const Icon(Icons.trending_up, size: 18),
+                            label: const Text('Xem chi tiết thống kê'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.primary,
+                              side: const BorderSide(color: AppColors.primary),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          ),
                         ),
                       ],
                     ),
@@ -1140,113 +1158,150 @@ class _DashboardAnalytics {
   }
 
   static Future<_DashboardAnalytics> load() async {
-    final db = await AppDatabase.instance;
     final now = DateTime.now();
     final monthStart = DateTime(now.year, now.month, 1);
     final nextMonth = DateTime(now.year, now.month + 1, 1);
     final previousStart = DateTime(now.year, now.month - 1, 1);
 
-    final monthSummary = await _loadPeriodSummary(db, monthStart, nextMonth);
-    final previousSummary = await _loadPeriodSummary(db, previousStart, monthStart);
+    // Lấy tất cả orders từ Firestore
+    final snapshot = await FirebaseFirestore.instance.collection('orders').get();
+    final allOrders = snapshot.docs.map((doc) => doc.data()).toList();
 
+    // Lọc orders đã thanh toán/hoàn thành
+    final paidOrders = allOrders.where((data) {
+      final paymentStatus = (data['paymentStatus'] as String? ?? '').toLowerCase();
+      final orderStatus = (data['orderStatus'] as String? ?? '').toLowerCase();
+      return paymentStatus == 'paid' ||
+          paymentStatus == 'completed' ||
+          orderStatus == 'completed' ||
+          orderStatus == 'shipping';
+    }).toList();
+
+    // Tính doanh thu tháng này và tháng trước
+    double monthRevenue = 0;
+    int monthOrders = 0;
+    double previousRevenue = 0;
+    int previousOrders = 0;
+
+    for (final data in paidOrders) {
+      final createdAt = data['createdAt'] as String? ?? '';
+      final totalAmount = (data['totalAmount'] as num?)?.toDouble() ?? 0;
+      if (createdAt.isEmpty) continue;
+
+      DateTime date;
+      try {
+        date = DateTime.parse(createdAt);
+      } catch (_) {
+        continue;
+      }
+
+      if (date.isAfter(monthStart) && date.isBefore(nextMonth)) {
+        monthRevenue += totalAmount;
+        monthOrders++;
+      } else if (date.isAfter(previousStart) && date.isBefore(monthStart)) {
+        previousRevenue += totalAmount;
+        previousOrders++;
+      }
+    }
+
+    // Biểu đồ cột 7 ngày gần đây
     final revenueBars = <_RevenueBarItem>[];
     for (var i = 6; i >= 0; i--) {
       final day = DateTime(now.year, now.month, now.day).subtract(Duration(days: i));
       final nextDay = day.add(const Duration(days: 1));
-      final rows = await db.rawQuery(
-        '''
-        SELECT COALESCE(SUM(TotalAmount), 0) AS Revenue
-        FROM Invoice
-        WHERE CreatedAt >= ? AND CreatedAt < ? AND PaymentStatus != 'Cancelled'
-        ''',
-        [day.toIso8601String(), nextDay.toIso8601String()],
-      );
+      double dayRevenue = 0;
+
+      for (final data in paidOrders) {
+        final createdAt = data['createdAt'] as String? ?? '';
+        final totalAmount = (data['totalAmount'] as num?)?.toDouble() ?? 0;
+        if (createdAt.isEmpty) continue;
+
+        DateTime date;
+        try {
+          date = DateTime.parse(createdAt);
+        } catch (_) {
+          continue;
+        }
+
+        if (date.isAfter(day) && date.isBefore(nextDay)) {
+          dayRevenue += totalAmount;
+        }
+      }
+
       revenueBars.add(
         _RevenueBarItem(
           label: '${day.day}',
-          value: (rows.first['Revenue'] as num?)?.toDouble() ?? 0,
+          value: dayRevenue,
         ),
       );
     }
 
-    final topPets = await _loadBestSellers(
-      db: db,
-      monthStart: monthStart,
-      nextMonth: nextMonth,
-      isPet: true,
-    );
-    final topProducts = await _loadBestSellers(
-      db: db,
-      monthStart: monthStart,
-      nextMonth: nextMonth,
-      isPet: false,
-    );
+    // Top bán chạy từ Firestore items
+    final Map<String, _BestSellerItem> petSales = {};
+    final Map<String, _BestSellerItem> productSales = {};
+
+    for (final data in paidOrders) {
+      final createdAt = data['createdAt'] as String? ?? '';
+      if (createdAt.isEmpty) continue;
+
+      DateTime date;
+      try {
+        date = DateTime.parse(createdAt);
+      } catch (_) {
+        continue;
+      }
+
+      if (!date.isAfter(monthStart) || !date.isBefore(nextMonth)) continue;
+
+      final items = data['items'] as List<dynamic>? ?? [];
+      for (final item in items) {
+        final itemMap = item as Map<String, dynamic>;
+        final name = (itemMap['productName'] as String? ?? itemMap['petName'] as String? ?? '').trim();
+        final quantity = (itemMap['quantity'] as num?)?.toInt() ?? 0;
+        final unitPrice = (itemMap['unitPrice'] as num?)?.toDouble() ?? 0;
+        final revenue = quantity * unitPrice;
+        final isPet = itemMap['petId'] != null;
+
+        if (name.isEmpty) continue;
+
+        if (isPet) {
+          petSales.update(
+            name,
+            (existing) => _BestSellerItem(
+              name: existing.name,
+              soldCount: existing.soldCount + quantity,
+              revenue: existing.revenue + revenue,
+            ),
+            ifAbsent: () => _BestSellerItem(name: name, soldCount: quantity, revenue: revenue),
+          );
+        } else {
+          productSales.update(
+            name,
+            (existing) => _BestSellerItem(
+              name: existing.name,
+              soldCount: existing.soldCount + quantity,
+              revenue: existing.revenue + revenue,
+            ),
+            ifAbsent: () => _BestSellerItem(name: name, soldCount: quantity, revenue: revenue),
+          );
+        }
+      }
+    }
+
+    // Sắp xếp và lấy top 3
+    final topPets = petSales.values.toList()
+      ..sort((a, b) => b.soldCount.compareTo(a.soldCount));
+    final topProducts = productSales.values.toList()
+      ..sort((a, b) => b.soldCount.compareTo(a.soldCount));
 
     return _DashboardAnalytics(
-      monthRevenue: monthSummary.revenue,
-      orderChangeText: _percentText(monthSummary.orders, previousSummary.orders),
-      revenueTrendText: _percentText(monthSummary.revenue, previousSummary.revenue),
+      monthRevenue: monthRevenue,
+      orderChangeText: _percentText(monthOrders, previousOrders),
+      revenueTrendText: _percentText(monthRevenue, previousRevenue),
       revenueBars: revenueBars,
-      topPets: topPets,
-      topProducts: topProducts,
+      topPets: topPets.take(3).toList(),
+      topProducts: topProducts.take(3).toList(),
     );
-  }
-
-  static Future<_PeriodSummary> _loadPeriodSummary(Database db, DateTime start, DateTime end) async {
-    final rows = await db.rawQuery(
-      '''
-      SELECT COALESCE(SUM(TotalAmount), 0) AS Revenue, COUNT(*) AS Orders
-      FROM Invoice
-      WHERE CreatedAt >= ? AND CreatedAt < ? AND PaymentStatus != 'Cancelled'
-      ''',
-      [start.toIso8601String(), end.toIso8601String()],
-    );
-    final row = rows.first;
-    return _PeriodSummary(
-      revenue: (row['Revenue'] as num?)?.toDouble() ?? 0,
-      orders: (row['Orders'] as int?) ?? 0,
-    );
-  }
-
-  static Future<List<_BestSellerItem>> _loadBestSellers({
-    required Database db,
-    required DateTime monthStart,
-    required DateTime nextMonth,
-    required bool isPet,
-  }) async {
-    final itemNameColumn = isPet ? 'COALESCE(id.PetName, p.PetName)' : 'COALESCE(id.ProductName, p.ProductName)';
-    final itemIdColumn = isPet ? 'id.PetID' : 'id.ProductID';
-    final joinTable = isPet ? 'Pet p ON p.PetID = id.PetID' : 'Product p ON p.ProductID = id.ProductID';
-    final typeClause = isPet ? 'id.PetID IS NOT NULL' : 'id.ProductID IS NOT NULL';
-
-    final rows = await db.rawQuery(
-      '''
-      SELECT $itemNameColumn AS ItemName,
-             SUM(id.Quantity) AS SoldCount,
-             SUM(id.Quantity * id.UnitPrice) AS Revenue
-      FROM InvoiceDetail id
-      JOIN Invoice i ON i.InvoiceID = id.InvoiceID
-      LEFT JOIN $joinTable
-      WHERE i.CreatedAt >= ?
-        AND i.CreatedAt < ?
-        AND i.PaymentStatus != 'Cancelled'
-        AND $typeClause
-      GROUP BY $itemIdColumn, ItemName
-      ORDER BY SoldCount DESC, Revenue DESC
-      LIMIT 3
-      ''',
-      [monthStart.toIso8601String(), nextMonth.toIso8601String()],
-    );
-
-    return rows
-        .map(
-          (row) => _BestSellerItem(
-            name: (row['ItemName'] as String?)?.trim().isNotEmpty == true ? (row['ItemName'] as String).trim() : 'Chưa đặt tên',
-            soldCount: (row['SoldCount'] as int?) ?? 0,
-            revenue: (row['Revenue'] as num?)?.toDouble() ?? 0,
-          ),
-        )
-        .toList();
   }
 
   static String _percentText(num current, num previous) {
@@ -1257,13 +1312,6 @@ class _DashboardAnalytics {
     final prefix = percent > 0 ? '+' : '';
     return '$prefix${percent.toStringAsFixed(0)}%';
   }
-}
-
-class _PeriodSummary {
-  const _PeriodSummary({required this.revenue, required this.orders});
-
-  final double revenue;
-  final int orders;
 }
 
 class _RevenueBarItem {
@@ -1398,7 +1446,7 @@ class _RevenueBarChart extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 8),
-                  Text('Ngày ${item.label}', style: const TextStyle(fontSize: 11, color: AppColors.textLight)),
+                  Text(item.label, style: const TextStyle(fontSize: 11, color: AppColors.textLight)),
                 ],
               ),
             ),
