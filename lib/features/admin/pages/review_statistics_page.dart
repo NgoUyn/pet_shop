@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../services/sentiment_service.dart';
 
 // ─── Data Models ───────────────────────────────────────────────────────
 
@@ -18,6 +19,18 @@ class _ReviewStats {
   final double previousMonthAvgRating;
   final double currentMonthAvgRating;
 
+  // Sentiment data
+  final int positiveCount;
+  final int neutralCount;
+  final int negativeCount;
+  final int errorCount;
+  final double positivePercent;
+  final double neutralPercent;
+  final double negativePercent;
+  final List<_MonthlySentiment> monthlySentiments;
+  final List<_SentimentByRating> sentimentByRating;
+  final bool sentimentAvailable;
+
   _ReviewStats({
     required this.totalReviews,
     required this.averageRating,
@@ -30,6 +43,16 @@ class _ReviewStats {
     required this.currentMonthReviews,
     required this.previousMonthAvgRating,
     required this.currentMonthAvgRating,
+    required this.positiveCount,
+    required this.neutralCount,
+    required this.negativeCount,
+    required this.errorCount,
+    required this.positivePercent,
+    required this.neutralPercent,
+    required this.negativePercent,
+    required this.monthlySentiments,
+    required this.sentimentByRating,
+    required this.sentimentAvailable,
   });
 
   factory _ReviewStats.empty() => _ReviewStats(
@@ -44,6 +67,16 @@ class _ReviewStats {
         currentMonthReviews: 0,
         previousMonthAvgRating: 0,
         currentMonthAvgRating: 0,
+        positiveCount: 0,
+        neutralCount: 0,
+        negativeCount: 0,
+        errorCount: 0,
+        positivePercent: 0,
+        neutralPercent: 0,
+        negativePercent: 0,
+        monthlySentiments: [],
+        sentimentByRating: [],
+        sentimentAvailable: false,
       );
 }
 
@@ -56,6 +89,34 @@ class _MonthlyComparison {
     required this.label,
     required this.reviewCount,
     required this.avgRating,
+  });
+}
+
+class _MonthlySentiment {
+  final String label;
+  final int positive;
+  final int neutral;
+  final int negative;
+
+  _MonthlySentiment({
+    required this.label,
+    required this.positive,
+    required this.neutral,
+    required this.negative,
+  });
+}
+
+class _SentimentByRating {
+  final int rating;
+  final int positive;
+  final int neutral;
+  final int negative;
+
+  _SentimentByRating({
+    required this.rating,
+    required this.positive,
+    required this.neutral,
+    required this.negative,
   });
 }
 
@@ -84,6 +145,8 @@ class ReviewStatisticsPage extends StatefulWidget {
 
 class _ReviewStatisticsPageState extends State<ReviewStatisticsPage> {
   bool _loading = true;
+  bool _sentimentLoading = false;
+  bool _sentimentAnalysisDone = false;
   _ReviewStats _stats = _ReviewStats.empty();
 
   @override
@@ -241,6 +304,10 @@ class _ReviewStatisticsPageState extends State<ReviewStatisticsPage> {
       final topPets = petReviewMap.values.toList()
         ..sort((a, b) => b.reviewCount.compareTo(a.reviewCount));
 
+      // ── Sentiment Analysis ──
+      // Check if server is available first
+      final serverAvailable = await SentimentService.instance.isServerAvailable();
+
       if (!mounted) return;
       setState(() {
         _stats = _ReviewStats(
@@ -269,13 +336,216 @@ class _ReviewStatisticsPageState extends State<ReviewStatisticsPage> {
           currentMonthReviews: currentMonthReviews,
           previousMonthAvgRating: previousMonthAvgRating,
           currentMonthAvgRating: currentMonthAvgRating,
+          positiveCount: 0,
+          neutralCount: 0,
+          negativeCount: 0,
+          errorCount: 0,
+          positivePercent: 0,
+          neutralPercent: 0,
+          negativePercent: 0,
+          monthlySentiments: [],
+          sentimentByRating: [],
+          sentimentAvailable: serverAvailable,
         );
         _loading = false;
       });
+
+      // If server is available, run sentiment analysis in background
+      if (serverAvailable) {
+        _analyzeSentiments(activeReviews);
+      }
     } catch (_) {
       if (!mounted) return;
       setState(() => _loading = false);
     }
+  }
+
+  Future<void> _analyzeSentiments(List<Map<String, dynamic>> activeReviews) async {
+    setState(() => _sentimentLoading = true);
+
+    try {
+      // Get reviews with content
+      final reviewsWithContent = activeReviews
+          .where((data) {
+            final content = data['content'] as String?;
+            return content != null && content.trim().isNotEmpty;
+          })
+          .toList();
+
+      if (reviewsWithContent.isEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _sentimentLoading = false;
+          _sentimentAnalysisDone = true;
+        });
+        return;
+      }
+
+      // Analyze each review's content
+      int positive = 0, neutral = 0, negative = 0, error = 0;
+      final now = DateTime.now();
+
+      // Monthly sentiment tracking
+      final monthlySentimentMap = <String, _MonthlySentiment>{};
+      for (var i = 5; i >= 0; i--) {
+        final monthStart = DateTime(now.year, now.month - i, 1);
+        final label = 'T${monthStart.month}';
+        monthlySentimentMap[label] = _MonthlySentiment(
+          label: label, positive: 0, neutral: 0, negative: 0,
+        );
+      }
+
+      // Sentiment by rating
+      final sentimentByRatingMap = <int, _SentimentByRating>{};
+      for (var r = 1; r <= 5; r++) {
+        sentimentByRatingMap[r] = _SentimentByRating(
+          rating: r, positive: 0, neutral: 0, negative: 0,
+        );
+      }
+
+      // Process in batches to avoid overwhelming the server
+      const batchSize = 5;
+      for (var i = 0; i < reviewsWithContent.length; i += batchSize) {
+        final batch = reviewsWithContent.sublist(
+          i, (i + batchSize > reviewsWithContent.length) ? reviewsWithContent.length : i + batchSize,
+        );
+
+        final futures = batch.map((data) async {
+          final content = data['content'] as String? ?? '';
+          final rating = (data['rating'] as num?)?.toInt() ?? 3;
+          final createdAtStr = data['createdAt'] as String? ?? '';
+
+          final result = await SentimentService.instance.predict(content);
+          return {
+            'result': result,
+            'rating': rating,
+            'createdAt': createdAtStr,
+          };
+        }).toList();
+
+        final batchResults = await Future.wait(futures);
+
+        for (final item in batchResults) {
+          final result = item['result'] as Map<String, dynamic>;
+          final rating = item['rating'] as int;
+          final createdAtStr = item['createdAt'] as String;
+
+          final label = result['label'] as String? ?? 'LỖI';
+
+          if (label.contains('TÍCH CỰC')) {
+            positive++;
+            // Update monthly
+            _updateMonthlySentiment(monthlySentimentMap, createdAtStr, 'positive');
+            // Update by rating
+            if (sentimentByRatingMap.containsKey(rating)) {
+              final s = sentimentByRatingMap[rating]!;
+              sentimentByRatingMap[rating] = _SentimentByRating(
+                rating: rating,
+                positive: s.positive + 1,
+                neutral: s.neutral,
+                negative: s.negative,
+              );
+            }
+          } else if (label.contains('TIÊU CỰC')) {
+            negative++;
+            _updateMonthlySentiment(monthlySentimentMap, createdAtStr, 'negative');
+            if (sentimentByRatingMap.containsKey(rating)) {
+              final s = sentimentByRatingMap[rating]!;
+              sentimentByRatingMap[rating] = _SentimentByRating(
+                rating: rating,
+                positive: s.positive,
+                neutral: s.neutral,
+                negative: s.negative + 1,
+              );
+            }
+          } else if (label.contains('TRUNG TÍNH')) {
+            neutral++;
+            _updateMonthlySentiment(monthlySentimentMap, createdAtStr, 'neutral');
+            if (sentimentByRatingMap.containsKey(rating)) {
+              final s = sentimentByRatingMap[rating]!;
+              sentimentByRatingMap[rating] = _SentimentByRating(
+                rating: rating,
+                positive: s.positive,
+                neutral: s.neutral + 1,
+                negative: s.negative,
+              );
+            }
+          } else {
+            error++;
+          }
+        }
+
+        // Update progress
+        if (!mounted) return;
+        setState(() {
+          final total = positive + neutral + negative + error;
+          final totalWithContent = reviewsWithContent.length;
+          _sentimentAnalysisDone = total > 0 || totalWithContent == 0;
+        });
+      }
+
+      final total = positive + neutral + negative;
+      final totalWithContent = reviewsWithContent.length;
+
+      if (!mounted) return;
+      setState(() {
+        _stats = _ReviewStats(
+          totalReviews: _stats.totalReviews,
+          averageRating: _stats.averageRating,
+          reviewsWithImages: _stats.reviewsWithImages,
+          ratingDistribution: _stats.ratingDistribution,
+          monthlyComparisons: _stats.monthlyComparisons,
+          topProducts: _stats.topProducts,
+          topPets: _stats.topPets,
+          previousMonthReviews: _stats.previousMonthReviews,
+          currentMonthReviews: _stats.currentMonthReviews,
+          previousMonthAvgRating: _stats.previousMonthAvgRating,
+          currentMonthAvgRating: _stats.currentMonthAvgRating,
+          positiveCount: positive,
+          neutralCount: neutral,
+          negativeCount: negative,
+          errorCount: error,
+          positivePercent: total > 0 ? (positive / total * 100) : 0,
+          neutralPercent: total > 0 ? (neutral / total * 100) : 0,
+          negativePercent: total > 0 ? (negative / total * 100) : 0,
+          monthlySentiments: monthlySentimentMap.values.toList(),
+          sentimentByRating: List.generate(5, (i) {
+            final r = i + 1;
+            return sentimentByRatingMap[r] ?? _SentimentByRating(rating: r, positive: 0, neutral: 0, negative: 0);
+          }),
+          sentimentAvailable: total > 0 || totalWithContent == 0,
+        );
+        _sentimentLoading = false;
+        _sentimentAnalysisDone = true;
+      });
+    } catch (e) {
+      print('Sentiment analysis error: $e');
+      if (!mounted) return;
+      setState(() {
+        _sentimentLoading = false;
+        _sentimentAnalysisDone = true;
+      });
+    }
+  }
+
+  void _updateMonthlySentiment(
+    Map<String, _MonthlySentiment> map,
+    String createdAtStr,
+    String type,
+  ) {
+    try {
+      final date = DateTime.parse(createdAtStr);
+      final label = 'T${date.month}';
+      if (map.containsKey(label)) {
+        final s = map[label]!;
+        map[label] = _MonthlySentiment(
+          label: label,
+          positive: s.positive + (type == 'positive' ? 1 : 0),
+          neutral: s.neutral + (type == 'neutral' ? 1 : 0),
+          negative: s.negative + (type == 'negative' ? 1 : 0),
+        );
+      }
+    } catch (_) {}
   }
 
   @override
@@ -287,6 +557,32 @@ class _ReviewStatisticsPageState extends State<ReviewStatisticsPage> {
         backgroundColor: AppColors.white,
         foregroundColor: AppColors.textDark,
         elevation: 0,
+        actions: [
+          if (_sentimentLoading)
+            const Padding(
+              padding: EdgeInsets.only(right: 16),
+              child: SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          if (_stats.sentimentAvailable && !_sentimentLoading)
+            IconButton(
+              icon: const Icon(Icons.refresh, size: 20),
+              tooltip: 'Phân tích lại cảm xúc',
+              onPressed: () async {
+                final snapshot = await FirebaseFirestore.instance
+                    .collection('reviews')
+                    .get();
+                final activeReviews = snapshot.docs
+                    .map((doc) => doc.data())
+                    .where((data) => data['isDeleted'] != true)
+                    .toList();
+                _analyzeSentiments(activeReviews);
+              },
+            ),
+        ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -330,6 +626,10 @@ class _ReviewStatisticsPageState extends State<ReviewStatisticsPage> {
                   ),
                   const SizedBox(height: 12),
 
+                  // ── Sentiment Analysis Section ──
+                  _buildSentimentSection(),
+                  const SizedBox(height: 12),
+
                   // ── Sản phẩm được đánh giá nhiều ──
                   _SectionCard(
                     title: 'Phụ kiện được đánh giá nhiều nhất',
@@ -344,6 +644,112 @@ class _ReviewStatisticsPageState extends State<ReviewStatisticsPage> {
                 ],
               ),
             ),
+    );
+  }
+
+  Widget _buildSentimentSection() {
+    // If server is not available, show a message
+    if (!_stats.sentimentAvailable) {
+      return _SectionCard(
+        title: 'Phân tích cảm xúc đánh giá',
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 24),
+          child: Column(
+            children: [
+              const Icon(Icons.cloud_off_outlined, size: 48, color: AppColors.textLight),
+              const SizedBox(height: 12),
+              const Text(
+                'Server phân tích cảm xúc chưa được kết nối',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: AppColors.textDark),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Chạy lệnh sau để khởi động server:\n'
+                'cd sentiment_project && python server.py',
+                style: TextStyle(fontSize: 12, color: AppColors.textLight),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: () async {
+                  setState(() => _sentimentLoading = true);
+                  final available = await SentimentService.instance.isServerAvailable();
+                  if (!mounted) return;
+                  if (available) {
+                    _loadData();
+                  } else {
+                    setState(() => _sentimentLoading = false);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Không thể kết nối server. Hãy chạy python server.py')),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Thử kết nối lại'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  side: const BorderSide(color: AppColors.primary),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        // Sentiment Overview Pie Chart
+        _SectionCard(
+          title: 'Phân tích cảm xúc đánh giá',
+          child: _sentimentLoading
+              ? const SizedBox(
+                  height: 200,
+                  child: Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircularProgressIndicator(),
+                        SizedBox(height: 12),
+                        Text(
+                          'Đang phân tích cảm xúc...',
+                          style: TextStyle(color: AppColors.textLight),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : _SentimentPieChart(
+                  positive: _stats.positiveCount,
+                  neutral: _stats.neutralCount,
+                  negative: _stats.negativeCount,
+                  positivePercent: _stats.positivePercent,
+                  neutralPercent: _stats.neutralPercent,
+                  negativePercent: _stats.negativePercent,
+                ),
+        ),
+        const SizedBox(height: 12),
+
+        // Sentiment by Rating
+        if (_stats.sentimentByRating.isNotEmpty)
+          _SectionCard(
+            title: 'Cảm xúc theo số sao',
+            child: _SentimentByRatingChart(
+              items: _stats.sentimentByRating,
+            ),
+          ),
+        const SizedBox(height: 12),
+
+        // Monthly Sentiment Trend
+        if (_stats.monthlySentiments.isNotEmpty)
+          _SectionCard(
+            title: 'Xu hướng cảm xúc theo tháng',
+            child: _MonthlySentimentChart(
+              items: _stats.monthlySentiments,
+            ),
+          ),
+      ],
     );
   }
 
@@ -964,6 +1370,513 @@ class _DiffIndicator extends StatelessWidget {
       ],
     );
   }
+}
+
+// ─── Biểu đồ cảm xúc (Sentiment Pie Chart) ────────────────────────────
+
+class _SentimentPieChart extends StatelessWidget {
+  final int positive;
+  final int neutral;
+  final int negative;
+  final double positivePercent;
+  final double neutralPercent;
+  final double negativePercent;
+
+  const _SentimentPieChart({
+    required this.positive,
+    required this.neutral,
+    required this.negative,
+    required this.positivePercent,
+    required this.neutralPercent,
+    required this.negativePercent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final total = positive + neutral + negative;
+    if (total == 0) {
+      return const SizedBox(
+        height: 180,
+        child: Center(
+          child: Text('Chưa có dữ liệu cảm xúc',
+              style: TextStyle(color: AppColors.textLight)),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 220,
+      child: Row(
+        children: [
+          // Pie chart
+          Expanded(
+            flex: 3,
+            child: CustomPaint(
+              size: const Size(160, 160),
+              painter: _SentimentPiePainter(
+                positive: positive,
+                neutral: neutral,
+                negative: negative,
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          // Legend
+          Expanded(
+            flex: 4,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SentimentLegendItem(
+                  color: const Color(0xFF27AE60),
+                  label: 'Tích cực',
+                  count: positive,
+                  percent: positivePercent,
+                ),
+                const SizedBox(height: 10),
+                _SentimentLegendItem(
+                  color: const Color(0xFFF39C12),
+                  label: 'Trung tính',
+                  count: neutral,
+                  percent: neutralPercent,
+                ),
+                const SizedBox(height: 10),
+                _SentimentLegendItem(
+                  color: const Color(0xFFE74C3C),
+                  label: 'Tiêu cực',
+                  count: negative,
+                  percent: negativePercent,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SentimentLegendItem extends StatelessWidget {
+  final Color color;
+  final String label;
+  final int count;
+  final double percent;
+
+  const _SentimentLegendItem({
+    required this.color,
+    required this.label,
+    required this.count,
+    required this.percent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 14,
+          height: 14,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: const TextStyle(
+                fontSize: 13, color: AppColors.textDark),
+          ),
+        ),
+        Text(
+          '$count',
+          style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textDark),
+        ),
+        const SizedBox(width: 4),
+        SizedBox(
+          width: 48,
+          child: Text(
+            '(${percent.toStringAsFixed(0)}%)',
+            textAlign: TextAlign.right,
+            style: const TextStyle(
+                fontSize: 12, color: AppColors.textLight),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SentimentPiePainter extends CustomPainter {
+  final int positive;
+  final int neutral;
+  final int negative;
+
+  _SentimentPiePainter({
+    required this.positive,
+    required this.neutral,
+    required this.negative,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final total = positive + neutral + negative;
+    if (total == 0) return;
+
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2 - 10;
+
+    final positiveAngle = (positive / total) * 360;
+    final neutralAngle = (neutral / total) * 360;
+    final negativeAngle = (negative / total) * 360;
+
+    final paint = Paint()
+      ..style = PaintingStyle.fill
+      ..isAntiAlias = true;
+
+    double startAngle = -90; // Start from top
+
+    // Positive (green)
+    if (positiveAngle > 0) {
+      paint.color = const Color(0xFF27AE60);
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        startAngle * (3.14159 / 180),
+        positiveAngle * (3.14159 / 180),
+        true,
+        paint,
+      );
+      startAngle += positiveAngle;
+    }
+
+    // Neutral (yellow/orange)
+    if (neutralAngle > 0) {
+      paint.color = const Color(0xFFF39C12);
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        startAngle * (3.14159 / 180),
+        neutralAngle * (3.14159 / 180),
+        true,
+        paint,
+      );
+      startAngle += neutralAngle;
+    }
+
+    // Negative (red)
+    if (negativeAngle > 0) {
+      paint.color = const Color(0xFFE74C3C);
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        startAngle * (3.14159 / 180),
+        negativeAngle * (3.14159 / 180),
+        true,
+        paint,
+      );
+    }
+
+    // Center white circle for donut effect
+    paint.color = AppColors.white;
+    canvas.drawCircle(center, radius * 0.55, paint);
+
+    // Center text
+    final textPainter = TextPainter(
+      text: TextSpan(
+        text: '$total',
+        style: const TextStyle(
+          fontSize: 22,
+          fontWeight: FontWeight.w800,
+          color: AppColors.textDark,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    textPainter.layout();
+    textPainter.paint(
+      canvas,
+      Offset(
+        center.dx - textPainter.width / 2,
+        center.dy - textPainter.height / 2 - 6,
+      ),
+    );
+
+    final labelPainter = TextPainter(
+      text: const TextSpan(
+        text: 'đánh giá',
+        style: TextStyle(
+          fontSize: 11,
+          color: AppColors.textLight,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    );
+    labelPainter.layout();
+    labelPainter.paint(
+      canvas,
+      Offset(
+        center.dx - labelPainter.width / 2,
+        center.dy + 4,
+      ),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
+}
+
+// ─── Biểu đồ cảm xúc theo số sao ──────────────────────────────────────
+
+class _SentimentByRatingChart extends StatelessWidget {
+  final List<_SentimentByRating> items;
+
+  const _SentimentByRatingChart({required this.items});
+
+  @override
+  Widget build(BuildContext context) {
+    final maxCount = items.fold<int>(
+        1, (cur, item) => [item.positive, item.neutral, item.negative].fold<int>(cur, (c, v) => v > c ? v : c));
+
+    return SizedBox(
+      height: 200,
+      child: Column(
+        children: [
+          // Legend
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _LegendDot(color: const Color(0xFF27AE60), label: 'Tích cực'),
+              const SizedBox(width: 16),
+              _LegendDot(color: const Color(0xFFF39C12), label: 'Trung tính'),
+              const SizedBox(width: 16),
+              _LegendDot(color: const Color(0xFFE74C3C), label: 'Tiêu cực'),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: items.map((item) {
+                final posRatio = maxCount > 0 ? item.positive / maxCount : 0.0;
+                final neuRatio = maxCount > 0 ? item.neutral / maxCount : 0.0;
+                final negRatio = maxCount > 0 ? item.negative / maxCount : 0.0;
+
+                return Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        // Stacked bars
+                        SizedBox(
+                          height: 140,
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              // Positive
+                              if (posRatio > 0)
+                                Expanded(
+                                  flex: (posRatio * 100).round().clamp(1, 100),
+                                  child: Container(
+                                    width: double.infinity,
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFF27AE60),
+                                      borderRadius: const BorderRadius.vertical(top: Radius.circular(3)),
+                                    ),
+                                  ),
+                                ),
+                              // Neutral
+                              if (neuRatio > 0)
+                                Expanded(
+                                  flex: (neuRatio * 100).round().clamp(1, 100),
+                                  child: Container(
+                                    width: double.infinity,
+                                    color: const Color(0xFFF39C12),
+                                  ),
+                                ),
+                              // Negative
+                              if (negRatio > 0)
+                                Expanded(
+                                  flex: (negRatio * 100).round().clamp(1, 100),
+                                  child: Container(
+                                    width: double.infinity,
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFFE74C3C),
+                                      borderRadius: BorderRadius.vertical(bottom: Radius.circular(3)),
+                                    ),
+                                  ),
+                                ),
+                              if (posRatio == 0 && neuRatio == 0 && negRatio == 0)
+                                const Expanded(child: SizedBox()),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${item.rating}★',
+                          style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.textDark),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─── Biểu đồ xu hướng cảm xúc theo tháng ──────────────────────────────
+
+class _MonthlySentimentChart extends StatelessWidget {
+  final List<_MonthlySentiment> items;
+
+  const _MonthlySentimentChart({required this.items});
+
+  @override
+  Widget build(BuildContext context) {
+    final maxCount = items.fold<int>(
+        1, (cur, item) => [item.positive, item.neutral, item.negative].fold<int>(cur, (c, v) => v > c ? v : c));
+
+    return SizedBox(
+      height: 200,
+      child: Column(
+        children: [
+          // Legend
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _LegendDot(color: const Color(0xFF27AE60), label: 'Tích cực'),
+              const SizedBox(width: 16),
+              _LegendDot(color: const Color(0xFFF39C12), label: 'Trung tính'),
+              const SizedBox(width: 16),
+              _LegendDot(color: const Color(0xFFE74C3C), label: 'Tiêu cực'),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: CustomPaint(
+              size: const Size(double.infinity, 140),
+              painter: _MonthlySentimentPainter(
+                items: items,
+                maxCount: maxCount,
+              ),
+            ),
+          ),
+          // X-axis labels
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Row(
+              children: items
+                  .map((item) => Expanded(
+                        child: Text(
+                          item.label,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                              fontSize: 10,
+                              color: AppColors.textLight),
+                        ),
+                      ))
+                  .toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MonthlySentimentPainter extends CustomPainter {
+  final List<_MonthlySentiment> items;
+  final int maxCount;
+
+  _MonthlySentimentPainter({
+    required this.items,
+    required this.maxCount,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (items.isEmpty) return;
+
+    final h = size.height - 10;
+    final w = size.width / items.length;
+
+    final paintPositive = Paint()
+      ..color = const Color(0xFF27AE60)
+      ..strokeWidth = 2.5
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final paintNeutral = Paint()
+      ..color = const Color(0xFFF39C12)
+      ..strokeWidth = 2.5
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final paintNegative = Paint()
+      ..color = const Color(0xFFE74C3C)
+      ..strokeWidth = 2.5
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+
+    final dotPaint = Paint()..style = PaintingStyle.fill;
+
+    // Positive line
+    final pathPos = Path();
+    // Neutral line
+    final pathNeu = Path();
+    // Negative line
+    final pathNeg = Path();
+
+    for (var i = 0; i < items.length; i++) {
+      final x = w * i + w / 2;
+      final yPos = h - (items[i].positive / maxCount * h);
+      final yNeu = h - (items[i].neutral / maxCount * h);
+      final yNeg = h - (items[i].negative / maxCount * h);
+
+      if (i == 0) {
+        pathPos.moveTo(x, yPos);
+        pathNeu.moveTo(x, yNeu);
+        pathNeg.moveTo(x, yNeg);
+      } else {
+        pathPos.lineTo(x, yPos);
+        pathNeu.lineTo(x, yNeu);
+        pathNeg.lineTo(x, yNeg);
+      }
+    }
+
+    canvas.drawPath(pathPos, paintPositive);
+    canvas.drawPath(pathNeu, paintNeutral);
+    canvas.drawPath(pathNeg, paintNegative);
+
+    // Draw dots
+    for (var i = 0; i < items.length; i++) {
+      final x = w * i + w / 2;
+      final yPos = h - (items[i].positive / maxCount * h);
+      final yNeu = h - (items[i].neutral / maxCount * h);
+      final yNeg = h - (items[i].negative / maxCount * h);
+
+      dotPaint.color = const Color(0xFF27AE60);
+      canvas.drawCircle(Offset(x, yPos), 3.5, dotPaint);
+      dotPaint.color = const Color(0xFFF39C12);
+      canvas.drawCircle(Offset(x, yNeu), 3.5, dotPaint);
+      dotPaint.color = const Color(0xFFE74C3C);
+      canvas.drawCircle(Offset(x, yNeg), 3.5, dotPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => true;
 }
 
 // ─── Danh sách sản phẩm được đánh giá nhiều ────────────────────────────
