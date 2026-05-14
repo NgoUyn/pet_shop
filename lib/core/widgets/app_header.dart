@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
+import '../../features/home/pages/product_detail_page.dart';
+import '../../features/home/pages/product_search_delegate.dart';
+import '../../features/home/services/product_repository.dart';
 
 class AppHeader extends StatelessWidget implements PreferredSizeWidget {
   final String? title;
@@ -35,14 +38,19 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
   Size get preferredSize => Size.fromHeight(height);
 
   void _showSearchDialog(BuildContext context) {
-    showSearch<String?>(
+    showSearch<ProductItem?>(
       context: context,
-      delegate: _ProductSearchDelegate(
-        initialQuery: title,
-        onSearchText: onSearchText,
-        onImageSearch: onImageSearch,
-      ),
-    );
+      delegate: ProductSearchDelegate(),
+    ).then((product) {
+      if (product != null) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ProductDetailPage(product: product),
+          ),
+        );
+      }
+    });
   }
 
   Widget _buildCart(BuildContext context) {
@@ -181,67 +189,3 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
   }
 }
 
-class _ProductSearchDelegate extends SearchDelegate<String?> {
-  final ValueChanged<String>? onSearchText;
-  final VoidCallback? onImageSearch;
-  final String? initialQuery;
-
-  _ProductSearchDelegate({this.onSearchText, this.onImageSearch, this.initialQuery}) {
-    if (initialQuery != null && initialQuery!.isNotEmpty) query = initialQuery!;
-  }
-
-  @override
-  List<Widget>? buildActions(BuildContext context) {
-    return [
-      IconButton(
-        icon: const Icon(Icons.camera_alt),
-        onPressed: () {
-          // Close search and trigger image search handler
-          close(context, null);
-          if (onImageSearch != null) onImageSearch!();
-        },
-        tooltip: 'Tìm bằng ảnh',
-      ),
-      if (query.isNotEmpty)
-        IconButton(
-          icon: const Icon(Icons.clear),
-          onPressed: () => query = '',
-        ),
-    ];
-  }
-
-  @override
-  Widget? buildLeading(BuildContext context) {
-    return IconButton(
-      icon: const Icon(Icons.arrow_back),
-      onPressed: () => close(context, null),
-    );
-  }
-
-  @override
-  Widget buildResults(BuildContext context) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (onSearchText != null) onSearchText!(query.trim());
-      close(context, query);
-    });
-    return const SizedBox.shrink();
-  }
-
-  @override
-  Widget buildSuggestions(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      child: query.isEmpty
-          ? const Text('Nhập tên, mô tả sản phẩm để tìm...')
-          : ListView(
-              children: [
-                ListTile(
-                  title: Text('Tìm "$query"'),
-                  leading: const Icon(Icons.search),
-                  onTap: () => showResults(context),
-                ),
-              ],
-            ),
-    );
-  }
-}

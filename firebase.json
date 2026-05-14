@@ -4,7 +4,7 @@
       "android": {
         "default": {
           "projectId": "pet-shop-7eee2",
-          "appId": "1:97670076187:android:34f1bb5cbdf86e61d965be",
+          "appId": "1:645806549287:android:543bf33156a5fe8aa36102",
           "fileOutput": "android/app/google-services.json"
         }
       },
@@ -12,12 +12,15 @@
         "lib/firebase_options.dart": {
           "projectId": "pet-shop-7eee2",
           "configurations": {
-            "android": "1:97670076187:android:34f1bb5cbdf86e61d965be",
-            "web": "1:97670076187:web:ff888ac80853ae8bd965be",
-            "windows": "1:97670076187:web:e8f929acf93c91d0d965be"
+            "android": "1:645806549287:android:543bf33156a5fe8aa36102",
+            "web": "1:645806549287:web:ff888ac80853ae8bd965be",
+            "windows": "1:645806549287:web:e8f929acf93c91d0d965be"
           }
         }
       }
     }
+  },
+  "firestore": {
+    "rules": "firestore.rules"
   }
 }

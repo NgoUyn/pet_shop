@@ -1,3 +1,5 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import 'migrations/migration_v13_favorites_and_notifications.dart';
 
@@ -234,5 +236,66 @@ Future<void> _repairPayment(Database db) async {
     print('onOpen: recreated Payment successfully');
   } catch (e) {
     print('onOpen: failed to recreate Payment: $e');
+  }
+}
+
+// Separate file-level function (not a local method of runOpenRepairs)
+Future<void> _syncAllToFirestore(Database db) async {
+  try {
+    final prefs = await SharedPreferences.getInstance();
+    if (prefs.getBool('_firestore_synced') == true) return;
+
+    final rows = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='Product'");
+    if (rows.isEmpty) return;
+
+    final products = await db.query('Product');
+    for (final row in products) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('products')
+            .doc(row['ProductID'].toString())
+            .set({
+          'productId': row['ProductID'] as int,
+          'categoryId': row['CategoryID'] as int,
+          'productName': (row['ProductName'] as String?) ?? '',
+          'price': (row['Price'] as num).toDouble(),
+          'stockQuantity': (row['StockQuantity'] as int?) ?? 0,
+          'description': row['Description'] as String?,
+          'imageUrl': row['ImageURL'] as String?,
+          'isActive': (row['IsActive'] as int?) == 1,
+          'createdAt': (row['CreatedAt'] as String?) ?? DateTime.now().toIso8601String(),
+        });
+      } catch (_) {}
+    }
+
+    final pets = await db.query('Pet');
+    for (final row in pets) {
+      try {
+        await FirebaseFirestore.instance
+            .collection('pets')
+            .doc(row['PetID'].toString())
+            .set({
+          'petId': row['PetID'] as int,
+          'petName': (row['PetName'] as String?) ?? '',
+          'species': (row['Species'] as String?) ?? '',
+          'gender': row['Gender'] as String?,
+          'description': row['Description'] as String?,
+          'price': (row['Price'] as num?)?.toDouble(),
+          'age': (row['Age'] as int?)?.toInt(),
+          'personality': row['Personality'] as String?,
+          'imageUrl': row['ImageURL'] as String?,
+          'isDewormed': (row['IsDewormed'] as int?) == 1,
+          'isVaccinated': (row['IsVaccinated'] as int?) == 1,
+          'isActive': (row['IsActive'] as int?) == 1,
+          'createdAt': (row['CreatedAt'] as String?) ?? DateTime.now().toIso8601String(),
+        });
+      } catch (_) {}
+    }
+
+    await prefs.setBool('_firestore_synced', true);
+    print('_syncAllToFirestore: done');
+  } catch (e) {
+    print('_syncAllToFirestore error: $e');
   }
 }

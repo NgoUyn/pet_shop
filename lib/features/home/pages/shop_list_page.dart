@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../auth/pages/login_page.dart';
@@ -17,6 +19,9 @@ class ShopListPage extends StatefulWidget {
 class _ShopListPageState extends State<ShopListPage> {
   late Future<List<ProductItem>> _future;
   Set<int> _favoriteProductIds = {};
+  final _searchController = TextEditingController();
+  bool _isSearching = false;
+  String _query = '';
 
   @override
   void initState() {
@@ -28,6 +33,7 @@ class _ShopListPageState extends State<ShopListPage> {
 
   @override
   void dispose() {
+    _searchController.dispose();
     ProductRepository.instance.changeToken.removeListener(_handleProductsChanged);
     super.dispose();
   }
@@ -41,6 +47,12 @@ class _ShopListPageState extends State<ShopListPage> {
       _future = ProductRepository.instance.listActiveProducts();
     });
     _loadFavorites();
+  }
+
+  void _startSearch() => setState(() => _isSearching = true);
+  void _stopSearch() {
+    _searchController.clear();
+    setState(() { _isSearching = false; _query = ''; });
   }
 
   Future<void> _loadFavorites() async {
@@ -251,16 +263,29 @@ class _ShopListPageState extends State<ShopListPage> {
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
-        title: const Text('Cửa hàng vật phẩm'),
+        title: _isSearching
+            ? TextField(
+                controller: _searchController,
+                autofocus: true,
+                onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
+                style: const TextStyle(fontSize: 16, color: AppColors.textDark),
+                decoration: const InputDecoration(
+                  hintText: 'Tìm sản phẩm...',
+                  hintStyle: TextStyle(color: AppColors.textLight),
+                  border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero,
+                ),
+              )
+            : const Text('Cửa hàng vật phẩm'),
         backgroundColor: AppColors.white,
         foregroundColor: AppColors.textDark,
         elevation: 0,
         actions: [
-          IconButton(
-            tooltip: 'Tải lại',
-            onPressed: _reload,
-            icon: const Icon(Icons.refresh),
-          ),
+          if (_isSearching)
+            IconButton(tooltip: 'Đóng', onPressed: _stopSearch, icon: const Icon(Icons.close))
+          else ...[
+            IconButton(tooltip: 'Tìm kiếm', onPressed: _startSearch, icon: const Icon(Icons.search)),
+            IconButton(tooltip: 'Tải lại', onPressed: _reload, icon: const Icon(Icons.refresh)),
+          ],
         ],
       ),
       body: FutureBuilder<List<ProductItem>>(
@@ -280,15 +305,20 @@ class _ShopListPageState extends State<ShopListPage> {
           }
 
           final items = snapshot.data ?? [];
-          if (items.isEmpty) {
-            return const Center(
-              child: Text('Chưa có vật phẩm nào'),
+          final filtered = _query.isEmpty ? items : items.where((p) => p.productName.toLowerCase().contains(_query)).toList();
+
+          if (filtered.isEmpty) {
+            return Center(
+              child: Text(
+                _query.isEmpty ? 'Chưa có vật phẩm nào' : 'Không tìm thấy "$_query"',
+                style: const TextStyle(color: AppColors.textLight),
+              ),
             );
           }
 
           return GridView.builder(
             padding: const EdgeInsets.all(16),
-            itemCount: items.length,
+            itemCount: filtered.length,
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 2,
               childAspectRatio: 0.72,
@@ -296,7 +326,7 @@ class _ShopListPageState extends State<ShopListPage> {
               mainAxisSpacing: 12,
             ),
             itemBuilder: (context, index) {
-              final item = items[index];
+              final item = filtered[index];
               return InkWell(
                 borderRadius: BorderRadius.circular(14),
                 onTap: () {
