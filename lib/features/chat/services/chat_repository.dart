@@ -50,6 +50,7 @@ class ChatMessageItem {
     required this.createdAt,
     this.imageUrl,
     this.messageType = 'text',
+    this.deletedAt,
   });
 
   final String messageId;
@@ -59,8 +60,10 @@ class ChatMessageItem {
   final DateTime createdAt;
   final String? imageUrl;
   final String messageType; // 'text' or 'image'
+  final DateTime? deletedAt;
 
   bool get isImage => messageType == 'image';
+  bool get isDeleted => deletedAt != null;
 
   static ChatMessageItem fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data();
@@ -72,6 +75,7 @@ class ChatMessageItem {
       createdAt: _timestampToDateTime(data['createdAt']),
       imageUrl: data['imageUrl'] as String?,
       messageType: (data['messageType'] as String?) ?? 'text',
+      deletedAt: data['deletedAt'] != null ? _timestampToDateTime(data['deletedAt']) : null,
     );
   }
 }
@@ -536,6 +540,38 @@ class ChatRepository {
         },
         SetOptions(merge: true),
       );
+    });
+  }
+
+  /// Delete a message (soft delete). Sets [deletedAt] timestamp on the message document.
+  /// Both the sender and admin can delete messages.
+  Future<void> deleteMessage({
+    required ChatThreadContext thread,
+    required String messageId,
+  }) async {
+    final currentUser = await ensureCurrentUserSynced();
+    final messageRef = _firestore
+        .collection('chats')
+        .doc(thread.threadId)
+        .collection('messages')
+        .doc(messageId);
+
+    // Verify the message exists and user has permission
+    final messageDoc = await messageRef.get();
+    if (!messageDoc.exists) {
+      throw StateError('Tin nhắn không tồn tại');
+    }
+
+    final messageData = messageDoc.data()!;
+    final senderUid = messageData['senderUid'] as String? ?? '';
+
+    // Allow delete if: user is the sender OR user is admin
+    if (currentUser.uid != senderUid && !currentUser.isAdmin) {
+      throw StateError('Bạn không có quyền xoá tin nhắn này');
+    }
+
+    await messageRef.update({
+      'deletedAt': Timestamp.now(),
     });
   }
 

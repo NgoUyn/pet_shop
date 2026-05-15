@@ -365,7 +365,10 @@ class _ChatMessagesList extends StatelessWidget {
           );
         }
 
-        final messages = messageSnapshot.data ?? const [];
+        final messages = messageSnapshot.data ?? <ChatMessageItem>[];
+
+        // Filter out deleted messages from display
+        final visibleMessages = messages.where((m) => !m.isDeleted).toList();
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (scrollController.hasClients) {
             scrollController.animateTo(
@@ -376,7 +379,7 @@ class _ChatMessagesList extends StatelessWidget {
           }
         });
 
-        if (messages.isEmpty) {
+        if (visibleMessages.isEmpty) {
           return ListView(
             controller: scrollController,
             physics: const AlwaysScrollableScrollPhysics(),
@@ -391,55 +394,62 @@ class _ChatMessagesList extends StatelessWidget {
         return ListView.builder(
           controller: scrollController,
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-          itemCount: messages.length,
+          itemCount: visibleMessages.length,
           itemBuilder: (context, index) {
-            final message = messages[index];
+            final message = visibleMessages[index];
             final isMine = message.senderUid == thread.currentUser.uid;
-            return Align(
-              alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
-              child: Container(
-                margin: const EdgeInsets.only(bottom: 10),
-                constraints: const BoxConstraints(maxWidth: 320),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: isMine ? AppColors.primary : AppColors.white,
-                  borderRadius: BorderRadius.only(
-                    topLeft: const Radius.circular(16),
-                    topRight: const Radius.circular(16),
-                    bottomLeft: Radius.circular(isMine ? 16 : 4),
-                    bottomRight: Radius.circular(isMine ? 4 : 16),
+            // Allow delete if: user is the sender OR user is admin
+            final canDelete = isMine || thread.isCurrentUserAdmin;
+            return GestureDetector(
+              onLongPress: canDelete
+                  ? () => _showDeleteMessageDialog(context, message, thread)
+                  : null,
+              child: Align(
+                alignment: isMine ? Alignment.centerRight : Alignment.centerLeft,
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  constraints: const BoxConstraints(maxWidth: 320),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isMine ? AppColors.primary : AppColors.white,
+                    borderRadius: BorderRadius.only(
+                      topLeft: const Radius.circular(16),
+                      topRight: const Radius.circular(16),
+                      bottomLeft: Radius.circular(isMine ? 16 : 4),
+                      bottomRight: Radius.circular(isMine ? 4 : 16),
+                    ),
+                    boxShadow: const [
+                      BoxShadow(color: Color(0x0A000000), blurRadius: 8, offset: Offset(0, 2)),
+                    ],
                   ),
-                  boxShadow: const [
-                    BoxShadow(color: Color(0x0A000000), blurRadius: 8, offset: Offset(0, 2)),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Show image if message type is image
-                    if (message.isImage && message.imageUrl != null)
-                      _buildImageContent(context, message, isMine),
-                    // Show text content
-                    if (message.content.isNotEmpty && message.content != '[Hình ảnh]')
-                      Padding(
-                        padding: EdgeInsets.only(top: message.isImage ? 8 : 0),
-                        child: Text(
-                          message.content,
-                          style: TextStyle(
-                            color: isMine ? Colors.white : AppColors.textDark,
-                            fontSize: 14,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Show image if message type is image
+                      if (message.isImage && message.imageUrl != null)
+                        _buildImageContent(context, message, isMine),
+                      // Show text content
+                      if (message.content.isNotEmpty && message.content != '[Hình ảnh]')
+                        Padding(
+                          padding: EdgeInsets.only(top: message.isImage ? 8 : 0),
+                          child: Text(
+                            message.content,
+                            style: TextStyle(
+                              color: isMine ? Colors.white : AppColors.textDark,
+                              fontSize: 14,
+                            ),
                           ),
                         ),
+                      const SizedBox(height: 6),
+                      Text(
+                        _formatTimestamp(message.createdAt),
+                        style: TextStyle(
+                          color: isMine ? Colors.white70 : AppColors.textLight,
+                          fontSize: 11,
+                        ),
                       ),
-                    const SizedBox(height: 6),
-                    Text(
-                      _formatTimestamp(message.createdAt),
-                      style: TextStyle(
-                        color: isMine ? Colors.white70 : AppColors.textLight,
-                        fontSize: 11,
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             );
@@ -493,6 +503,46 @@ class _ChatMessagesList extends StatelessWidget {
             );
           },
         ),
+      ),
+    );
+  }
+
+  void _showDeleteMessageDialog(BuildContext context, ChatMessageItem message, ChatThreadContext thread) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Xoá tin nhắn'),
+        content: const Text('Bạn có chắc chắn muốn xoá tin nhắn này?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Huỷ'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.of(dialogContext).pop();
+              try {
+                await chatRepository.deleteMessage(
+                  thread: thread,
+                  messageId: message.messageId,
+                );
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Đã xoá tin nhắn')),
+                  );
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Lỗi: ${e.toString().replaceFirst('StateError: ', '')}')),
+                  );
+                }
+              }
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Xoá'),
+          ),
+        ],
       ),
     );
   }
