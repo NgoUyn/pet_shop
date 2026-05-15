@@ -7,6 +7,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/db/app_database.dart';
 import '../../chat/pages/chat_page.dart';
 import '../../orders/services/order_repository.dart';
+import '../../reviews/services/review_repository.dart';
 
 class UserDetailPage extends StatefulWidget {
   const UserDetailPage({super.key, required this.userId, this.initialUser});
@@ -24,15 +25,32 @@ class _UserDetailPageState extends State<UserDetailPage> {
   String? _error;
   Timer? _refreshTimer;
   List<OrderInfo> _recentOrders = [];
+  bool _isLoadingOrders = true;
   bool _showAllOrders = false;
+  List<ReviewItem> _userReviews = [];
+  bool _isLoadingReviews = true;
+  int _resolvedUserId = 0;
 
   @override
   void initState() {
     super.initState();
-    _loadUserDetail().then((_) => _loadRecentOrders());
-    // Tự động refresh mỗi 30 giây để cập nhật thông tin khách hàng
+    // Dùng initialUser ngay lập tức nếu có
+    if (widget.initialUser != null) {
+      _user = Map<String, Object?>.from(widget.initialUser!);
+      _loading = false;
+    }
+    _resolveUserId().then((_) {
+      _loadUserDetail().then((_) {
+        _loadRecentOrders();
+        _loadUserReviews();
+      });
+    });
+    // Tự động refresh mỗi 30 giây
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      _loadUserDetail().then((_) => _loadRecentOrders());
+      _loadUserDetail().then((_) {
+        _loadRecentOrders();
+        _loadUserReviews();
+      });
     });
   }
 
@@ -42,13 +60,84 @@ class _UserDetailPageState extends State<UserDetailPage> {
     super.dispose();
   }
 
-  Future<void> _loadUserDetail() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
+  /// Tìm local UserID từ initialUser hoặc từ email/FirebaseUID
+  Future<void> _resolveUserId() async {
+    // Nếu widget.userId > 0 thì dùng luôn
+    if (widget.userId > 0) {
+      _resolvedUserId = widget.userId;
+      return;
+    }
 
+    final initialUser = widget.initialUser;
+    if (initialUser == null) return;
+
+    // Thử lấy UserID từ initialUser (có thể là int hoặc String)
+    final userIdRaw = initialUser['UserID'];
+    if (userIdRaw is int && userIdRaw > 0) {
+      _resolvedUserId = userIdRaw;
+      return;
+    }
+    // Fallback: nếu UserID là string số (vd: "5")
+    if (userIdRaw is String) {
+      final parsed = int.tryParse(userIdRaw);
+      if (parsed != null && parsed > 0) {
+        _resolvedUserId = parsed;
+        return;
+      }
+    }
+
+    // Thử tìm theo email
+    final email = (initialUser['Email'] as String?)?.trim().toLowerCase();
+    if (email != null && email.isNotEmpty) {
+      try {
+        final db = await AppDatabase.instance;
+        final rows = await db.rawQuery(
+          'SELECT UserID FROM User WHERE LOWER(TRIM(Email)) = ? LIMIT 1',
+          [email],
+        );
+        if (rows.isNotEmpty) {
+          _resolvedUserId = rows.first['UserID'] as int;
+          return;
+        }
+      } catch (_) {}
+    }
+
+    // Thử tìm theo FirebaseUID
+    final firebaseUid = (initialUser['FirebaseUID'] as String?)?.trim();
+    if (firebaseUid != null && firebaseUid.isNotEmpty) {
+      try {
+        final db = await AppDatabase.instance;
+        final rows = await db.rawQuery(
+          'SELECT UserID FROM User WHERE FirebaseUID = ? LIMIT 1',
+          [firebaseUid],
+        );
+        if (rows.isNotEmpty) {
+          _resolvedUserId = rows.first['UserID'] as int;
+          return;
+        }
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _loadUserDetail() async {
     try {
+      // Nếu có initialUser và không có local userId, giữ nguyên initialUser
+      if (_resolvedUserId <= 0 && widget.initialUser != null) {
+        setState(() {
+          _loading = false;
+          _error = null;
+        });
+        return;
+      }
+
+      if (_resolvedUserId <= 0) {
+        setState(() {
+          _error = 'Không tìm thấy người dùng';
+          _loading = false;
+        });
+        return;
+      }
+
       final db = await AppDatabase.instance;
       final rows = await db.rawQuery('''
         SELECT
@@ -66,96 +155,50 @@ class _UserDetailPageState extends State<UserDetailPage> {
         LEFT JOIN Customer c ON c.UserID = u.UserID
         WHERE u.UserID = ?
         LIMIT 1
-      ''', [widget.userId]);
+      ''', [_resolvedUserId]);
 
       if (rows.isNotEmpty) {
-        setState(() {
-          _user = rows.first;
-          _loading = false;
-        });
-      } else {
-        await _loadFallbackUser();
-      }
-    } catch (e) {
-      await _loadFallbackUser(fallbackError: 'Lỗi: $e');
-    }
-  }
-
-  Future<void> _loadFallbackUser({String? fallbackError}) async {
-    try {
-      final initialUser = widget.initialUser;
-      final db = await AppDatabase.instance;
-
-      Map<String, Object?>? customerRow;
-      if (widget.userId > 0) {
-        final customerRows = await db.rawQuery('''
-          SELECT
-            c.Phone,
-            c.Address,
-            COALESCE(c.LoyaltyPoints, 0) AS LoyaltyPoints
-          FROM Customer c
-          WHERE c.UserID = ?
-          LIMIT 1
-        ''', [widget.userId]);
-        if (customerRows.isNotEmpty) {
-          customerRow = customerRows.first;
+        final sqliteUser = Map<String, Object?>.from(rows.first);
+        // Merge với initialUser: ưu tiên dữ liệu từ Firestore (cross-device source of truth)
+        // vì SQLite trên máy admin có thể thiếu hoặc có dữ liệu cũ
+        final initial = widget.initialUser;
+        if (initial != null) {
+          for (final key in ['FirebaseUID', 'FullName', 'Email']) {
+            final initialVal = initial[key];
+            if (initialVal is String && initialVal.isNotEmpty) {
+              sqliteUser[key] = initialVal;
+            }
+          }
         }
-      }
-
-      if (initialUser != null) {
         setState(() {
-          _user = {
-            ...initialUser,
-            if (customerRow != null) ...customerRow,
-            'Phone': (customerRow?['Phone'] as String?) ?? initialUser['Phone'],
-            'Address': (customerRow?['Address'] as String?) ?? initialUser['Address'],
-            'LoyaltyPoints': (customerRow?['LoyaltyPoints'] as int?) ?? (initialUser['LoyaltyPoints'] as int?) ?? 0,
-          };
+          _user = sqliteUser;
           _loading = false;
           _error = null;
         });
-        return;
+      } else if (widget.initialUser != null) {
+        // Giữ lại initialUser nếu không tìm thấy trong SQLite
+        setState(() {
+          _loading = false;
+          _error = null;
+        });
+      } else {
+        setState(() {
+          _error = 'Không tìm thấy người dùng';
+          _loading = false;
+        });
       }
-
-      if (widget.userId > 0) {
-        final firestoreSnapshot = await FirebaseFirestore.instance
-            .collection('users')
-            .where('localUserId', isEqualTo: widget.userId)
-            .limit(1)
-            .get();
-
-        if (firestoreSnapshot.docs.isNotEmpty) {
-          final data = firestoreSnapshot.docs.first.data();
-          setState(() {
-            _user = {
-              'UserID': widget.userId,
-              'Role': (data['role'] as String?) ?? 'customer',
-              'Email': (data['email'] as String?) ?? '',
-              'FullName': (data['fullName'] as String?) ?? '',
-              'CreatedAt': data['createdAt'] is Timestamp ? (data['createdAt'] as Timestamp).toDate().toIso8601String() : '',
-              'UpdatedAt': data['updatedAt'] is Timestamp ? (data['updatedAt'] as Timestamp).toDate().toIso8601String() : null,
-              'FirebaseUID': firestoreSnapshot.docs.first.id,
-              if (customerRow != null) ...customerRow,
-              'Phone': customerRow?['Phone'] as String? ?? null,
-              'Address': customerRow?['Address'] as String? ?? null,
-              'LoyaltyPoints': (customerRow?['LoyaltyPoints'] as int?) ?? 0,
-            };
-            _loading = false;
-            _error = null;
-          });
-          return;
-        }
-      }
-
-      setState(() {
-        _error = fallbackError ?? 'Không tìm thấy người dùng';
-        _loading = false;
-      });
     } catch (e) {
-      setState(() {
-        _error = fallbackError ?? 'Lỗi: $e';
-        _loading = false;
-      });
+      if (widget.initialUser != null) {
+        setState(() {
+          _loading = false;
+          _error = null;
+        });
+      } else {
+        setState(() {
+          _error = 'Lỗi: $e';
+          _loading = false;
+        });
+      }
     }
   }
 
@@ -165,67 +208,194 @@ class _UserDetailPageState extends State<UserDetailPage> {
       final firebaseUid = user?['FirebaseUID'] as String?;
       final email = (user?['Email'] as String?)?.trim().toLowerCase();
 
-      // Thử load từ Firestore trước
-      List<Map<String, dynamic>> firestoreOrders = [];
-
-      if (firebaseUid != null && firebaseUid.isNotEmpty) {
-        final snapshot = await FirebaseFirestore.instance
-            .collection('orders')
-            .where('customerFirebaseUid', isEqualTo: firebaseUid)
-            .orderBy('createdAt', descending: true)
-            .get();
-        firestoreOrders = snapshot.docs.map((doc) => doc.data()).toList();
-      }
-
-      // Nếu không tìm thấy theo UID, thử theo email
-      if (firestoreOrders.isEmpty && email != null && email.isNotEmpty) {
-        final snapshot = await FirebaseFirestore.instance
-            .collection('orders')
-            .where('customerEmail', isEqualTo: email)
-            .orderBy('createdAt', descending: true)
-            .get();
-        firestoreOrders = snapshot.docs.map((doc) => doc.data()).toList();
-      }
-
-      // Giới hạn số lượng
-      if (!_showAllOrders && firestoreOrders.length > 3) {
-        firestoreOrders = firestoreOrders.take(3).toList();
-      }
-
       final orders = <OrderInfo>[];
-      for (final data in firestoreOrders) {
-        final itemsData = data['items'] as List<dynamic>? ?? [];
-        final items = itemsData.map((item) {
-          final itemMap = item as Map<String, dynamic>;
-          return OrderItemInfo(
-            invoiceDetailId: (itemMap['invoiceDetailId'] as num?)?.toInt() ?? 0,
-            productName: (itemMap['productName'] as String? ?? itemMap['petName'] as String? ?? '').trim(),
-            quantity: (itemMap['quantity'] as num?)?.toInt() ?? 0,
-            unitPrice: (itemMap['unitPrice'] as num?)?.toDouble() ?? 0,
-          );
-        }).toList();
 
-        final createdAt = data['createdAt'] as String? ?? '';
-        final totalAmount = (data['totalAmount'] as num?)?.toDouble() ?? 0;
-        final orderStatus = (data['orderStatus'] as String? ?? data['paymentStatus'] as String? ?? '').toLowerCase();
+      // 1. Load từ local SQLite
+      if (_resolvedUserId > 0) {
+        try {
+          final db = await AppDatabase.instance;
+          final invoiceRows = await db.rawQuery('''
+            SELECT i.*,
+              COALESCE(i.OrderStatus, i.PaymentStatus) as EffectiveStatus,
+              u.FullName as CustomerName
+            FROM Invoice i
+            JOIN Customer c ON i.CustomerID = c.CustomerID
+            JOIN User u ON c.UserID = u.UserID
+            WHERE c.UserID = ?
+            ORDER BY i.CreatedAt DESC
+          ''', [_resolvedUserId]);
 
-        orders.add(OrderInfo(
-          invoiceId: (data['orderId'] as num?)?.toInt() ?? (data['id'] as num?)?.toInt() ?? 0,
-          totalAmount: totalAmount,
-          createdAt: createdAt,
-          orderStatus: orderStatus,
-          paymentStatus: orderStatus,
-          items: items,
-        ));
+          for (final row in invoiceRows) {
+            final invoiceId = row['InvoiceID'] as int;
+            final detailRows = await db.rawQuery('''
+              SELECT id.*, p.ProductName, pet.PetName
+              FROM InvoiceDetail id
+              LEFT JOIN Product p ON id.ProductID = p.ProductID
+              LEFT JOIN Pet pet ON id.PetID = pet.PetID
+              WHERE id.InvoiceID = ?
+            ''', [invoiceId]);
+
+            final items = detailRows.map(OrderItemInfo.fromRow).toList();
+            orders.add(OrderInfo.fromRow(row, items));
+          }
+        } catch (e) {
+          print('loadRecentOrders local error: $e');
+        }
       }
+
+      // 2. Load từ Firestore để bổ sung
+      try {
+        List<Map<String, dynamic>> firestoreOrders = [];
+
+        if (firebaseUid != null && firebaseUid.isNotEmpty) {
+          try {
+            final snapshot = await FirebaseFirestore.instance
+                .collection('orders')
+                .where('customerFirebaseUid', isEqualTo: firebaseUid)
+                .get();
+            firestoreOrders = snapshot.docs.map((doc) => doc.data()).toList();
+          } catch (_) {}
+        }
+
+        if (firestoreOrders.isEmpty && email != null && email.isNotEmpty) {
+          try {
+            final snapshot = await FirebaseFirestore.instance
+                .collection('orders')
+                .where('customerEmail', isEqualTo: email)
+                .get();
+            firestoreOrders = snapshot.docs.map((doc) => doc.data()).toList();
+          } catch (_) {}
+        }
+
+        final localInvoiceIds = orders.map((o) => o.invoiceId).toSet();
+        for (final data in firestoreOrders) {
+          final invoiceId = (data['invoiceId'] as num?)?.toInt() ?? 0;
+          if (invoiceId == 0 || localInvoiceIds.contains(invoiceId)) continue;
+
+          final itemsData = data['items'] as List<dynamic>? ?? [];
+          final items = itemsData.map((item) {
+            final itemMap = item as Map<String, dynamic>;
+            return OrderItemInfo(
+              invoiceDetailId: (itemMap['invoiceDetailId'] as num?)?.toInt() ?? 0,
+              productName: (itemMap['productName'] as String? ?? itemMap['petName'] as String? ?? '').trim(),
+              quantity: (itemMap['quantity'] as num?)?.toInt() ?? 0,
+              unitPrice: (itemMap['unitPrice'] as num?)?.toDouble() ?? 0,
+            );
+          }).toList();
+
+          final createdAt = data['createdAt'] as String? ?? '';
+          final totalAmount = (data['totalAmount'] as num?)?.toDouble() ?? 0;
+          final orderStatus = (data['orderStatus'] as String? ?? data['paymentStatus'] as String? ?? '').toLowerCase();
+
+          orders.add(OrderInfo(
+            invoiceId: invoiceId,
+            totalAmount: totalAmount,
+            createdAt: createdAt,
+            orderStatus: orderStatus,
+            paymentStatus: orderStatus,
+            items: items,
+          ));
+        }
+      } catch (e) {
+        print('loadRecentOrders firestore error: $e');
+      }
+
+      // Sắp xếp
+      orders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
       if (mounted) {
         setState(() {
           _recentOrders = orders;
+          _isLoadingOrders = false;
         });
       }
     } catch (e) {
       print('loadRecentOrders error: $e');
+      if (mounted) {
+        setState(() => _isLoadingOrders = false);
+      }
+    }
+  }
+
+  Future<void> _loadUserReviews() async {
+    try {
+      final user = _user;
+      final firebaseUid = user?['FirebaseUID'] as String?;
+
+      final reviews = <ReviewItem>[];
+
+      // 1. Load từ local SQLite
+      if (_resolvedUserId > 0) {
+        try {
+          final db = await AppDatabase.instance;
+          final rows = await db.rawQuery('''
+            SELECT r.*, u.FullName as CustomerName
+            FROM Review r
+            LEFT JOIN User u ON r.UserID = u.UserID
+            WHERE r.UserID = ?
+            ORDER BY r.CreatedAt DESC
+          ''', [_resolvedUserId]);
+
+          for (final row in rows) {
+            final reviewId = row['ReviewID'] as int;
+            final imageRows = await db.query(
+              'ReviewImage',
+              columns: ['ImageUrl'],
+              where: 'ReviewID = ?',
+              whereArgs: [reviewId],
+              orderBy: 'SortOrder ASC',
+            );
+            final images = imageRows.map((r) => r['ImageUrl'] as String).toList();
+            reviews.add(ReviewItem.fromRow(row, imageUrls: images));
+          }
+        } catch (e) {
+          print('loadUserReviews local error: $e');
+        }
+      }
+
+      // 2. Load từ Firestore để bổ sung
+      try {
+        List<ReviewItem> firestoreReviews = [];
+
+        if (firebaseUid != null && firebaseUid.isNotEmpty) {
+          try {
+            final snapshot = await FirebaseFirestore.instance
+                .collection('reviews')
+                .where('firebaseUid', isEqualTo: firebaseUid)
+                .get();
+            firestoreReviews = snapshot.docs
+                .map((doc) => ReviewItem.fromFirestore(doc))
+                .where((r) => !r.isDeleted)
+                .toList();
+          } catch (_) {}
+        }
+
+        // Merge: tránh trùng lặp
+        final localReviewKeys = reviews.map((r) => '${r.invoiceId}_${r.customerName ?? ''}').toSet();
+        for (final fr in firestoreReviews) {
+          final key = '${fr.invoiceId}_${fr.customerName ?? ''}';
+          if (!localReviewKeys.contains(key)) {
+            reviews.add(fr);
+          }
+        }
+      } catch (e) {
+        print('loadUserReviews firestore error: $e');
+      }
+
+      // Sắp xếp
+      reviews.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+      if (mounted) {
+        setState(() {
+          _userReviews = reviews;
+          _isLoadingReviews = false;
+        });
+      }
+    } catch (e) {
+      print('loadUserReviews error: $e');
+      if (mounted) {
+        setState(() => _isLoadingReviews = false);
+      }
     }
   }
 
@@ -269,15 +439,17 @@ class _UserDetailPageState extends State<UserDetailPage> {
       final fullName = (user['FullName'] as String?)?.trim() ?? '';
       final email = (user['Email'] as String?)?.trim().toLowerCase() ?? '';
 
-      await db.update(
-        'User',
-        {
-          'Role': 'admin',
-          'UpdatedAt': now,
-        },
-        where: 'UserID = ?',
-        whereArgs: [widget.userId],
-      );
+      if (_resolvedUserId > 0) {
+        await db.update(
+          'User',
+          {
+            'Role': 'admin',
+            'UpdatedAt': now,
+          },
+          where: 'UserID = ?',
+          whereArgs: [_resolvedUserId],
+        );
+      }
 
       if (firebaseUid != null && firebaseUid.isNotEmpty) {
         try {
@@ -288,7 +460,7 @@ class _UserDetailPageState extends State<UserDetailPage> {
           await userDoc.set(
             {
               'uid': firebaseUid,
-              'localUserId': widget.userId,
+              'localUserId': _resolvedUserId > 0 ? _resolvedUserId : null,
               'fullName': fullName,
               'email': email,
               'role': 'admin',
@@ -318,6 +490,7 @@ class _UserDetailPageState extends State<UserDetailPage> {
       );
       await _loadUserDetail();
       await _loadRecentOrders();
+      await _loadUserReviews();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -402,11 +575,11 @@ class _UserDetailPageState extends State<UserDetailPage> {
   }
 
   Widget _buildBody() {
-    if (_loading) {
+    if (_loading && _user == null) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (_error != null) {
+    if (_error != null && _user == null) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -418,7 +591,14 @@ class _UserDetailPageState extends State<UserDetailPage> {
               Text(_error!, textAlign: TextAlign.center),
               const SizedBox(height: 16),
               ElevatedButton(
-                onPressed: _loadUserDetail,
+                onPressed: () {
+                  _resolveUserId().then((_) {
+                    _loadUserDetail().then((__) {
+                      _loadRecentOrders();
+                      _loadUserReviews();
+                    });
+                  });
+                },
                 child: const Text('Thử lại'),
               ),
             ],
@@ -550,7 +730,7 @@ class _UserDetailPageState extends State<UserDetailPage> {
           const SizedBox(height: 16),
 
           // Thông tin khách hàng (nếu là customer)
-          if (role.toLowerCase() == 'customer') ...[
+          if (role.toLowerCase() != 'admin') ...[
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(16),
@@ -572,6 +752,8 @@ class _UserDetailPageState extends State<UserDetailPage> {
                   _InfoRow(label: 'Số điện thoại', value: phone.isNotEmpty ? phone : 'Chưa có'),
                   _InfoRow(label: 'Địa chỉ', value: address.isNotEmpty ? address : 'Chưa có'),
                   _InfoRow(label: 'Điểm tích lũy', value: '$loyaltyPoints điểm'),
+                  _InfoRow(label: 'Đơn hàng', value: '${_recentOrders.length} đơn'),
+                  _InfoRow(label: 'Đánh giá', value: '${_userReviews.length} đánh giá'),
                 ],
               ),
             ),
@@ -596,7 +778,12 @@ class _UserDetailPageState extends State<UserDetailPage> {
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                   ),
                   const Divider(),
-                  if (_recentOrders.isEmpty)
+                  if (_isLoadingOrders)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (_recentOrders.isEmpty)
                     const Padding(
                       padding: EdgeInsets.symmetric(vertical: 16),
                       child: Center(
@@ -617,7 +804,6 @@ class _UserDetailPageState extends State<UserDetailPage> {
                               setState(() {
                                 _showAllOrders = true;
                               });
-                              _loadRecentOrders();
                             },
                             icon: const Icon(Icons.expand_more, size: 18),
                             label: Text('Xem tất cả (${_recentOrders.length})'),
@@ -633,7 +819,6 @@ class _UserDetailPageState extends State<UserDetailPage> {
                               setState(() {
                                 _showAllOrders = false;
                               });
-                              _loadRecentOrders();
                             },
                             icon: const Icon(Icons.expand_less, size: 18),
                             label: const Text('Thu gọn'),
@@ -641,6 +826,61 @@ class _UserDetailPageState extends State<UserDetailPage> {
                         ),
                       ),
                   ],
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Đánh giá của người dùng
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: const [
+                  BoxShadow(color: Color(0x0A000000), blurRadius: 10, offset: Offset(0, 3)),
+                ],
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.star_rounded, color: Color(0xFFFFB300), size: 20),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'Đánh giá',
+                        style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                      ),
+                      if (!_isLoadingReviews)
+                        Text(
+                          ' (${_userReviews.length})',
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: AppColors.textLight,
+                          ),
+                        ),
+                    ],
+                  ),
+                  const Divider(),
+                  if (_isLoadingReviews)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Center(child: CircularProgressIndicator()),
+                    )
+                  else if (_userReviews.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 16),
+                      child: Center(
+                        child: Text(
+                          'Người dùng chưa có đánh giá nào',
+                          style: TextStyle(color: AppColors.textLight),
+                        ),
+                      ),
+                    )
+                  else
+                    ..._userReviews.map(_buildReviewCard),
                 ],
               ),
             ),
@@ -708,6 +948,81 @@ class _UserDetailPageState extends State<UserDetailPage> {
       ),
     );
   }
+
+  Widget _buildReviewCard(ReviewItem review) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.background,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              // Stars
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(5, (i) {
+                  return Icon(
+                    i < review.rating ? Icons.star : Icons.star_border,
+                    size: 14,
+                    color: const Color(0xFFFFB300),
+                  );
+                }),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '#${review.invoiceId}',
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.textLight,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                _formatDateTime(review.createdAt.toIso8601String()),
+                style: const TextStyle(fontSize: 11, color: AppColors.textLight),
+              ),
+            ],
+          ),
+          if ((review.content ?? '').trim().isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              review.content!,
+              style: const TextStyle(fontSize: 13, color: AppColors.textDark),
+            ),
+          ],
+          if (review.imageUrls.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 60,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: review.imageUrls.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 6),
+                itemBuilder: (_, i) => ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Image.network(
+                    review.imageUrls[i],
+                    width: 60,
+                    height: 60,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) =>
+                        const Icon(Icons.broken_image, size: 24, color: Colors.grey),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 }
 
 class _InfoRow extends StatelessWidget {
@@ -721,6 +1036,8 @@ class _InfoRow extends StatelessWidget {
   final String value;
   final Color? valueColor;
 
+  @override
+  @override
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -739,8 +1056,9 @@ class _InfoRow extends StatelessWidget {
             ),
           ),
           Expanded(
-            child: Text(
+            child: SelectableText(
               value,
+              maxLines: 3,
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,

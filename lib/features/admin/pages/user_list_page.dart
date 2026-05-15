@@ -93,6 +93,10 @@ class _UserListPageState extends State<UserListPage> {
         final existing = usersByEmail[email];
         // Ưu tiên Firestore vì có thông tin đầy đủ hơn
         if (existing == null || (existing['Source'] as String?) == 'local') {
+          // Giữ nguyên UserID (int) từ local nếu có, tránh ghi đè bằng Firebase UID string
+          if (existing != null && existing['UserID'] is int) {
+            normalized['UserID'] = existing['UserID'];
+          }
           usersByEmail[email] = normalized;
         }
       } else if (!usersByUid.containsKey(uid)) {
@@ -194,6 +198,11 @@ class _UserListPageState extends State<UserListPage> {
     if (userId is int) return userId;
     final localUserId = user['localUserId'];
     if (localUserId is int) return localUserId;
+    // Fallback: parse string UserID nếu có thể (vd: "5")
+    if (userId is String) {
+      final parsed = int.tryParse(userId);
+      if (parsed != null) return parsed;
+    }
     return null;
   }
 
