@@ -179,7 +179,8 @@ Future<void> seedInitialData(Database db) async {
     {
       'CustomerID': 1,
       'PetName': 'Milu',
-      'Species': 'Chó Poodle',
+      'Species': 'Chó',
+      'Breed': 'Poodle',
       'Description': 'Poodle trắng, 2 tháng tuổi',
       'Price': 3500000.0,
       'IsActive': 1,
@@ -189,7 +190,8 @@ Future<void> seedInitialData(Database db) async {
     {
       'CustomerID': 1,
       'PetName': 'Tom',
-      'Species': 'Mèo Anh lông ngắn',
+      'Species': 'Mèo',
+      'Breed': 'Anh lông ngắn',
       'Description': 'Mèo xám dễ thương',
       'Price': 4200000.0,
       'IsActive': 1,
@@ -199,7 +201,8 @@ Future<void> seedInitialData(Database db) async {
     {
       'CustomerID': 1,
       'PetName': 'Bibi',
-      'Species': 'Chó Corgi',
+      'Species': 'Chó',
+      'Breed': 'Corgi',
       'Description': 'Corgi chân ngắn',
       'Price': 7000000.0,
       'IsActive': 1,
@@ -209,7 +212,8 @@ Future<void> seedInitialData(Database db) async {
     {
       'CustomerID': 1,
       'PetName': 'Luna',
-      'Species': 'Mèo Ba Tư',
+      'Species': 'Mèo',
+      'Breed': 'Ba Tư',
       'Description': 'Lông dài trắng',
       'Price': 5500000.0,
       'IsActive': 1,
@@ -219,7 +223,8 @@ Future<void> seedInitialData(Database db) async {
     {
       'CustomerID': 1,
       'PetName': 'Max',
-      'Species': 'Chó Husky',
+      'Species': 'Chó',
+      'Breed': 'Husky',
       'Description': 'Mắt xanh cực đẹp',
       'Price': 8000000.0,
       'IsActive': 1,
@@ -229,7 +234,8 @@ Future<void> seedInitialData(Database db) async {
     {
       'CustomerID': 1,
       'PetName': 'Nabi',
-      'Species': 'Mèo Scottish',
+      'Species': 'Mèo',
+      'Breed': 'Scottish',
       'Description': 'Tai cụp đáng yêu',
       'Price': 6000000.0,
       'IsActive': 1,
@@ -239,7 +245,8 @@ Future<void> seedInitialData(Database db) async {
     {
       'CustomerID': 1,
       'PetName': 'Coco',
-      'Species': 'Chó Chihuahua',
+      'Species': 'Chó',
+      'Breed': 'Chihuahua',
       'Description': 'Nhỏ nhắn lanh lợi',
       'Price': 2800000.0,
       'IsActive': 1,
@@ -249,7 +256,8 @@ Future<void> seedInitialData(Database db) async {
     {
       'CustomerID': 1,
       'PetName': 'Mimi',
-      'Species': 'Mèo Munchkin',
+      'Species': 'Mèo',
+      'Breed': 'Munchkin',
       'Description': 'Chân ngắn siêu cute',
       'Price': 7500000.0,
       'IsActive': 1,
@@ -259,7 +267,8 @@ Future<void> seedInitialData(Database db) async {
     {
       'CustomerID': 1,
       'PetName': 'Rocky',
-      'Species': 'Chó Golden',
+      'Species': 'Chó',
+      'Breed': 'Golden',
       'Description': 'Hiền lành thân thiện',
       'Price': 6500000.0,
       'IsActive': 1,
@@ -269,7 +278,8 @@ Future<void> seedInitialData(Database db) async {
     {
       'CustomerID': 1,
       'PetName': 'Snow',
-      'Species': 'Mèo Ragdoll',
+      'Species': 'Mèo',
+      'Breed': 'Ragdoll',
       'Description': 'Lông trắng xanh mắt',
       'Price': 9000000.0,
       'IsActive': 1,

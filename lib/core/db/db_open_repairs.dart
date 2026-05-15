@@ -33,6 +33,7 @@ Future<void> _repairPetTable(Database db) async {
     await addColumnIfMissing('IsDewormed', 'ALTER TABLE Pet ADD COLUMN IsDewormed INTEGER NOT NULL DEFAULT 0;');
     await addColumnIfMissing('IsVaccinated', 'ALTER TABLE Pet ADD COLUMN IsVaccinated INTEGER NOT NULL DEFAULT 0;');
     await addColumnIfMissing('ImageURL', 'ALTER TABLE Pet ADD COLUMN ImageURL TEXT;');
+    await addColumnIfMissing('Breed', 'ALTER TABLE Pet ADD COLUMN Breed TEXT;');
   } catch (e) {
     print('onOpen: failed to repair Pet table: $e');
   }

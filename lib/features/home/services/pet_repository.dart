@@ -18,11 +18,13 @@ class PetItem {
     this.imageUrl,
     this.isDewormed = false,
     this.isVaccinated = false,
+    this.breed,
   });
 
   final int petId;
   final String petName;
   final String species;
+  final String? breed;
   final String? gender;
   final String? description;
   final double? price;
@@ -40,6 +42,7 @@ class PetItem {
       petId: row['PetID'] as int,
       petName: (row['PetName'] as String?) ?? '',
       species: (row['Species'] as String?) ?? '',
+      breed: row['Breed'] as String?,
       gender: row['Gender'] as String?,
       description: row['Description'] as String?,
       price: rawPrice?.toDouble(),
@@ -116,6 +119,7 @@ class PetRepository {
           petId: (data['petId'] as num).toInt(),
           petName: (data['petName'] as String?) ?? '',
           species: (data['species'] as String?) ?? '',
+          breed: data['breed'] as String?,
           gender: data['gender'] as String?,
           description: data['description'] as String?,
           price: (data['price'] as num?)?.toDouble(),
@@ -159,6 +163,7 @@ class PetRepository {
         petId: petId,
         petName: (data['petName'] as String?) ?? '',
         species: (data['species'] as String?) ?? '',
+        breed: data['breed'] as String?,
         gender: data['gender'] as String?,
         description: data['description'] as String?,
         price: (data['price'] as num?)?.toDouble(),
@@ -188,6 +193,7 @@ class PetRepository {
     required bool isDewormed,
     required bool isVaccinated,
     String? imageUrl,
+    String? breed,
   }) async {
     final db = await AppDatabase.instance;
     final now = DateTime.now().toIso8601String();
@@ -195,6 +201,7 @@ class PetRepository {
       'CustomerID': customerId,
       'PetName': petName,
       'Species': species,
+      'Breed': breed,
       'Gender': gender,
       'Description': description,
       'Price': price,
@@ -211,6 +218,7 @@ class PetRepository {
       petId: id,
       petName: petName,
       species: species,
+      breed: breed,
       gender: gender,
       description: description,
       price: price,
@@ -240,6 +248,7 @@ class PetRepository {
     required bool isVaccinated,
     String? imageUrl,
     bool? isActive,
+    String? breed,
   }) async {
     final db = await AppDatabase.instance;
     final affected = await db.update(
@@ -248,6 +257,7 @@ class PetRepository {
         'CustomerID': customerId,
         'PetName': petName,
         'Species': species,
+        'Breed': breed,
         'Gender': gender,
         'Description': description,
         'Price': price,
@@ -313,6 +323,7 @@ class PetRepository {
         'petId': pet.petId,
         'petName': pet.petName,
         'species': pet.species,
+        'breed': pet.breed,
         'gender': pet.gender,
         'description': pet.description,
         'price': pet.price,

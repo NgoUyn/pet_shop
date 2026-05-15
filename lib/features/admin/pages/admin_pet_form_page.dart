@@ -18,13 +18,14 @@ class AdminPetFormPage extends StatefulWidget {
 class _AdminPetFormPageState extends State<AdminPetFormPage> {
   final _formKey = GlobalKey<FormState>();
   final _petNameController = TextEditingController();
-  final _speciesController = TextEditingController();
+  final _breedController = TextEditingController();
   final _priceController = TextEditingController();
   final _ageController = TextEditingController();
   final _personalityController = TextEditingController();
   final _descriptionController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
 
+  String _species = 'Chó';
   String? _initialImageUrl;
   String _gender = 'Cái';
   bool _isDewormed = false;
@@ -40,7 +41,8 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
     final pet = widget.pet;
     if (pet != null) {
       _petNameController.text = pet.petName;
-      _speciesController.text = pet.species;
+      _species = pet.species;
+      _breedController.text = pet.breed ?? '';
       _priceController.text = pet.price?.toStringAsFixed(0) ?? '';
       _ageController.text = pet.age?.toString() ?? '';
       _personalityController.text = pet.personality ?? '';
@@ -55,7 +57,7 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
   @override
   void dispose() {
     _petNameController.dispose();
-    _speciesController.dispose();
+    _breedController.dispose();
     _priceController.dispose();
     _ageController.dispose();
     _personalityController.dispose();
@@ -163,11 +165,15 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
     try {
       final imageUrl = (_imagePath?.trim().isNotEmpty ?? false) ? _imagePath!.trim() : _initialImageUrl;
 
+      final breed = _breedController.text.trim();
+      final resolvedBreed = breed.isEmpty ? null : breed;
+
       if (_isEditing) {
         await PetRepository.instance.updatePet(
           petId: widget.pet!.petId,
           petName: _petNameController.text.trim(),
-          species: _speciesController.text.trim(),
+          species: _species,
+          breed: resolvedBreed,
           gender: _gender,
           price: double.parse(_priceController.text.trim()),
           description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
@@ -180,7 +186,8 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
       } else {
         await PetRepository.instance.addPet(
           petName: _petNameController.text.trim(),
-          species: _speciesController.text.trim(),
+          species: _species,
+          breed: resolvedBreed,
           gender: _gender,
           price: double.parse(_priceController.text.trim()),
           description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
@@ -248,11 +255,28 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                         validator: (value) => value == null || value.trim().isEmpty ? 'Vui lòng nhập tên thú cưng' : null,
                       ),
                       const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: _species,
+                        decoration: InputDecoration(
+                          labelText: 'Loài',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'Chó', child: Text('Chó')),
+                          DropdownMenuItem(value: 'Mèo', child: Text('Mèo')),
+                        ],
+                        onChanged: _isSaving ? null : (value) {
+                          if (value == null) return;
+                          setState(() {
+                            _species = value;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
                       _buildTextField(
-                        controller: _speciesController,
-                        label: 'Giống / loài',
-                        hintText: 'Ví dụ: Chó Poodle',
-                        validator: (value) => value == null || value.trim().isEmpty ? 'Vui lòng nhập giống / loài' : null,
+                        controller: _breedController,
+                        label: 'Giống',
+                        hintText: 'Ví dụ: Poodle, Husky, Anh lông ngắn',
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(

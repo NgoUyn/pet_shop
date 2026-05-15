@@ -57,6 +57,7 @@ Future<void> createBaseSchema(Database db) async {
       CustomerID INTEGER,
       PetName TEXT NOT NULL,
       Species TEXT NOT NULL,
+      Breed TEXT,
       Gender TEXT,
       Description TEXT,
       Price REAL CHECK (Price > 0),
