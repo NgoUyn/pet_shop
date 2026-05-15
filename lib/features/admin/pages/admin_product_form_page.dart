@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/db/app_database.dart';
+import '../../../core/utils/cloudinary_helper.dart';
 import '../../home/services/product_repository.dart';
 
 class AdminProductFormPage extends StatefulWidget {
@@ -179,7 +180,23 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
     });
 
     try {
-      final imageUrl = (_imagePath?.trim().isNotEmpty ?? false) ? _imagePath!.trim() : _imageUrlController.text.trim();
+      // Upload to Cloudinary if a new image was picked, otherwise use existing URL
+      String? imageUrl;
+      if (_imagePath?.trim().isNotEmpty == true) {
+        imageUrl = await CloudinaryHelper.uploadImage(_imagePath!.trim());
+        if (imageUrl == null) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Không thể tải ảnh lên Cloudinary. Vui lòng thử lại.')),
+          );
+          setState(() => _isSaving = false);
+          return;
+        }
+      } else {
+        imageUrl = _imageUrlController.text.trim();
+        if (imageUrl.isEmpty) imageUrl = null;
+      }
+
       final enteredStock = int.parse(_stockController.text.trim());
       final status = _status;
       final isActive = status != 'Không bán';
@@ -193,7 +210,7 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
           price: double.parse(_priceController.text.trim()),
           stockQuantity: stockQuantity,
           description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
-          imageUrl: imageUrl.isEmpty ? null : imageUrl,
+          imageUrl: (imageUrl == null || imageUrl.isEmpty) ? null : imageUrl,
           isActive: isActive,
         );
       } else {
@@ -203,7 +220,7 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
           price: double.parse(_priceController.text.trim()),
           stockQuantity: stockQuantity,
           description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
-          imageUrl: imageUrl.isEmpty ? null : imageUrl,
+          imageUrl: (imageUrl == null || imageUrl.isEmpty) ? null : imageUrl,
           isActive: isActive,
         );
       }
