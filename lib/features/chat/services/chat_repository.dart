@@ -48,6 +48,8 @@ class ChatMessageItem {
     required this.receiverUid,
     required this.content,
     required this.createdAt,
+    this.imageUrl,
+    this.messageType = 'text',
   });
 
   final String messageId;
@@ -55,6 +57,10 @@ class ChatMessageItem {
   final String receiverUid;
   final String content;
   final DateTime createdAt;
+  final String? imageUrl;
+  final String messageType; // 'text' or 'image'
+
+  bool get isImage => messageType == 'image';
 
   static ChatMessageItem fromDoc(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
     final data = doc.data();
@@ -64,6 +70,8 @@ class ChatMessageItem {
       receiverUid: (data['receiverUid'] as String?) ?? '',
       content: (data['content'] as String?) ?? '',
       createdAt: _timestampToDateTime(data['createdAt']),
+      imageUrl: data['imageUrl'] as String?,
+      messageType: (data['messageType'] as String?) ?? 'text',
     );
   }
 }
@@ -520,6 +528,62 @@ class ChatRepository {
           'customerUid': thread.customerUser.uid,
           'adminUid': thread.adminUser.uid,
           'lastMessage': normalizedContent,
+          'lastMessageAt': now,
+          'customerUnreadCount': customerUnread,
+          'adminUnreadCount': adminUnread,
+          'updatedAt': now,
+          'createdAt': existingData['createdAt'] ?? now,
+        },
+        SetOptions(merge: true),
+      );
+    });
+  }
+
+  /// Send an image message. The [imageUrl] should be the uploaded Cloudinary URL.
+  /// The [content] is an optional caption/description for the image.
+  Future<void> sendImageMessage({
+    required ChatThreadContext thread,
+    required String imageUrl,
+    String content = '',
+  }) async {
+    final currentUser = await ensureCurrentUserSynced();
+
+    final threadRef = _firestore.collection('chats').doc(thread.threadId);
+    final messageRef = threadRef.collection('messages').doc();
+    final now = Timestamp.now();
+    final displayContent = content.trim().isNotEmpty ? content.trim() : '[Hình ảnh]';
+
+    await _firestore.runTransaction((transaction) async {
+      final threadSnapshot = await transaction.get(threadRef);
+      final existingData = threadSnapshot.data() ?? <String, dynamic>{};
+      var customerUnread = (existingData['customerUnreadCount'] as num?)?.toInt() ?? 0;
+      var adminUnread = (existingData['adminUnreadCount'] as num?)?.toInt() ?? 0;
+
+      if (currentUser.isAdmin) {
+        customerUnread += 1;
+        adminUnread = 0;
+      } else {
+        adminUnread += 1;
+        customerUnread = 0;
+      }
+
+      transaction.set(messageRef, {
+        'messageId': messageRef.id,
+        'senderUid': currentUser.uid,
+        'receiverUid': currentUser.isAdmin ? thread.customerUser.uid : thread.adminUser.uid,
+        'content': displayContent,
+        'imageUrl': imageUrl,
+        'messageType': 'image',
+        'createdAt': now,
+      });
+
+      transaction.set(
+        threadRef,
+        {
+          'threadId': thread.threadId,
+          'customerUid': thread.customerUser.uid,
+          'adminUid': thread.adminUser.uid,
+          'lastMessage': displayContent,
           'lastMessageAt': now,
           'customerUnreadCount': customerUnread,
           'adminUnreadCount': adminUnread,

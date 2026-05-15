@@ -1,7 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/cloudinary_helper.dart';
 import '../services/chat_repository.dart';
+import '../services/sensitive_image_detector.dart';
 
 class ChatPage extends StatefulWidget {
   const ChatPage({super.key, this.participantUid});
@@ -16,6 +21,7 @@ class _ChatPageState extends State<ChatPage> {
   final TextEditingController _messageController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final ChatRepository _chatRepository = ChatRepository.instance;
+  final ImagePicker _imagePicker = ImagePicker();
 
   Future<ChatThreadContext>? _bootstrapFuture;
   ChatThreadContext? _thread;
@@ -71,6 +77,108 @@ class _ChatPageState extends State<ChatPage> {
         _sendingNotifier.value = false;
       }
     }
+  }
+
+  /// Pick an image from gallery, check for sensitive content, then upload and send
+  Future<void> _pickAndSendImage() async {
+    final thread = _thread;
+    if (thread == null || _sendingNotifier.value) return;
+
+    try {
+      // Pick image from gallery
+      final pickedFile = await _imagePicker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1920,
+        maxHeight: 1920,
+        imageQuality: 85,
+      );
+
+      if (pickedFile == null) return; // User cancelled
+
+      _sendingNotifier.value = true;
+
+      final imageFile = File(pickedFile.path);
+
+      // Step 1: Upload to Cloudinary first (same approach as review page)
+      final imageUrl = await CloudinaryHelper.uploadImage(imageFile.path);
+
+      if (imageUrl == null) {
+        if (!mounted) return;
+        _sendingNotifier.value = false;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Không thể tải ảnh lên. Vui lòng thử lại.')),
+        );
+        return;
+      }
+
+      // Step 2: Check for sensitive content via backend API (same as review page)
+      final detectionResult = await SensitiveImageDetector.instance.checkImageUrl(imageUrl);
+
+      if (detectionResult.isSensitive) {
+        if (!mounted) return;
+        _sendingNotifier.value = false;
+
+        // Show warning dialog
+        _showSensitiveImageWarning(detectionResult.label);
+        return;
+      }
+
+      // Step 3: Send image message
+      await _chatRepository.sendImageMessage(
+        thread: thread,
+        imageUrl: imageUrl,
+        content: _messageController.text.trim(),
+      );
+      _messageController.clear();
+      _scrollToBottom();
+    } catch (e) {
+      print('_pickAndSendImage error: $e');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Lỗi gửi ảnh: ${e.toString().replaceFirst('StateError: ', '')}')),
+      );
+    } finally {
+      if (mounted) {
+        _sendingNotifier.value = false;
+      }
+    }
+  }
+
+  /// Show a dialog warning the user that the image contains sensitive content
+  void _showSensitiveImageWarning(String label) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 28),
+            SizedBox(width: 8),
+            Expanded(child: Text('Ảnh không hợp lệ')),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Ảnh bạn chọn đã bị chặn vì: $label.',
+              style: const TextStyle(fontSize: 15),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Vui lòng chọn ảnh khác phù hợp với tiêu chuẩn cộng đồng.',
+              style: TextStyle(fontSize: 13, color: Colors.grey),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Đã hiểu'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _markThreadAsRead(ChatThreadContext thread) async {
@@ -160,6 +268,7 @@ class _ChatPageState extends State<ChatPage> {
             messageController: _messageController,
             sendingNotifier: _sendingNotifier,
             onSend: _sendMessage,
+            onPickImage: _pickAndSendImage,
           ),
         );
       },
@@ -176,6 +285,7 @@ class _ChatBody extends StatelessWidget {
     required this.messageController,
     required this.sendingNotifier,
     required this.onSend,
+    required this.onPickImage,
   });
 
   final ChatThreadContext thread;
@@ -184,6 +294,7 @@ class _ChatBody extends StatelessWidget {
   final TextEditingController messageController;
   final ValueNotifier<bool> sendingNotifier;
   final VoidCallback onSend;
+  final VoidCallback onPickImage;
 
   @override
   Widget build(BuildContext context) {
@@ -206,6 +317,7 @@ class _ChatBody extends StatelessWidget {
               controller: messageController,
               sending: sending,
               onSend: onSend,
+              onPickImage: onPickImage,
             );
           },
         ),
@@ -304,13 +416,21 @@ class _ChatMessagesList extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      message.content,
-                      style: TextStyle(
-                        color: isMine ? Colors.white : AppColors.textDark,
-                        fontSize: 14,
+                    // Show image if message type is image
+                    if (message.isImage && message.imageUrl != null)
+                      _buildImageContent(context, message, isMine),
+                    // Show text content
+                    if (message.content.isNotEmpty && message.content != '[Hình ảnh]')
+                      Padding(
+                        padding: EdgeInsets.only(top: message.isImage ? 8 : 0),
+                        child: Text(
+                          message.content,
+                          style: TextStyle(
+                            color: isMine ? Colors.white : AppColors.textDark,
+                            fontSize: 14,
+                          ),
+                        ),
                       ),
-                    ),
                     const SizedBox(height: 6),
                     Text(
                       _formatTimestamp(message.createdAt),
@@ -328,6 +448,93 @@ class _ChatMessagesList extends StatelessWidget {
       },
     );
   }
+
+  Widget _buildImageContent(BuildContext context, ChatMessageItem message, bool isMine) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: GestureDetector(
+        onTap: () => _showImagePreview(context, message.imageUrl!),
+        child: Image.network(
+          message.imageUrl!,
+          width: 280,
+          height: 200,
+          fit: BoxFit.cover,
+          loadingBuilder: (context, child, loadingProgress) {
+            if (loadingProgress == null) return child;
+            return Container(
+              width: 280,
+              height: 200,
+              color: isMine ? Colors.white24 : Colors.grey.shade100,
+              child: Center(
+                child: CircularProgressIndicator(
+                  value: loadingProgress.expectedTotalBytes != null
+                      ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
+                      : null,
+                  color: isMine ? Colors.white : AppColors.primary,
+                ),
+              ),
+            );
+          },
+          errorBuilder: (context, error, stackTrace) {
+            return Container(
+              width: 280,
+              height: 200,
+              color: Colors.grey.shade200,
+              child: const Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.broken_image, size: 40, color: Colors.grey),
+                    SizedBox(height: 4),
+                    Text('Không thể tải ảnh', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  void _showImagePreview(BuildContext context, String imageUrl) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => Scaffold(
+          backgroundColor: Colors.black,
+          appBar: AppBar(
+            backgroundColor: Colors.black,
+            foregroundColor: Colors.white,
+            elevation: 0,
+          ),
+          body: Center(
+            child: InteractiveViewer(
+              child: Image.network(
+                imageUrl,
+                fit: BoxFit.contain,
+                loadingBuilder: (context, child, loadingProgress) {
+                  if (loadingProgress == null) return child;
+                  return const Center(child: CircularProgressIndicator(color: Colors.white));
+                },
+                errorBuilder: (context, error, stackTrace) {
+                  return const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.broken_image, size: 64, color: Colors.white54),
+                        SizedBox(height: 8),
+                        Text('Không thể tải ảnh', style: TextStyle(color: Colors.white54)),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// Separate widget for input area to prevent rebuild of messages list
@@ -336,11 +543,13 @@ class _ChatInputArea extends StatelessWidget {
     required this.controller,
     required this.sending,
     required this.onSend,
+    required this.onPickImage,
   });
 
   final TextEditingController controller;
   final bool sending;
   final VoidCallback onSend;
+  final VoidCallback onPickImage;
 
   @override
   Widget build(BuildContext context) {
@@ -354,6 +563,19 @@ class _ChatInputArea extends StatelessWidget {
         top: false,
         child: Row(
           children: [
+            // Image picker button
+            SizedBox(
+              height: 48,
+              width: 48,
+              child: IconButton(
+                onPressed: sending ? null : onPickImage,
+                icon: const Icon(Icons.image_outlined),
+                color: AppColors.primary,
+                tooltip: 'Gửi ảnh',
+              ),
+            ),
+            const SizedBox(width: 4),
+            // Text input
             Expanded(
               child: TextField(
                 controller: controller,
@@ -374,6 +596,7 @@ class _ChatInputArea extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 10),
+            // Send button
             SizedBox(
               height: 48,
               width: 48,

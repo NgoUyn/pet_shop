@@ -1,75 +1,68 @@
-import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+/// Helper to upload images to Cloudinary
 class CloudinaryHelper {
-  static String get cloudName => dotenv.env['CLOUDINARY_CLOUD_NAME'] ?? '';
-  static String get uploadPreset => dotenv.env['CLOUDINARY_UPLOAD_PRESET'] ?? '';
+  CloudinaryHelper._();
+  static final CloudinaryHelper instance = CloudinaryHelper._();
 
-  static String get baseUrl => 'https://res.cloudinary.com/$cloudName/image/upload';
-  static String get _uploadUrl => 'https://api.cloudinary.com/v1_1/$cloudName/image/upload';
+  String? get _cloudName => dotenv.env['CLOUDINARY_CLOUD_NAME'];
+  String? get _uploadPreset => dotenv.env['CLOUDINARY_UPLOAD_PRESET'];
 
-  static String getImageUrl(
-      String publicId, {
-        int? width,
-        int? height,
-        String crop = 'fill',
-        String gravity = 'auto',
-        String quality = 'auto',
-        String format = 'auto',
-      }) {
-    List<String> transformations = [];
-    transformations.add('q_$quality,f_$format');
-    if (width != null || height != null) {
-      transformations.add('w_${width ?? ""},h_${height ?? ""},c_$crop');
-      if (gravity.isNotEmpty) {
-        transformations.add('g_$gravity');
-      }
+  /// Upload an image file to Cloudinary and return the secure URL.
+  /// Returns null if upload fails.
+  Future<String?> _uploadFile(File imageFile) async {
+    final cloudName = _cloudName;
+    final uploadPreset = _uploadPreset;
+
+    if (cloudName == null || cloudName.isEmpty || uploadPreset == null || uploadPreset.isEmpty) {
+      print('CloudinaryHelper: Missing cloud name or upload preset');
+      return null;
     }
-    final transformString = transformations.join(',');
-    return '$baseUrl/$transformString/$publicId';
-  }
 
-  static String getProductImage(String publicId, {int size = 400}) {
-    return getImageUrl(publicId, width: size, height: size, crop: 'fill');
-  }
-
-  static String getBannerImage(String publicId, {int width = 1080, int height = 500}) {
-    return getImageUrl(publicId, width: width, height: height, crop: 'fill');
-  }
-
-  static String getThumbnail(String publicId, {int size = 150}) {
-    return getImageUrl(publicId, width: size, height: size, crop: 'fill');
-  }
-
-  /// Upload an image file to Cloudinary using unsigned upload preset.
-  /// Returns the secure_url from the response, or null on failure.
-  static Future<String?> uploadImage(String filePath) async {
     try {
-      final uri = Uri.parse(_uploadUrl);
-      final request = http.MultipartRequest('POST', uri)
-        ..fields['upload_preset'] = uploadPreset
-        ..files.add(await http.MultipartFile.fromPath('file', filePath));
+      final uri = Uri.parse('https://api.cloudinary.com/v1_1/$cloudName/image/upload');
+      final request = http.MultipartRequest('POST', uri);
+      request.fields['upload_preset'] = uploadPreset;
+      request.files.add(
+        await http.MultipartFile.fromPath('file', imageFile.path),
+      );
 
-      final response = await request.send();
+      final streamedResponse = await request.send().timeout(
+        const Duration(seconds: 30),
+      );
+      final response = await http.Response.fromStream(streamedResponse);
+
       if (response.statusCode == 200) {
-        final body = await response.stream.bytesToString();
-        // Simple JSON extraction without adding a json dependency here
-        final secureUrl = _extractJsonString(body, 'secure_url');
-        return secureUrl;
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        return data['secure_url'] as String?;
+      } else {
+        print('CloudinaryHelper: Upload failed with status ${response.statusCode}: ${response.body}');
+        return null;
       }
     } catch (e) {
-      print('CloudinaryHelper.uploadImage error: $e');
+      print('CloudinaryHelper: Upload error: $e');
+      return null;
     }
-    return null;
   }
 
-  static String? _extractJsonString(String json, String key) {
-    final pattern = '"$key":"';
-    final start = json.indexOf(pattern);
-    if (start == -1) return null;
-    final valueStart = start + pattern.length;
-    final end = json.indexOf('"', valueStart);
-    if (end == -1) return null;
-    return json.substring(valueStart, end);
+  /// Static method: upload an image file and return the URL.
+  /// Used by review_page.dart and other existing code.
+  static Future<String?> uploadImage(String filePath) async {
+    final file = File(filePath);
+    if (!file.existsSync()) {
+      print('CloudinaryHelper.uploadImage: File not found: $filePath');
+      return null;
+    }
+    return instance._uploadFile(file);
+  }
+
+  /// Static method: get a banner image URL by name.
+  /// Used by home_page.dart.
+  static String getBannerImage(String bannerName) {
+    final cloudName = dotenv.env['CLOUDINARY_CLOUD_NAME'] ?? 'dyk8jc0nq';
+    return 'https://res.cloudinary.com/$cloudName/image/upload/v1/banners/$bannerName';
   }
 }
