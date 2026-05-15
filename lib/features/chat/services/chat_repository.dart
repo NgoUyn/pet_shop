@@ -456,7 +456,24 @@ class ChatRepository {
         );
       }
 
-      items.removeWhere((item) => item.lastMessage.trim().isEmpty);
+      // Remove conversations where all messages have been deleted
+      for (final item in items.toList()) {
+        try {
+          final messagesSnapshot = await _firestore
+              .collection('chats')
+              .doc(item.threadId)
+              .collection('messages')
+              .where('deletedAt', isNull: true)
+              .limit(1)
+              .get();
+          if (messagesSnapshot.docs.isEmpty) {
+            items.remove(item);
+          }
+        } catch (_) {
+          // If query fails, keep the item (fail safe)
+        }
+      }
+
       items.sort((left, right) => right.lastMessageAt.compareTo(left.lastMessageAt));
       return items;
     });
