@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -376,37 +378,65 @@ class ChatRepository {
   Stream<int> watchUnreadCountForCurrentUser() async* {
     final currentUser = await ensureCurrentUserSynced();
 
-    final query = currentUser.isAdmin
-        ? _firestore.collection('chats').where('adminUid', isEqualTo: currentUser.uid)
-        : _firestore.collection('chats').where('customerUid', isEqualTo: currentUser.uid);
-
-    yield* query.snapshots().map((snapshot) {
-      var total = 0;
-      for (final doc in snapshot.docs) {
-        final data = doc.data();
-        final unread = currentUser.isAdmin ? data['adminUnreadCount'] : data['customerUnreadCount'];
-        total += (unread as num?)?.toInt() ?? 0;
-      }
-      return total;
-    });
+    if (currentUser.isAdmin) {
+      // For admin: query ALL chats and sum adminUnreadCount
+      // (because adminUid may be synthetic and not match Firebase UID)
+      yield* _firestore.collection('chats').snapshots().map((snapshot) {
+        var total = 0;
+        for (final doc in snapshot.docs) {
+          final data = doc.data();
+          final customerUid = (data['customerUid'] as String?) ?? '';
+          // Skip if customer is admin (admin-to-admin chat)
+          if (customerUid == currentUser.uid) continue;
+          total += (data['adminUnreadCount'] as num?)?.toInt() ?? 0;
+        }
+        return total;
+      });
+    } else {
+      yield* _firestore
+          .collection('chats')
+          .where('customerUid', isEqualTo: currentUser.uid)
+          .snapshots()
+          .map((snapshot) {
+        var total = 0;
+        for (final doc in snapshot.docs) {
+          final data = doc.data();
+          total += (data['customerUnreadCount'] as num?)?.toInt() ?? 0;
+        }
+        return total;
+      });
+    }
   }
 
   Future<int> unreadCountForCurrentUser() async {
     try {
       final currentUser = await ensureCurrentUserSynced();
 
-      final query = currentUser.isAdmin
-          ? _firestore.collection('chats').where('adminUid', isEqualTo: currentUser.uid)
-          : _firestore.collection('chats').where('customerUid', isEqualTo: currentUser.uid);
-
-      final snapshot = await query.get();
-      var total = 0;
-      for (final doc in snapshot.docs) {
-        final data = doc.data();
-        final unread = currentUser.isAdmin ? data['adminUnreadCount'] : data['customerUnreadCount'];
-        total += (unread as num?)?.toInt() ?? 0;
+      if (currentUser.isAdmin) {
+        // For admin: query ALL chats and sum adminUnreadCount
+        // (because adminUid may be synthetic and not match Firebase UID)
+        final snapshot = await _firestore.collection('chats').get();
+        var total = 0;
+        for (final doc in snapshot.docs) {
+          final data = doc.data();
+          final customerUid = (data['customerUid'] as String?) ?? '';
+          // Skip if customer is admin (admin-to-admin chat)
+          if (customerUid == currentUser.uid) continue;
+          total += (data['adminUnreadCount'] as num?)?.toInt() ?? 0;
+        }
+        return total;
+      } else {
+        final snapshot = await _firestore
+            .collection('chats')
+            .where('customerUid', isEqualTo: currentUser.uid)
+            .get();
+        var total = 0;
+        for (final doc in snapshot.docs) {
+          final data = doc.data();
+          total += (data['customerUnreadCount'] as num?)?.toInt() ?? 0;
+        }
+        return total;
       }
-      return total;
     } catch (e) {
       print('unreadCountForCurrentUser error: $e');
       return 0;
@@ -414,39 +444,51 @@ class ChatRepository {
   }
 
   Stream<List<ChatConversationSummary>> watchAdminConversations() async* {
-    final currentUser = await ensureCurrentUserSynced();
-    if (!currentUser.isAdmin) {
+    ChatUser? currentUser;
+    try {
+      currentUser = await ensureCurrentUserSynced();
+    } catch (e) {
+      print('watchAdminConversations: ensureCurrentUserSynced error: $e');
       yield const [];
       return;
     }
 
-    final query = _firestore.collection('chats').where('adminUid', isEqualTo: currentUser.uid);
-    yield* query.snapshots().asyncMap((snapshot) async {
+    final user = currentUser;
+    if (!user.isAdmin) {
+      yield const [];
+      return;
+    }
+
+    // Query ALL chats (not filtered by adminUid) because the adminUid in Firestore
+    // may be a synthetic UID (e.g. 'admin_synthetic_1') that doesn't match the
+    // current Firebase Auth UID. We'll filter out admin-to-admin conversations later.
+    yield* _firestore.collection('chats').snapshots().map((snapshot) {
       final items = <ChatConversationSummary>[];
 
       for (final doc in snapshot.docs) {
         final data = doc.data();
         final customerUid = (data['customerUid'] as String?) ?? '';
-        final customerUser = customerUid.isEmpty ? null : await getUserByUid(customerUid);
 
-        if (customerUser != null && customerUser.isAdmin) {
-          continue;
-        }
+        // Skip if customerUid is empty
+        if (customerUid.isEmpty) continue;
+
+        // Skip if the customerUid matches the current user (admin chatting with themselves)
+        if (customerUid == user.uid) continue;
 
         items.add(
           ChatConversationSummary(
             threadId: doc.id,
             customerUser: ChatUser(
               uid: customerUid,
-              fullName: customerUser?.fullName ?? (data['customerName'] as String?) ?? 'Khách hàng',
-              email: customerUser?.email ?? (data['customerEmail'] as String?) ?? '',
-              role: customerUser?.role ?? 'customer',
+              fullName: (data['customerName'] as String?) ?? 'Khách hàng',
+              email: (data['customerEmail'] as String?) ?? '',
+              role: 'customer',
             ),
             adminUser: ChatUser(
-              uid: currentUser.uid,
-              fullName: currentUser.fullName,
-              email: currentUser.email,
-              role: currentUser.role,
+              uid: user.uid,
+              fullName: user.fullName,
+              email: user.email,
+              role: user.role,
             ),
             lastMessage: (data['lastMessage'] as String?) ?? '',
             lastMessageAt: _timestampToDateTime(data['lastMessageAt']),
@@ -454,24 +496,6 @@ class ChatRepository {
             adminUnreadCount: (data['adminUnreadCount'] as num?)?.toInt() ?? 0,
           ),
         );
-      }
-
-      // Remove conversations where all messages have been deleted
-      for (final item in items.toList()) {
-        try {
-          final messagesSnapshot = await _firestore
-              .collection('chats')
-              .doc(item.threadId)
-              .collection('messages')
-              .where('deletedAt', isNull: true)
-              .limit(1)
-              .get();
-          if (messagesSnapshot.docs.isEmpty) {
-            items.remove(item);
-          }
-        } catch (_) {
-          // If query fails, keep the item (fail safe)
-        }
       }
 
       items.sort((left, right) => right.lastMessageAt.compareTo(left.lastMessageAt));
