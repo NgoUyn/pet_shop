@@ -1,0 +1,36 @@
+{
+  "guides": [
+    {
+      "id": "style_9008ef4ac397",
+      "name": "Soft & Playful Pet App",
+      "theme": {
+        "seedColor": "#FF9F8D",
+        "colorThemeName": "PetCare Pastel",
+        "palette": {
+          "primary": "#FF9F8D",
+          "secondary": "#D9E8D1",
+          "tertiary": "#D9EAF1",
+          "neutral": "#F9F4E8"
+        },
+        "fonts": {
+          "headline": {
+            "family": "Inter",
+            "url": "https://fonts.googleapis.com/css2?family=Inter:wght@700&display=swap"
+          },
+          "body": {
+            "family": "Inter",
+            "url": "https://fonts.googleapis.com/css2?family=Inter:wght@400&display=swap"
+          },
+          "label": {
+            "family": "Inter",
+            "url": "https://fonts.googleapis.com/css2?family=Inter:wght@500&display=swap"
+          }
+        },
+        "cornerRadius": "large"
+      },
+      "designInstructions": "### 1. Visual Language & Vibe\nThe design language is soft, friendly, and modern, specifically tailored for a pet-centric experience. It avoids sharp edges and high-contrast clinical looks in favor of a warm, approachable aesthetic. The vibe is \"playful professional\"—organized and functional but deeply emotive through color and imagery.\n\n### 2. Pastel Categorization System\nA core signature of this style is the use of distinct pastel background colors to categorize or highlight different items (e.g., light pink for dogs, soft green for cats). These backgrounds are low-saturation and high-value, ensuring that the primary photography and dark text remain the focal points.\n\n### 3. Card & Container Architecture\nCards are characterized by an extremely large corner radius (24px to 32px) and a \"floating\" appearance. They don't rely on heavy shadows; instead, they use background color shifts or very subtle, soft-diffusion shadows to create depth. Content inside cards is centered or left-aligned with generous internal padding.\n\n### 4. Typography & Information Hierarchy\nThe hierarchy is clear and bold. Pet names act as the primary anchor, set in heavy, geometric sans-serif weights. Supporting metadata (breed, age, weight) is treated with a lighter weight and often a muted color. Small \"trait badges\" or pills are used for key technical stats, featuring their own soft background colors to stand out without competing for attention.\n\n### 5. Imagery Treatment\nPhotography is the hero. Images should be warm-toned and friendly. Pet portraits are either clipped into rounded rectangles or placed against the pastel card backgrounds. The interface should feel like a high-end pet gallery, with large images taking up at least 40-50% of the card area.\n\n### 6. Component Quirks & Buttons\nButtons are consistently large and pill-shaped (full radius), using the primary salmon/coral color to drive action. Icons are minimalist, thin-stroke (around 1.5pt or 2pt), and monochrome, ensuring they feel secondary to the vibrant imagery and primary brand color.\n\n### 7. Layout Rhythm & Spacing\nThe layout uses a high-density grid for listings but shifts to an airy, breathable vertical stack for detail views. Spacing is generous, avoiding any sense of clutter. The \"safe area\" around elements is consistent, contributing to the overall premium and \"calm\" feel of the application.",
+      "created": "2026-05-15T09:04:29.534426+00:00",
+      "modified": "2026-05-15T09:04:29.534426+00:00"
+    }
+  ]
+}
