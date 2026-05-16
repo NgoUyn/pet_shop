@@ -155,14 +155,12 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
       imageWidget = _buildPreviewPlaceholder();
     }
 
-    // Wrap in a tappable InkWell so users can tap the image to change it
     return InkWell(
       onTap: _isSaving ? null : _pickImage,
       borderRadius: BorderRadius.circular(20),
       child: Stack(
         children: [
           imageWidget,
-          // Semi-transparent overlay with "Change image" text
           Positioned(
             bottom: 0,
             left: 0,
@@ -289,6 +287,7 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // ── Image Picker ──────────────────────────────────────
                       _buildImagePreview(),
                       const SizedBox(height: 12),
                       SizedBox(
@@ -300,15 +299,20 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                         ),
                       ),
                       const SizedBox(height: 16),
+
+                      // ── Pet Name ──────────────────────────────────────────
                       _buildTextField(
                         controller: _petNameController,
                         label: 'Tên thú cưng',
                         hintText: 'Ví dụ: Milu',
-                        validator: (value) => value == null || value.trim().isEmpty ? 'Vui lòng nhập tên thú cưng' : null,
+                        validator: (value) =>
+                            value == null || value.trim().isEmpty ? 'Vui lòng nhập tên thú cưng' : null,
                       ),
                       const SizedBox(height: 12),
+
+                      // ── Species (Category) Selector ───────────────────────
                       DropdownButtonFormField<String>(
-                        initialValue: _species,
+                        value: _species,
                         decoration: InputDecoration(
                           labelText: 'Loài',
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
@@ -317,22 +321,28 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                           DropdownMenuItem(value: 'Chó', child: Text('Chó')),
                           DropdownMenuItem(value: 'Mèo', child: Text('Mèo')),
                         ],
-                        onChanged: _isSaving ? null : (value) {
-                          if (value == null) return;
-                          setState(() {
-                            _species = value;
-                          });
-                        },
+                        onChanged: _isSaving
+                            ? null
+                            : (value) {
+                                if (value == null) return;
+                                setState(() {
+                                  _species = value;
+                                });
+                              },
                       ),
                       const SizedBox(height: 12),
+
+                      // ── Breed ─────────────────────────────────────────────
                       _buildTextField(
                         controller: _breedController,
                         label: 'Giống',
                         hintText: 'Ví dụ: Poodle, Husky, Anh lông ngắn',
                       ),
                       const SizedBox(height: 12),
+
+                      // ── Gender Selector ───────────────────────────────────
                       DropdownButtonFormField<String>(
-                        initialValue: _gender,
+                        value: _gender,
                         decoration: InputDecoration(
                           labelText: 'Giới tính',
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
@@ -342,21 +352,25 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                           DropdownMenuItem(value: 'Cái', child: Text('Cái')),
                           DropdownMenuItem(value: 'Chưa xác định', child: Text('Chưa xác định')),
                         ],
-                        onChanged: _isSaving ? null : (value) {
-                          if (value == null) return;
-                          setState(() {
-                            _gender = value;
-                          });
-                        },
+                        onChanged: _isSaving
+                            ? null
+                            : (value) {
+                                if (value == null) return;
+                                setState(() {
+                                  _gender = value;
+                                });
+                              },
                       ),
                       const SizedBox(height: 12),
+
+                      // ── Price & Age (side by side) ────────────────────────
                       Row(
                         children: [
                           Expanded(
                             child: _buildTextField(
                               controller: _priceController,
                               label: 'Giá',
-                              hintText: '3500000',
+                              hintText: '3.500.000',
                               keyboardType: TextInputType.number,
                               validator: (value) {
                                 final parsed = double.tryParse((value ?? '').trim());
@@ -388,6 +402,8 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                         ],
                       ),
                       const SizedBox(height: 12),
+
+                      // ── Personality ───────────────────────────────────────
                       _buildTextField(
                         controller: _personalityController,
                         label: 'Tính cách',
@@ -395,6 +411,8 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                         maxLines: 2,
                       ),
                       const SizedBox(height: 12),
+
+                      // ── Detailed Description ──────────────────────────────
                       _buildTextField(
                         controller: _descriptionController,
                         label: 'Mô tả chi tiết',
@@ -402,6 +420,8 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                         maxLines: 4,
                       ),
                       const SizedBox(height: 16),
+
+                      // ── Health Status Toggles ─────────────────────────────
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -411,30 +431,94 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text(
-                              'Tình trạng y tế',
-                              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                            Row(
+                              children: [
+                                Icon(Icons.medical_services_outlined,
+                                    size: 20, color: AppColors.primary),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Tình trạng y tế',
+                                  style: TextStyle(
+                                      fontSize: 16, fontWeight: FontWeight.w700),
+                                ),
+                              ],
                             ),
                             const SizedBox(height: 12),
-                            SwitchListTile.adaptive(
-                              contentPadding: EdgeInsets.zero,
-                              value: _isDewormed,
-                              onChanged: _isSaving ? null : (value) => setState(() => _isDewormed = value),
-                              title: const Text('Đã tẩy giun'),
-                              subtitle: const Text('Tắt nếu thú cưng chưa được tẩy giun'),
+                            // Dewormed Toggle
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: _isDewormed
+                                    ? const Color(0xFFE8F5E9)
+                                    : const Color(0xFFF5F5F5),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: SwitchListTile.adaptive(
+                                contentPadding: EdgeInsets.zero,
+                                value: _isDewormed,
+                                onChanged: _isSaving
+                                    ? null
+                                    : (value) =>
+                                        setState(() => _isDewormed = value),
+                                title: const Text(
+                                  'Đã tẩy giun',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                                subtitle: Text(
+                                  _isDewormed
+                                      ? 'Thú cưng đã được tẩy giun'
+                                      : 'Chưa tẩy giun',
+                                  style: TextStyle(
+                                      color: _isDewormed
+                                          ? Colors.green.shade700
+                                          : AppColors.textLight,
+                                      fontSize: 12),
+                                ),
+                                activeColor: AppColors.primary,
+                              ),
                             ),
-                            const Divider(height: 1),
-                            SwitchListTile.adaptive(
-                              contentPadding: EdgeInsets.zero,
-                              value: _isVaccinated,
-                              onChanged: _isSaving ? null : (value) => setState(() => _isVaccinated = value),
-                              title: const Text('Đã tiêm phòng'),
-                              subtitle: const Text('Tắt nếu thú cưng chưa tiêm phòng'),
+                            const SizedBox(height: 8),
+                            // Vaccinated Toggle
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: _isVaccinated
+                                    ? const Color(0xFFE8F5E9)
+                                    : const Color(0xFFF5F5F5),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: SwitchListTile.adaptive(
+                                contentPadding: EdgeInsets.zero,
+                                value: _isVaccinated,
+                                onChanged: _isSaving
+                                    ? null
+                                    : (value) =>
+                                        setState(() => _isVaccinated = value),
+                                title: const Text(
+                                  'Đã tiêm phòng',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
+                                ),
+                                subtitle: Text(
+                                  _isVaccinated
+                                      ? 'Thú cưng đã được tiêm phòng đầy đủ'
+                                      : 'Chưa tiêm phòng',
+                                  style: TextStyle(
+                                      color: _isVaccinated
+                                          ? Colors.green.shade700
+                                          : AppColors.textLight,
+                                      fontSize: 12),
+                                ),
+                                activeColor: AppColors.primary,
+                              ),
                             ),
                           ],
                         ),
                       ),
                       const SizedBox(height: 20),
+
+                      // ── Save Button ───────────────────────────────────────
                       SizedBox(
                         width: double.infinity,
                         height: 52,
@@ -444,10 +528,24 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                               ? const SizedBox(
                                   width: 18,
                                   height: 18,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                  child: CircularProgressIndicator(
+                                      strokeWidth: 2, color: Colors.white),
                                 )
                               : const Icon(Icons.save_outlined),
-                          label: Text(_isSaving ? 'Đang lưu...' : (_isEditing ? 'Cập nhật thú cưng' : 'Lưu thú cưng')),
+                          label: Text(
+                            _isSaving
+                                ? 'Đang lưu...'
+                                : (_isEditing
+                                    ? 'Cập nhật thú cưng'
+                                    : 'Lưu thú cưng'),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
                         ),
                       ),
                     ],

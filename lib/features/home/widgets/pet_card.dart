@@ -15,14 +15,17 @@ class PetCard extends StatelessWidget {
     this.onTap,
     this.onFavoriteTap,
     this.onCartTap,
+    this.onBuyTap,
     this.isFavorited = false,
     this.compact = false,
+    showFavoriteIcon= true,
   });
 
   final PetItem item;
   final VoidCallback? onTap;
   final VoidCallback? onFavoriteTap;
   final VoidCallback? onCartTap;
+  final VoidCallback? onBuyTap;
   final bool isFavorited;
   final bool compact;
 
@@ -316,7 +319,7 @@ class PetCard extends StatelessWidget {
                             height: 32,
                             width: 60,
                             child: ElevatedButton(
-                              onPressed: onCartTap,
+                              onPressed: onBuyTap ?? onCartTap,
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: AppColors.accent,
                                 foregroundColor: AppColors.white,

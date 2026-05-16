@@ -16,14 +16,19 @@ class ProductCard extends StatelessWidget {
     this.onTap,
     this.onFavoriteTap,
     this.onCartTap,
+    this.onBuyTap,
     this.isFavorited = false,
+    this.showFavoriteIcon = true,
   });
 
   final ProductItem item;
   final VoidCallback? onTap;
   final VoidCallback? onFavoriteTap;
   final VoidCallback? onCartTap;
+  final VoidCallback? onBuyTap;
   final bool isFavorited;
+  final bool showFavoriteIcon;
+
 
   @override
   Widget build(BuildContext context) {
@@ -57,7 +62,7 @@ class ProductCard extends StatelessWidget {
                     children: [
                       _buildImage(item.imageUrl),
                       // Heart icon button in top-right corner
-                      if (onFavoriteTap != null)
+                      if (showFavoriteIcon && onFavoriteTap != null)
                         Positioned(
                           right: 6,
                           top: 6,
@@ -145,7 +150,7 @@ class ProductCard extends StatelessWidget {
                           height: 32,
                           width: 60,
                           child: ElevatedButton(
-                            onPressed: onCartTap,
+                            onPressed: onBuyTap ?? onCartTap,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.accent,
                               foregroundColor: AppColors.white,

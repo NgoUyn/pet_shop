@@ -18,6 +18,17 @@ class AdminProductFormPage extends StatefulWidget {
 }
 
 class _AdminProductFormPageState extends State<AdminProductFormPage> {
+  static const List<String> _accessoryTypes = [
+    'Vòng cổ',
+    'Dây dắt',
+    'Đồ chơi',
+    'Thức ăn',
+    'Vệ sinh',
+    'Bát ăn',
+    'Nhà ngủ',
+    'Khác',
+  ];
+
   final _formKey = GlobalKey<FormState>();
   final _productNameController = TextEditingController();
   final _priceController = TextEditingController();
@@ -27,6 +38,7 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
   final ImagePicker _imagePicker = ImagePicker();
 
   String _status = 'Đang bán';
+  String _accessoryType = _accessoryTypes.first;
   String? _imagePath;
   bool _isSaving = false;
   int? _selectedCategoryId;
@@ -316,13 +328,37 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
                       const SizedBox(height: 16),
                       _buildTextField(
                         controller: _productNameController,
-                        label: 'Tên sản phẩm',
-                        hintText: 'Ví dụ: Vitamin cho chó mèo',
-                        validator: (value) => value == null || value.trim().isEmpty ? 'Vui lòng nhập tên sản phẩm' : null,
+                        label: 'Tên phụ kiện',
+                        hintText: 'Ví dụ: Vòng cổ chó da cao cấp',
+                        validator: (value) => value == null || value.trim().isEmpty ? 'Vui lòng nhập tên phụ kiện' : null,
+                      ),
+                      const SizedBox(height: 12),
+                      // ── Accessory Type ──────────────────────────────────────
+                      DropdownButtonFormField<String>(
+                        value: _accessoryType,
+                        decoration: InputDecoration(
+                          labelText: 'Loại phụ kiện',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                          prefixIcon: const Icon(Icons.category_outlined),
+                        ),
+                        items: _accessoryTypes
+                            .map(
+                              (type) => DropdownMenuItem<String>(
+                                value: type,
+                                child: Text(type),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: _isSaving
+                            ? null
+                            : (value) {
+                                if (value == null) return;
+                                setState(() => _accessoryType = value);
+                              },
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<int>(
-                        initialValue: _selectedCategoryId,
+                        value: _selectedCategoryId,
                         decoration: InputDecoration(
                           labelText: 'Danh mục',
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
@@ -338,8 +374,53 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
                         onChanged: _isSaving ? null : (value) => setState(() => _selectedCategoryId = value),
                       ),
                       const SizedBox(height: 12),
+                      // ── Description ─────────────────────────────────────────
+                      _buildTextField(
+                        controller: _descriptionController,
+                        label: 'Mô tả',
+                        hintText: 'Mô tả chi tiết về phụ kiện',
+                        maxLines: 4,
+                      ),
+                      const SizedBox(height: 12),
+                      // ── Quantity & Price (side by side) ─────────────────────
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _buildTextField(
+                              controller: _stockController,
+                              label: 'Số lượng',
+                              hintText: '18',
+                              keyboardType: TextInputType.number,
+                              validator: (value) {
+                                final parsed = int.tryParse((value ?? '').trim());
+                                if (parsed == null || parsed < 0) {
+                                  return 'Vui lòng nhập số lượng hợp lệ';
+                                }
+                                return null;
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildTextField(
+                              controller: _priceController,
+                              label: 'Giá',
+                              hintText: '150000',
+                              keyboardType: TextInputType.number,
+                              validator: (value) {
+                                final parsed = double.tryParse((value ?? '').trim());
+                                if (parsed == null || parsed <= 0) {
+                                  return 'Vui lòng nhập giá hợp lệ';
+                                }
+                                return null;
+                              },
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        initialValue: _status,
+                        value: _status,
                         decoration: InputDecoration(
                           labelText: 'Trạng thái',
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
@@ -360,55 +441,13 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
                         },
                       ),
                       const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _buildTextField(
-                              controller: _priceController,
-                              label: 'Giá',
-                              hintText: '150000',
-                              keyboardType: TextInputType.number,
-                              validator: (value) {
-                                final parsed = double.tryParse((value ?? '').trim());
-                                if (parsed == null || parsed <= 0) {
-                                  return 'Vui lòng nhập giá hợp lệ';
-                                }
-                                return null;
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildTextField(
-                              controller: _stockController,
-                              label: 'Tồn kho',
-                              hintText: '18',
-                              keyboardType: TextInputType.number,
-                              validator: (value) {
-                                final parsed = int.tryParse((value ?? '').trim());
-                                if (parsed == null || parsed < 0) {
-                                  return 'Vui lòng nhập tồn kho hợp lệ';
-                                }
-                                return null;
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
                       _buildTextField(
                         controller: _imageUrlController,
                         label: 'URL ảnh',
                         hintText: 'https://...',
                         keyboardType: TextInputType.url,
                       ),
-                      const SizedBox(height: 12),
-                      _buildTextField(
-                        controller: _descriptionController,
-                        label: 'Mô tả',
-                        hintText: 'Mô tả ngắn về phụ kiện',
-                        maxLines: 4,
-                      ),
+
                       const SizedBox(height: 20),
                       SizedBox(
                         width: double.infinity,

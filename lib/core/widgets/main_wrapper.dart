@@ -216,12 +216,12 @@ class _MainWrapperState extends State<MainWrapper> {
           BottomNavigationBarItem(
             icon: Icon(Icons.pets_outlined),
             activeIcon: Icon(Icons.pets),
-            label: 'Mua thú cưng',
+            label: 'Thú cưng',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.storefront_outlined),
             activeIcon: Icon(Icons.storefront),
-            label: 'Cửa hàng',
+            label: 'Phụ kiện',
           ),
           BottomNavigationBarItem(
             icon: Icon(Icons.person_outline),

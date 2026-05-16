@@ -8,6 +8,8 @@ import '../../home/pages/pet_detail_page.dart';
 import '../../home/pages/product_detail_page.dart';
 import '../../home/services/pet_repository.dart';
 import '../../home/services/product_repository.dart';
+import 'admin_pet_form_page.dart';
+import 'admin_product_form_page.dart';
 
 class AdminWarehousePage extends StatefulWidget {
   const AdminWarehousePage({super.key});
@@ -323,18 +325,61 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
                       icon: const Icon(Icons.tune),
                       label: const Text('Bộ lọc'),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: Wrap(
-                          spacing: 8,
-                          children: [
-                            _buildFilterChip('Tất cả'),
-                            _buildFilterChip('Thú cưng'),
-                            _buildFilterChip('Phụ kiện'),
-                          ],
+                    const Spacer(),
+                    PopupMenuButton<String>(
+                      onSelected: (value) async {
+                        if (!mounted) return;
+                        Widget page;
+                        if (value == 'pet') {
+                          page = const AdminPetFormPage();
+                        } else {
+                          page = const AdminProductFormPage();
+                        }
+                        final added = await Navigator.push<bool>(
+                          context,
+                          MaterialPageRoute(builder: (_) => page),
+                        );
+                        if (added == true && mounted) {
+                          _reload();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                value == 'pet'
+                                    ? 'Đã thêm thú cưng mới'
+                                    : 'Đã thêm phụ kiện mới',
+                              ),
+                            ),
+                          );
+                        }
+                      },
+                      offset: const Offset(0, 48),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      itemBuilder: (context) => [
+                        const PopupMenuItem(
+                          value: 'pet',
+                          child: ListTile(
+                            leading: Icon(Icons.pets_outlined, color: Color(0xFF2F80ED)),
+                            title: Text('Thú cưng'),
+                            contentPadding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
+                          ),
                         ),
+                        const PopupMenuItem(
+                          value: 'product',
+                          child: ListTile(
+                            leading: Icon(Icons.shopping_bag_outlined, color: Color(0xFF3E7C63)),
+                            title: Text('Phụ kiện'),
+                            contentPadding: EdgeInsets.zero,
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        ),
+                      ],
+                      child: OutlinedButton.icon(
+                        onPressed: null,
+                        icon: const Icon(Icons.add),
+                        label: const Text('Thêm mới sản phẩm'),
                       ),
                     ),
                   ],
