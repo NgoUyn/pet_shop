@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/pet_provider.dart';
+import '../../../core/utils/price_helper.dart';
 import '../../auth/pages/login_page.dart';
 import '../../auth/services/auth_session.dart';
 import '../../cart/services/cart_repository.dart';
 import '../../favorites/services/favorite_repository.dart';
-import 'pet_detail_page.dart';
 import '../services/pet_repository.dart';
+import '../widgets/pet_card.dart';
+import 'pet_detail_page.dart';
 
 class PetListPage extends StatefulWidget {
   const PetListPage({super.key});
@@ -15,31 +18,29 @@ class PetListPage extends StatefulWidget {
 }
 
 class _PetListPageState extends State<PetListPage> {
-  late Future<List<PetItem>> _future;
   Set<int> _favoritePetIds = {};
 
   @override
   void initState() {
     super.initState();
-    _future = PetRepository.instance.listActivePets();
-    PetRepository.instance.changeToken.addListener(_handlePetsChanged);
+    // Load pets via PetProvider (single source of truth)
+    PetProvider.instance.loadPets();
+    PetProvider.instance.addListener(_onPetsChanged);
     _loadFavorites();
   }
 
   @override
   void dispose() {
-    PetRepository.instance.changeToken.removeListener(_handlePetsChanged);
+    PetProvider.instance.removeListener(_onPetsChanged);
     super.dispose();
   }
 
-  void _handlePetsChanged() {
-    _reload();
+  void _onPetsChanged() {
+    if (mounted) setState(() {});
   }
 
   void _reload() {
-    setState(() {
-      _future = PetRepository.instance.listActivePets();
-    });
+    PetProvider.instance.reload();
     _loadFavorites();
   }
 
@@ -49,19 +50,6 @@ class _PetListPageState extends State<PetListPage> {
     setState(() {
       _favoritePetIds = favorites.map((item) => item.petId).toSet();
     });
-  }
-
-  String _formatPrice(double value) {
-    final formatted = value.toStringAsFixed(0);
-    final buffer = StringBuffer();
-    for (var i = 0; i < formatted.length; i++) {
-      final fromEnd = formatted.length - i;
-      buffer.write(formatted[i]);
-      if (fromEnd > 1 && fromEnd % 3 == 1) {
-        buffer.write('.');
-      }
-    }
-    return '$bufferđ';
   }
 
   Future<void> _ensureLoggedIn() async {
@@ -109,108 +97,6 @@ class _PetListPageState extends State<PetListPage> {
     }
   }
 
-  Widget _buildPetImage() {
-    return Container(
-      color: AppColors.background,
-      alignment: Alignment.center,
-      child: const Icon(Icons.pets, color: AppColors.textLight, size: 44),
-    );
-  }
-
-  Widget _buildPetCard(PetItem item) {
-    final price = item.price;
-    final isFavorited = _favoritePetIds.contains(item.petId);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  _buildPetImage(),
-                  Positioned(
-                    right: 6,
-                    top: 6,
-                    child: Column(
-                      children: [
-                        Material(
-                          color: AppColors.white,
-                          borderRadius: BorderRadius.circular(999),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(999),
-                            onTap: () => _addPetToFavorites(item),
-                            child: Padding(
-                              padding: const EdgeInsets.all(8),
-                              child: Icon(
-                                isFavorited ? Icons.favorite : Icons.favorite_border,
-                                size: 20,
-                                color: isFavorited ? Colors.red : AppColors.textDark,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Material(
-                          color: AppColors.white,
-                          borderRadius: BorderRadius.circular(999),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(999),
-                            onTap: () => _addPetToCart(item),
-                            child: const Padding(
-                              padding: EdgeInsets.all(8),
-                              child: Icon(Icons.add_shopping_cart_outlined, size: 20, color: AppColors.textDark),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.petName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.textDark),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  item.species,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.textLight, fontSize: 12),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  price == null ? '-' : _formatPrice(price),
-                  style: const TextStyle(
-                    color: AppColors.secondary,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -228,53 +114,57 @@ class _PetListPageState extends State<PetListPage> {
           ),
         ],
       ),
-      body: FutureBuilder<List<PetItem>>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: _buildBody(),
+    );
+  }
 
-          if (snapshot.hasError) {
-            return const Center(
-              child: Text('Không thể tải danh sách thú cưng'),
-            );
-          }
+  Widget _buildBody() {
+    final provider = PetProvider.instance;
 
-          final items = snapshot.data ?? [];
-          if (items.isEmpty) {
-            return const Center(
-              child: Text('Chưa có thú cưng nào'),
-            );
-          }
+    if (provider.isLoading && provider.pets.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-          return GridView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: items.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 0.72,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-            ),
-            itemBuilder: (context, index) {
-              final item = items[index];
-              return InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => PetDetailPage(pet: item),
-                    ),
-                  );
-                },
-                child: _buildPetCard(item),
-              );
-            },
-          );
-        },
+    if (provider.error != null && provider.pets.isEmpty) {
+      return const Center(
+        child: Text('Không thể tải danh sách thú cưng'),
+      );
+    }
+
+    final items = provider.pets;
+    if (items.isEmpty) {
+      return const Center(
+        child: Text('Chưa có thú cưng nào'),
+      );
+    }
+
+    return GridView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: items.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: 0.72,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
       ),
+      itemBuilder: (context, index) {
+        final item = items[index];
+        return PetCard(
+          item: item,
+          compact: true,
+          isFavorited: _favoritePetIds.contains(item.petId),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PetDetailPage(pet: item),
+              ),
+            );
+          },
+          onFavoriteTap: () => _addPetToFavorites(item),
+          onCartTap: () => _addPetToCart(item),
+        );
+      },
     );
   }
 }

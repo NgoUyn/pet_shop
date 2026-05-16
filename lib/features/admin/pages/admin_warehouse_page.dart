@@ -1,23 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/pet_provider.dart';
+import '../../../core/services/product_provider.dart';
+import '../../../core/utils/price_helper.dart';
 import '../../home/pages/pet_detail_page.dart';
 import '../../home/pages/product_detail_page.dart';
 import '../../home/services/pet_repository.dart';
 import '../../home/services/product_repository.dart';
-
-String _formatMoney(double value) {
-  final formatted = value.toStringAsFixed(0);
-  final buffer = StringBuffer();
-  for (var i = 0; i < formatted.length; i++) {
-    final fromEnd = formatted.length - i;
-    buffer.write(formatted[i]);
-    if (fromEnd > 1 && fromEnd % 3 == 1) {
-      buffer.write('.');
-    }
-  }
-  return '${buffer.toString()}đ';
-}
 
 class AdminWarehousePage extends StatefulWidget {
   const AdminWarehousePage({super.key});
@@ -35,6 +25,15 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
   void initState() {
     super.initState();
     _future = _WarehouseData.load();
+    PetRepository.instance.changeToken.addListener(_reload);
+    ProductRepository.instance.changeToken.addListener(_reload);
+  }
+
+  @override
+  void dispose() {
+    PetRepository.instance.changeToken.removeListener(_reload);
+    ProductRepository.instance.changeToken.removeListener(_reload);
+    super.dispose();
   }
 
   void _reload() {
@@ -368,7 +367,7 @@ class _WarehouseItem {
         kind = _WarehouseKind.pet,
         title = pet.petName,
         subtitle = '${pet.species} • ${pet.isActive ? 'Đang bán' : 'Ngừng bán'}',
-        trailingText = pet.price == null ? 'Chưa có giá' : _formatMoney(pet.price!),
+        trailingText = pet.price == null ? 'Chưa có giá' : formatPrice(pet.price!),
         imageUrl = pet.imageUrl,
         searchText = '${pet.petName} ${pet.species} ${pet.description ?? ''} ${pet.gender ?? ''}'.toLowerCase();
 
@@ -378,7 +377,7 @@ class _WarehouseItem {
         kind = _WarehouseKind.product,
         title = product.productName,
         subtitle = 'Tồn kho: ${product.stockQuantity} • ${product.isActive ? 'Đang bán' : 'Ngừng bán'}',
-        trailingText = _formatMoney(product.price),
+        trailingText = formatPrice(product.price),
         imageUrl = product.imageUrl,
         searchText = '${product.productName} ${product.description ?? ''}'.toLowerCase();
 

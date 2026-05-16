@@ -1,11 +1,11 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/product_provider.dart';
 import '../../auth/pages/login_page.dart';
 import '../../auth/services/auth_session.dart';
 import '../../cart/services/cart_repository.dart';
 import '../../favorites/services/favorite_repository.dart';
+import '../widgets/product_card.dart';
 import 'product_detail_page.dart';
 import '../services/product_repository.dart';
 
@@ -17,7 +17,6 @@ class ShopListPage extends StatefulWidget {
 }
 
 class _ShopListPageState extends State<ShopListPage> {
-  late Future<List<ProductItem>> _future;
   Set<int> _favoriteProductIds = {};
   final _searchController = TextEditingController();
   bool _isSearching = false;
@@ -26,26 +25,25 @@ class _ShopListPageState extends State<ShopListPage> {
   @override
   void initState() {
     super.initState();
-    _future = ProductRepository.instance.listActiveProducts();
-    ProductRepository.instance.changeToken.addListener(_handleProductsChanged);
+    ProductProvider.instance.addListener(_onProductsChanged);
     _loadFavorites();
   }
 
   @override
   void dispose() {
     _searchController.dispose();
-    ProductRepository.instance.changeToken.removeListener(_handleProductsChanged);
+    ProductProvider.instance.removeListener(_onProductsChanged);
     super.dispose();
   }
 
-  void _handleProductsChanged() {
-    _reload();
+  void _onProductsChanged() {
+    if (mounted) {
+      setState(() {});
+    }
   }
 
   void _reload() {
-    setState(() {
-      _future = ProductRepository.instance.listActiveProducts();
-    });
+    ProductProvider.instance.reload();
     _loadFavorites();
   }
 
@@ -61,43 +59,6 @@ class _ShopListPageState extends State<ShopListPage> {
     setState(() {
       _favoriteProductIds = favorites.map((item) => item.productId).toSet();
     });
-  }
-
-  String _formatPrice(double value) {
-    final formatted = value.toStringAsFixed(0);
-    final buffer = StringBuffer();
-    for (var i = 0; i < formatted.length; i++) {
-      final fromEnd = formatted.length - i;
-      buffer.write(formatted[i]);
-      if (fromEnd > 1 && fromEnd % 3 == 1) {
-        buffer.write('.');
-      }
-    }
-    return '$bufferđ';
-  }
-
-  Widget _buildImage(String? url) {
-    final normalized = (url ?? '').trim();
-    if (normalized.isEmpty) {
-      return Container(
-        color: AppColors.background,
-        alignment: Alignment.center,
-        child: const Icon(Icons.image_outlined, color: AppColors.textLight, size: 44),
-      );
-    }
-
-    return Image.network(
-      normalized,
-      width: double.infinity,
-      fit: BoxFit.cover,
-      errorBuilder: (context, error, stackTrace) {
-        return Container(
-          color: AppColors.background,
-          alignment: Alignment.center,
-          child: const Icon(Icons.broken_image_outlined, color: AppColors.textLight, size: 44),
-        );
-      },
-    );
   }
 
   Future<void> _addToCart(ProductItem item) async {
@@ -169,97 +130,17 @@ class _ShopListPageState extends State<ShopListPage> {
     }
   }
 
-  Widget _buildProductCard(ProductItem item) {
-    final isFavorited = _favoriteProductIds.contains(item.productId);
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  _buildImage(item.imageUrl),
-                  Positioned(
-                    right: 6,
-                    top: 6,
-                    child: Column(
-                      children: [
-                        Material(
-                          color: AppColors.white,
-                          borderRadius: BorderRadius.circular(999),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(999),
-                            onTap: () => _toggleFavorite(item),
-                            child: Padding(
-                              padding: const EdgeInsets.all(8),
-                              child: Icon(
-                                isFavorited ? Icons.favorite : Icons.favorite_border,
-                                color: isFavorited ? Colors.red : AppColors.textDark,
-                                size: 20,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Material(
-                          color: AppColors.white,
-                          borderRadius: BorderRadius.circular(999),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(999),
-                            onTap: () => _addToCart(item),
-                            child: const Padding(
-                              padding: EdgeInsets.all(8),
-                              child: Icon(
-                                Icons.add_shopping_cart_outlined,
-                                color: AppColors.textDark,
-                                size: 20,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.productName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.textDark),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  _formatPrice(item.price),
-                  style: const TextStyle(
-                    color: AppColors.secondary,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    final provider = ProductProvider.instance;
+    final items = provider.products;
+    final isLoading = provider.isLoading;
+    final error = provider.error;
+
+    final filtered = _query.isEmpty
+        ? items
+        : items.where((p) => p.productName.toLowerCase().contains(_query)).toList();
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -288,61 +169,60 @@ class _ShopListPageState extends State<ShopListPage> {
           ],
         ],
       ),
-      body: FutureBuilder<List<ProductItem>>(
-        future: _future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      body: _buildBody(filtered, isLoading, error),
+    );
+  }
 
-          if (snapshot.hasError) {
-            return Center(
-              child: Text(
-                'Không thể tải danh sách vật phẩm',
-                style: const TextStyle(color: AppColors.textDark),
-              ),
-            );
-          }
+  Widget _buildBody(List<ProductItem> filtered, bool isLoading, String? error) {
+    if (isLoading && filtered.isEmpty) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-          final items = snapshot.data ?? [];
-          final filtered = _query.isEmpty ? items : items.where((p) => p.productName.toLowerCase().contains(_query)).toList();
+    if (error != null && filtered.isEmpty) {
+      return Center(
+        child: Text(
+          error,
+          style: const TextStyle(color: AppColors.textDark),
+        ),
+      );
+    }
 
-          if (filtered.isEmpty) {
-            return Center(
-              child: Text(
-                _query.isEmpty ? 'Chưa có vật phẩm nào' : 'Không tìm thấy "$_query"',
-                style: const TextStyle(color: AppColors.textLight),
-              ),
-            );
-          }
+    if (filtered.isEmpty) {
+      return Center(
+        child: Text(
+          _query.isEmpty ? 'Chưa có vật phẩm nào' : 'Không tìm thấy "$_query"',
+          style: const TextStyle(color: AppColors.textLight),
+        ),
+      );
+    }
 
-          return GridView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: filtered.length,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              childAspectRatio: 0.72,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-            ),
-            itemBuilder: (context, index) {
-              final item = filtered[index];
-              return InkWell(
-                borderRadius: BorderRadius.circular(14),
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ProductDetailPage(product: item),
-                    ),
-                  );
-                },
-                child: _buildProductCard(item),
-              );
-            },
-          );
-        },
+    return GridView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: filtered.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        childAspectRatio: 0.72,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
       ),
+      itemBuilder: (context, index) {
+        final item = filtered[index];
+        final isFavorited = _favoriteProductIds.contains(item.productId);
+        return ProductCard(
+          item: item,
+          isFavorited: isFavorited,
+          onFavoriteTap: () => _toggleFavorite(item),
+          onCartTap: () => _addToCart(item),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ProductDetailPage(product: item),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

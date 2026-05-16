@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/services/pet_provider.dart';
 
 class PetItem {
   PetItem({
@@ -65,6 +66,8 @@ class PetRepository {
 
   void _notifyChanged() {
     changeToken.value = changeToken.value + 1;
+    // Also trigger PetProvider to reload
+    PetProvider.instance.reload();
   }
 
   Future<List<PetItem>> listActivePets({int limit = 200}) async {

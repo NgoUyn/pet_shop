@@ -16,7 +16,7 @@ class CartPage extends StatefulWidget {
 class _CartPageState extends State<CartPage> {
   List<CartProductEntry> _items = [];
   bool _isLoading = true;
-  bool _isCheckingOut = false;
+  final bool _isCheckingOut = false;
   final Set<int> _selectedIds = {};
 
   @override

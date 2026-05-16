@@ -931,6 +931,17 @@ class _AdminPetCatalogPageState extends State<_AdminPetCatalogPage> {
   void initState() {
     super.initState();
     _future = PetRepository.instance.listActivePets();
+    PetRepository.instance.changeToken.addListener(_handlePetsChanged);
+  }
+
+  @override
+  void dispose() {
+    PetRepository.instance.changeToken.removeListener(_handlePetsChanged);
+    super.dispose();
+  }
+
+  void _handlePetsChanged() {
+    _reload();
   }
 
   void _reload() {
@@ -986,10 +997,13 @@ class _AdminPetCatalogPageState extends State<_AdminPetCatalogPage> {
                               color: AppColors.primary,
                               trailing: const Icon(Icons.chevron_right, color: AppColors.textLight),
                               onTap: () async {
-                                await Navigator.push(
+                                final changed = await Navigator.push<bool>(
                                   context,
                                   MaterialPageRoute(builder: (_) => PetDetailPage(pet: pet)),
                                 );
+                                if (changed == true && mounted) {
+                                  _reload();
+                                }
                               },
                             ),
                           );
@@ -1018,6 +1032,17 @@ class _AdminAccessoryCatalogPageState extends State<_AdminAccessoryCatalogPage> 
   void initState() {
     super.initState();
     _future = ProductRepository.instance.listActiveProducts();
+    ProductRepository.instance.changeToken.addListener(_handleProductsChanged);
+  }
+
+  @override
+  void dispose() {
+    ProductRepository.instance.changeToken.removeListener(_handleProductsChanged);
+    super.dispose();
+  }
+
+  void _handleProductsChanged() {
+    _reload();
   }
 
   void _reload() {

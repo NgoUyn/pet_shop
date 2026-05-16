@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/db/app_database.dart';
+import '../../../core/services/product_provider.dart';
 
 class ProductItem {
   ProductItem({
@@ -49,6 +50,8 @@ class ProductRepository {
 
   void _notifyChanged() {
     changeToken.value = changeToken.value + 1;
+    // Also trigger ProductProvider to reload
+    ProductProvider.instance.reload();
   }
 
   Future<List<ProductItem>> listActiveProducts({int limit = 200}) async {

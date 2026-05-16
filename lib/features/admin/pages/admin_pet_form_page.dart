@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/cloudinary_helper.dart';
 import '../../home/services/pet_repository.dart';
 
 class AdminPetFormPage extends StatefulWidget {
@@ -69,7 +70,8 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
     try {
       final file = await _imagePicker.pickImage(
         source: ImageSource.gallery,
-        imageQuality: 85,
+        imageQuality: 80,
+        maxWidth: 1080,
       );
       if (file == null) return;
       setState(() {
@@ -108,28 +110,40 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
   }
 
   Widget _buildImagePreview() {
-    final path = _imagePath?.trim();
-    if (path != null && path.isNotEmpty) {
-      return ClipRRect(
+    final hasNewImage = (_imagePath?.trim().isNotEmpty == true);
+    final hasExistingImage = (_initialImageUrl ?? '').trim().isNotEmpty;
+
+    Widget imageWidget;
+    if (hasNewImage) {
+      imageWidget = ClipRRect(
         borderRadius: BorderRadius.circular(20),
         child: Image.file(
-          File(path),
+          File(_imagePath!.trim()),
           height: 180,
           width: double.infinity,
           fit: BoxFit.cover,
           errorBuilder: (_, __, ___) => _buildPreviewPlaceholder(),
         ),
       );
-    }
-
-    final initialImageUrl = (_initialImageUrl ?? '').trim();
-    if (initialImageUrl.isNotEmpty) {
-      final isNetwork = initialImageUrl.startsWith('http://') || initialImageUrl.startsWith('https://');
+    } else if (hasExistingImage) {
+      final url = _initialImageUrl!.trim();
+      final isNetwork = url.startsWith('http://') || url.startsWith('https://');
       if (isNetwork) {
-        return ClipRRect(
+        imageWidget = ClipRRect(
           borderRadius: BorderRadius.circular(20),
           child: Image.network(
-            initialImageUrl,
+            url,
+            height: 180,
+            width: double.infinity,
+            fit: BoxFit.cover,
+            errorBuilder: (_, __, ___) => _buildPreviewPlaceholder(),
+          ),
+        );
+      } else {
+        imageWidget = ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Image.file(
+            File(url),
             height: 180,
             width: double.infinity,
             fit: BoxFit.cover,
@@ -137,20 +151,44 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
           ),
         );
       }
-
-      return ClipRRect(
-        borderRadius: BorderRadius.circular(20),
-        child: Image.file(
-          File(initialImageUrl),
-          height: 180,
-          width: double.infinity,
-          fit: BoxFit.cover,
-          errorBuilder: (_, __, ___) => _buildPreviewPlaceholder(),
-        ),
-      );
+    } else {
+      imageWidget = _buildPreviewPlaceholder();
     }
 
-    return _buildPreviewPlaceholder();
+    // Wrap in a tappable InkWell so users can tap the image to change it
+    return InkWell(
+      onTap: _isSaving ? null : _pickImage,
+      borderRadius: BorderRadius.circular(20),
+      child: Stack(
+        children: [
+          imageWidget,
+          // Semi-transparent overlay with "Change image" text
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              decoration: BoxDecoration(
+                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+                color: Colors.black.withValues(alpha: 0.45),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.camera_alt, size: 16, color: Colors.white),
+                  const SizedBox(width: 6),
+                  Text(
+                    hasNewImage || hasExistingImage ? 'Chạm để đổi ảnh' : 'Chạm để thêm ảnh',
+                    style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _savePet() async {
@@ -163,7 +201,21 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
     });
 
     try {
-      final imageUrl = (_imagePath?.trim().isNotEmpty ?? false) ? _imagePath!.trim() : _initialImageUrl;
+      // Upload to Cloudinary if a new image was picked, otherwise use existing URL
+      String? imageUrl;
+      if (_imagePath?.trim().isNotEmpty == true) {
+        imageUrl = await CloudinaryHelper.uploadImage(_imagePath!.trim());
+        if (imageUrl == null) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Không thể tải ảnh lên Cloudinary. Vui lòng thử lại.')),
+          );
+          setState(() => _isSaving = false);
+          return;
+        }
+      } else {
+        imageUrl = _initialImageUrl;
+      }
 
       final breed = _breedController.text.trim();
       final resolvedBreed = breed.isEmpty ? null : breed;

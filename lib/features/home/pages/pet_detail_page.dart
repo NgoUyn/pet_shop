@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/services/pet_provider.dart';
+import '../../../core/utils/price_helper.dart';
 import '../../admin/pages/admin_pet_form_page.dart';
 import '../services/pet_repository.dart';
 
@@ -20,47 +22,32 @@ class _PetDetailPageState extends State<PetDetailPage> {
   void initState() {
     super.initState();
     _currentPet = widget.pet;
+    // Listen for updates from PetProvider
+    PetProvider.instance.addListener(_onPetsChanged);
   }
 
-  String _formatPrice(double value) {
-    final formatted = value.toStringAsFixed(0);
-    final buffer = StringBuffer();
-    for (var i = 0; i < formatted.length; i++) {
-      final fromEnd = formatted.length - i;
-      buffer.write(formatted[i]);
-      if (fromEnd > 1 && fromEnd % 3 == 1) {
-        buffer.write('.');
-      }
+  @override
+  void dispose() {
+    PetProvider.instance.removeListener(_onPetsChanged);
+    super.dispose();
+  }
+
+  void _onPetsChanged() {
+    if (!mounted) return;
+    // Check if our pet was updated in the provider
+    final updated = PetProvider.instance.pets
+        .where((p) => p.petId == _currentPet.petId)
+        .firstOrNull;
+    if (updated != null) {
+      setState(() {
+        _currentPet = updated;
+      });
     }
-    return '$bufferđ';
   }
 
   String _formatDateTime(DateTime value) {
     String twoDigits(int input) => input.toString().padLeft(2, '0');
     return '${twoDigits(value.day)}/${twoDigits(value.month)}/${value.year} ${twoDigits(value.hour)}:${twoDigits(value.minute)}';
-  }
-
-  String _genderLabel(String? gender) {
-    final normalized = (gender ?? '').trim();
-    if (normalized.isEmpty) {
-      return 'Chưa cập nhật';
-    }
-
-    final lower = normalized.toLowerCase();
-    if (lower.contains('female') || lower.contains('cái')) {
-      return 'Cái';
-    }
-    if (lower.contains('male') || lower.contains('đực')) {
-      return 'Đực';
-    }
-    return normalized;
-  }
-
-  String _ageLabel(int? age) {
-    if (age == null) {
-      return 'Chưa cập nhật';
-    }
-    return '$age tháng tuổi';
   }
 
   Widget _buildHeroImage(PetItem pet) {
@@ -201,7 +188,8 @@ class _PetDetailPageState extends State<PetDetailPage> {
       return;
     }
 
-    final refreshed = await PetRepository.instance.getPetById(_currentPet.petId);
+    // PetProvider will auto-refresh via _onPetsChanged listener
+    final refreshed = await PetProvider.instance.getPetById(_currentPet.petId);
     if (!mounted || refreshed == null) {
       return;
     }
@@ -330,8 +318,8 @@ class _PetDetailPageState extends State<PetDetailPage> {
                       const SizedBox(height: 18),
                       _buildInfoRow('Mã thú cưng', pet.petId.toString()),
                       _buildInfoRow('Loài', pet.species),
-                      _buildInfoRow('Giới tính', _genderLabel(pet.gender)),
-                      _buildInfoRow('Tuổi', _ageLabel(pet.age)),
+                      _buildInfoRow('Giới tính', genderLabel(pet.gender)),
+                      _buildInfoRow('Tuổi', formatAge(pet.age).isEmpty ? 'Chưa cập nhật' : formatAge(pet.age)),
                       _buildInfoRow('Trạng thái', pet.isActive ? 'Đang bán' : 'Ngừng bán'),
                       _buildInfoRow('Ngày tạo', _formatDateTime(pet.createdAt.toLocal())),
                       if (description.isNotEmpty) ...[
@@ -363,7 +351,7 @@ class _PetDetailPageState extends State<PetDetailPage> {
                     children: [
                       const SizedBox(height: 2),
                       Text(
-                        pet.price == null ? 'Chưa có giá' : _formatPrice(pet.price!),
+                        pet.price == null ? 'Chưa có giá' : formatPrice(pet.price!),
                         style: const TextStyle(
                           color: Color(0xFFF59E0B),
                           fontWeight: FontWeight.w800,
@@ -414,7 +402,7 @@ class _PetDetailPageState extends State<PetDetailPage> {
                               ),
                               const Spacer(),
                               Text(
-                                _formatPrice(pet.price!),
+                                formatPrice(pet.price!),
                                 style: const TextStyle(
                                   color: Color(0xFFF59E0B),
                                   fontSize: 18,

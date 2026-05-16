@@ -133,35 +133,71 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
   }
 
   Widget _buildImagePreview() {
-    final path = _imagePath?.trim();
-    if (path != null && path.isNotEmpty) {
-      return ClipRRect(
+    final hasNewImage = (_imagePath?.trim().isNotEmpty == true);
+    final existingUrl = _imageUrlController.text.trim();
+    final hasExistingImage = existingUrl.isNotEmpty && (existingUrl.startsWith('http://') || existingUrl.startsWith('https://'));
+
+    Widget imageWidget;
+    if (hasNewImage) {
+      imageWidget = ClipRRect(
         borderRadius: BorderRadius.circular(20),
         child: Image.file(
-          File(path),
+          File(_imagePath!.trim()),
           height: 180,
           width: double.infinity,
           fit: BoxFit.cover,
           errorBuilder: (_, __, ___) => _buildPreviewPlaceholder(),
         ),
       );
-    }
-
-    final imageUrl = _imageUrlController.text.trim();
-    if (imageUrl.isNotEmpty && (imageUrl.startsWith('http://') || imageUrl.startsWith('https://'))) {
-      return ClipRRect(
+    } else if (hasExistingImage) {
+      imageWidget = ClipRRect(
         borderRadius: BorderRadius.circular(20),
         child: Image.network(
-          imageUrl,
+          existingUrl,
           height: 180,
           width: double.infinity,
           fit: BoxFit.cover,
           errorBuilder: (_, __, ___) => _buildPreviewPlaceholder(),
         ),
       );
+    } else {
+      imageWidget = _buildPreviewPlaceholder();
     }
 
-    return _buildPreviewPlaceholder();
+    // Wrap in a tappable InkWell so users can tap the image to change it
+    return InkWell(
+      onTap: _isSaving ? null : _pickImage,
+      borderRadius: BorderRadius.circular(20),
+      child: Stack(
+        children: [
+          imageWidget,
+          // Semi-transparent overlay with "Change image" text
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              decoration: BoxDecoration(
+                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(20)),
+                color: Colors.black.withValues(alpha: 0.45),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.camera_alt, size: 16, color: Colors.white),
+                  const SizedBox(width: 6),
+                  Text(
+                    hasNewImage || hasExistingImage ? 'Chạm để đổi ảnh' : 'Chạm để thêm ảnh',
+                    style: const TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _saveProduct() async {
@@ -286,7 +322,7 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<int>(
-                        value: _selectedCategoryId,
+                        initialValue: _selectedCategoryId,
                         decoration: InputDecoration(
                           labelText: 'Danh mục',
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
@@ -303,7 +339,7 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
-                        value: _status,
+                        initialValue: _status,
                         decoration: InputDecoration(
                           labelText: 'Trạng thái',
                           border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
