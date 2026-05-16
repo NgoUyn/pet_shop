@@ -5,9 +5,13 @@ import '../../cart/services/cart_repository.dart';
 import 'online_payment_page.dart';
 
 class CheckoutPage extends StatefulWidget {
-  const CheckoutPage({super.key, this.selectedCartItemIds});
+  const CheckoutPage({super.key, this.selectedCartItemIds, this.directItem});
 
   final List<int>? selectedCartItemIds;
+
+  /// If provided, this single item is used directly (bypasses cart loading).
+  /// Used for "Mua" (Buy Now) button from product/pet cards.
+  final CartProductEntry? directItem;
 
   @override
   State<CheckoutPage> createState() => _CheckoutPageState();
@@ -29,6 +33,18 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
   Future<void> _loadData() async {
     final profile = await ProfileRepository.instance.getCurrentProfile();
+
+    // If directItem is provided, use it directly (bypass cart loading)
+    if (widget.directItem != null) {
+      if (!mounted) return;
+      setState(() {
+        _profile = profile;
+        _items = [widget.directItem!];
+        _addressCtrl.text = profile?.address ?? '';
+      });
+      return;
+    }
+
     final allItems = await CartRepository.instance.listProductEntriesForCurrentUser();
     final selected = widget.selectedCartItemIds;
     final items = (selected != null && selected.isNotEmpty)
@@ -70,6 +86,30 @@ class _CheckoutPageState extends State<CheckoutPage> {
     return (_total - _maxRedeemableDiscount).clamp(0, double.infinity);
   }
 
+  /// For directItem purchases, first add the item to cart, then get its cartItemId.
+  Future<int?> _ensureDirectItemInCart() async {
+    final direct = widget.directItem!;
+    if (direct.isPet && direct.petId != null) {
+      await CartRepository.instance.addPetToCart(petId: direct.petId!);
+    } else if (direct.productId != null) {
+      await CartRepository.instance.addProductToCart(productId: direct.productId!, quantity: direct.quantity);
+    } else {
+      throw StateError('Không thể xác định loại sản phẩm');
+    }
+
+    // Reload cart items to get the newly added cartItemId
+    final allItems = await CartRepository.instance.listProductEntriesForCurrentUser();
+    // Find the matching item by productId or petId
+    if (direct.isPet && direct.petId != null) {
+      final match = allItems.where((e) => e.petId == direct.petId).toList();
+      if (match.isNotEmpty) return match.first.cartItemId;
+    } else if (direct.productId != null) {
+      final match = allItems.where((e) => e.productId == direct.productId).toList();
+      if (match.isNotEmpty) return match.first.cartItemId;
+    }
+    return null;
+  }
+
   Future<void> _confirm() async {
     if (_items.isEmpty) return;
 
@@ -106,6 +146,15 @@ class _CheckoutPageState extends State<CheckoutPage> {
 
     setState(() => _isProcessing = true);
     try {
+      // For directItem purchases, add to cart first to get a cartItemId
+      List<int>? checkoutItemIds = widget.selectedCartItemIds;
+      if (widget.directItem != null) {
+        final cartItemId = await _ensureDirectItemInCart();
+        if (cartItemId != null) {
+          checkoutItemIds = [cartItemId];
+        }
+      }
+
       if (_paymentMethod == 'Bank Transfer') {
         final result = await Navigator.push(
           context,
@@ -116,7 +165,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
               payableAmount: _finalTotal,
               shippingAddress: shippingAddress,
               useLoyaltyPoints: _useLoyaltyPoints,
-              selectedCartItemIds: widget.selectedCartItemIds,
+              selectedCartItemIds: checkoutItemIds,
             ),
           ),
         );
@@ -132,7 +181,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
         paymentMethod: _paymentMethod,
         shippingAddress: shippingAddress,
         useLoyaltyPoints: _useLoyaltyPoints,
-        selectedCartItemIds: widget.selectedCartItemIds,
+        selectedCartItemIds: checkoutItemIds,
       );
       if (!mounted) return;
       // Return success to caller

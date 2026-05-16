@@ -9,10 +9,12 @@ import '../../../core/utils/price_helper.dart';
 import '../../auth/pages/login_page.dart';
 import '../../auth/services/auth_session.dart';
 import '../../cart/services/cart_repository.dart';
+import '../../cart/pages/checkout_page.dart';
 import '../../favorites/services/favorite_repository.dart';
 import '../services/pet_repository.dart';
 import '../services/product_repository.dart';
 import '../widgets/pet_card.dart';
+import '../widgets/product_card.dart';
 import 'pet_list_page.dart';
 import 'pet_detail_page.dart';
 import 'product_detail_page.dart';
@@ -141,6 +143,54 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  void _buyProduct(ProductItem item) {
+    _ensureLoggedIn().then((_) {
+      if (!mounted || AuthSession.instance.currentUserId.value == null) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CheckoutPage(
+            directItem: CartProductEntry(
+              cartItemId: 0,
+              productId: item.productId,
+              petId: null,
+              productName: item.productName,
+              imageUrl: item.imageUrl,
+              unitPrice: item.price,
+              quantity: 1,
+              addedAt: DateTime.now(),
+              stockQuantity: item.stockQuantity,
+            ),
+          ),
+        ),
+      );
+    });
+  }
+
+  void _buyPet(PetItem item) {
+    _ensureLoggedIn().then((_) {
+      if (!mounted || AuthSession.instance.currentUserId.value == null) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CheckoutPage(
+            directItem: CartProductEntry(
+              cartItemId: 0,
+              productId: null,
+              petId: item.petId,
+              productName: item.petName,
+              imageUrl: item.imageUrl,
+              unitPrice: item.price ?? 0,
+              quantity: 1,
+              addedAt: DateTime.now(),
+              stockQuantity: 1,
+            ),
+          ),
+        ),
+      );
+    });
+  }
+
   Future<void> _togglePetFavorite(PetItem item) async {
     await _ensureLoggedIn();
     if (AuthSession.instance.currentUserId.value == null) return;
@@ -159,21 +209,6 @@ class _HomePageState extends State<HomePage> {
           content: Text(
               e.toString().replaceAll('StateError: ', ''))));
     }
-  }
-
-  String _formatPrice(double value) {
-    if (value >= 1000000) {
-      return '${(value / 1000000).toStringAsFixed(1).replaceFirst('.0', '')}tr';
-    }
-    return '${value.toStringAsFixed(0).replaceAllMapped(RegExp(r"(\d{1,3})(?=(\d{3})+(?!\d))"), (Match m) => "${m[1]}.")}đ';
-  }
-
-  String _petEmoji(String species) {
-    final s = species.toLowerCase();
-    if (s.contains('chó') || s.contains('dog')) return '🐕';
-    if (s.contains('mèo') || s.contains('cat')) return '🐱';
-    if (s.contains('hamster')) return '🐹';
-    return '🐾';
   }
 
   @override
@@ -293,6 +328,7 @@ class _HomePageState extends State<HomePage> {
                             ),
                             onFavoriteTap: () => _togglePetFavorite(filteredPets[index]),
                             onCartTap: () => _addPetToCart(filteredPets[index]),
+                            onBuyTap: () => _buyPet(filteredPets[index]),
                           ),
                         ),
                       )
@@ -306,9 +342,9 @@ class _HomePageState extends State<HomePage> {
 
                     const SizedBox(height: 24),
 
-                    // ── Sản phẩm gợi ý ─────────────────────────────
+                    // ── Phụ kiện nổi bật ───────────────────────────
                     _buildSectionHeader(
-                      'Sản phẩm gợi ý',
+                      'Phụ kiện nổi bật',
                       onAction: () => Navigator.push(context,
                           MaterialPageRoute(builder: (_) => const ShopListPage())),
                     ),
@@ -323,13 +359,24 @@ class _HomePageState extends State<HomePage> {
                           itemCount: min(6, filteredProducts.length),
                           gridDelegate:
                               const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 3,
+                            crossAxisCount: 2,
                             crossAxisSpacing: 12,
-                            mainAxisSpacing: 24,
-                            childAspectRatio: 0.7,
+                            mainAxisSpacing: 12,
+                            childAspectRatio: 0.72,
                           ),
-                          itemBuilder: (context, index) =>
-                              _buildProductTile(filteredProducts[index]),
+                          itemBuilder: (context, index) => ProductCard(
+                            item: filteredProducts[index],
+                            isFavorited: _favoriteProductIds.contains(filteredProducts[index].productId),
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ProductDetailPage(product: filteredProducts[index]),
+                              ),
+                            ),
+                            onFavoriteTap: () => _toggleProductFavorite(filteredProducts[index]),
+                            onCartTap: () => _addProductToCart(filteredProducts[index]),
+                            onBuyTap: () => _buyProduct(filteredProducts[index]),
+                          ),
                         ),
                       )
                     else
@@ -396,8 +443,6 @@ class _HomePageState extends State<HomePage> {
               (v) => setState(() => _selectedPetFilter = v)),
           _buildChip(_selectedPetFilter, 'Mèo',
               (v) => setState(() => _selectedPetFilter = v)),
-          _buildChip(_selectedPetFilter, 'Hamster',
-              (v) => setState(() => _selectedPetFilter = v)),
         ],
       ),
     );
@@ -461,235 +506,38 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  // ── Product Tile (3-col grid) ─────────────────────────────────────────
-  Widget _buildProductTile(ProductItem item) {
-    final isFavorited = _favoriteProductIds.contains(item.productId);
-    return InkWell(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => ProductDetailPage(product: item)),
-      ),
-      borderRadius: BorderRadius.circular(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(14),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
-                    blurRadius: 8,
-                  ),
-                ],
-              ),
-              alignment: Alignment.center,
-              child: item.imageUrl != null && item.imageUrl!.isNotEmpty
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: CachedNetworkImage(
-                        imageUrl: item.imageUrl!,
-                        fit: BoxFit.cover,
-                        memCacheHeight: 400,
-                        errorWidget: (context, url, error) =>
-                            const Icon(Icons.image, size: 40),
-                      ),
-                    )
-                  : Text(_productEmoji(item.productName),
-                      style: const TextStyle(fontSize: 40)),
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            item.productName,
-            textAlign: TextAlign.center,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 13,
-              fontFamily: 'Times New Roman',
-              color: AppColors.cardTextDark,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                onPressed: () => _toggleProductFavorite(item),
-                icon: Icon(
-                  isFavorited ? Icons.favorite : Icons.favorite_border,
-                  size: 20,
-                  color: isFavorited ? AppColors.accent : AppColors.cardTextGray,
-                ),
-              ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                onPressed: () => _addProductToCart(item),
-                icon: const Icon(Icons.add_shopping_cart_outlined,
-                    size: 20, color: AppColors.cardTextGray),
-              ),
-            ],
-          ),
-          Text(
-            _formatPrice(item.price),
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: AppColors.accent,
-              fontFamily: 'Times New Roman',
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _productEmoji(String name) {
-    final value = name.toLowerCase();
-    if (value.contains('pate') || value.contains('hạt')) return '🥩';
-    if (value.contains('vòng') || value.contains('dây')) return '🦴';
-    if (value.contains('tắm') || value.contains('vệ sinh')) return '🛁';
-    return '🧸';
-  }
-
   // ── Suggestion Card (horizontal scroll) ───────────────────────────────
   Widget _buildSuggestionCard(_RecommendedItem item) {
-    String name = '';
-    String priceStr = '-';
-    String? imageUrl;
-    bool isPet = item.kind == _RecommendedKind.pet;
-    final isProductFavorited =
-        !isPet && _favoriteProductIds.contains(item.product!.productId);
-    final isPetFavorited =
-        isPet && _favoritePetIds.contains(item.pet!.petId);
+    final bool isPet = item.kind == _RecommendedKind.pet;
 
     if (isPet) {
-      name = item.pet!.petName;
-      priceStr =
-          item.pet!.price != null ? formatPrice(item.pet!.price!) : '-';
-    } else {
-      name = item.product!.productName;
-      priceStr = _formatPrice(item.product!.price);
-      imageUrl = item.product!.imageUrl;
+      return PetCard(
+        item: item.pet!,
+        compact: true,
+        isFavorited: _favoritePetIds.contains(item.pet!.petId),
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => PetDetailPage(pet: item.pet!)),
+        ),
+        onFavoriteTap: () => _togglePetFavorite(item.pet!),
+        onCartTap: () => _addPetToCart(item.pet!),
+        onBuyTap: () => _buyPet(item.pet!),
+      );
     }
 
-    return InkWell(
-      borderRadius: BorderRadius.circular(16),
-      onTap: () {
-        if (isPet) {
-          Navigator.push(context,
-              MaterialPageRoute(builder: (_) => PetDetailPage(pet: item.pet!)));
-        } else {
-          Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) =>
-                      ProductDetailPage(product: item.product!)));
-        }
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 10,
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(16)),
-                child: isPet
-                    ? Container(
-                        color: AppColors.accentLight,
-                        alignment: Alignment.center,
-                        child: Text(
-                          _petEmoji(item.pet!.species),
-                          style: const TextStyle(fontSize: 44),
-                        ),
-                      )
-                    : CachedNetworkImage(
-                        imageUrl: imageUrl ?? '',
-                        fit: BoxFit.cover,
-                        width: double.infinity,
-                        memCacheHeight: 400,
-                        errorWidget: (_, __, ___) =>
-                            const Icon(Icons.image),
-                      ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontFamily: 'Times New Roman',
-                      color: AppColors.cardTextDark,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    priceStr,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      color: AppColors.accent,
-                      fontWeight: FontWeight.bold,
-                      fontFamily: 'Times New Roman',
-                    ),
-                  ),
-                  Row(
-                    children: [
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () => isPet
-                            ? _togglePetFavorite(item.pet!)
-                            : _toggleProductFavorite(item.product!),
-                        icon: Icon(
-                          isPet
-                              ? (isPetFavorited
-                                  ? Icons.favorite
-                                  : Icons.favorite_border)
-                              : (isProductFavorited
-                                  ? Icons.favorite
-                                  : Icons.favorite_border),
-                          size: 20,
-                          color: (isPet ? isPetFavorited : isProductFavorited)
-                              ? AppColors.accent
-                              : AppColors.cardTextGray,
-                        ),
-                      ),
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        onPressed: () => isPet
-                            ? _addPetToCart(item.pet!)
-                            : _addProductToCart(item.product!),
-                        icon: const Icon(Icons.add_shopping_cart_outlined,
-                            size: 20, color: AppColors.cardTextGray),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
+    return ProductCard(
+      item: item.product!,
+      isFavorited: _favoriteProductIds.contains(item.product!.productId),
+      showFavoriteIcon: true,
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ProductDetailPage(product: item.product!),
         ),
       ),
+      onFavoriteTap: () => _toggleProductFavorite(item.product!),
+      onCartTap: () => _addProductToCart(item.product!),
+      onBuyTap: () => _buyProduct(item.product!),
     );
   }
 
@@ -719,7 +567,7 @@ class _HomePageState extends State<HomePage> {
               item.productName.toLowerCase().contains('pate'))
           .toList();
     }
-    if (filter == 'Phụ kiện') {
+    if (filter == 'Vòng') {
       return items
           .where((item) =>
               item.productName.toLowerCase().contains('vòng') ||
@@ -745,34 +593,6 @@ class _HomePageState extends State<HomePage> {
 }
 
 // ── Supporting classes ────────────────────────────────────────────────────
-
-class _TagPill extends StatelessWidget {
-  const _TagPill(
-      {required this.label,
-      required this.color,
-      required this.textColor});
-  final String label;
-  final Color color;
-  final Color textColor;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: textColor,
-          fontSize: 12,
-        ),
-      ),
-    );
-  }
-}
 
 class _HomeData {
   final List<ProductItem> products;
