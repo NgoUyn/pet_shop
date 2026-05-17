@@ -16,8 +16,8 @@ import '../services/product_repository.dart';
 import '../widgets/pet_card.dart';
 import '../widgets/product_card.dart';
 import 'pet_list_page.dart';
-import 'pet_detail_page.dart';
-import 'product_detail_page.dart';
+import '../../pet_detail/pages/pet_detail_page.dart';
+import '../../product_detail/pages/product_detail_page.dart';
 import 'shop_list_page.dart';
 
 class HomePage extends StatefulWidget {

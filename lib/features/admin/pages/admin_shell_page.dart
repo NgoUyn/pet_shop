@@ -10,8 +10,8 @@ import '../../auth/services/auth_repository.dart';
 import '../../auth/services/auth_session.dart';
 import '../../chat/pages/admin_chat_inbox_page.dart';
 import '../../chat/services/chat_repository.dart';
-import '../../home/pages/pet_detail_page.dart';
-import '../../home/pages/product_detail_page.dart';
+import '../../pet_detail/pages/pet_detail_page.dart';
+import '../../product_detail/pages/product_detail_page.dart';
 import '../../home/services/product_repository.dart';
 import '../../home/services/pet_repository.dart';
 import '../../admin/pages/order_management_page.dart';
@@ -999,7 +999,7 @@ class _AdminPetCatalogPageState extends State<_AdminPetCatalogPage> {
                               onTap: () async {
                                 final changed = await Navigator.push<bool>(
                                   context,
-                                  MaterialPageRoute(builder: (_) => PetDetailPage(pet: pet)),
+                                  MaterialPageRoute(builder: (_) => PetDetailPage(pet: pet, showAdminActions: true)),
                                 );
                                 if (changed == true && mounted) {
                                   _reload();
