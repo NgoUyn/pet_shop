@@ -6,7 +6,7 @@ import '../../auth/services/auth_session.dart';
 import '../../cart/services/cart_repository.dart';
 import '../../favorites/services/favorite_repository.dart';
 import '../widgets/product_card.dart';
-import 'product_detail_page.dart';
+import '../../product_detail/pages/product_detail_page.dart';
 import '../services/product_repository.dart';
 
 class ShopListPage extends StatefulWidget {

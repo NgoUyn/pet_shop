@@ -8,7 +8,7 @@ import '../../cart/services/cart_repository.dart';
 import '../../favorites/services/favorite_repository.dart';
 import '../services/pet_repository.dart';
 import '../widgets/pet_card.dart';
-import 'pet_detail_page.dart';
+import '../../pet_detail/pages/pet_detail_page.dart';
 
 class PetListPage extends StatefulWidget {
   const PetListPage({super.key});

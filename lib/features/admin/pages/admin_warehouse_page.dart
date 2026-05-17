@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
-import '../../../core/services/pet_provider.dart';
-import '../../../core/services/product_provider.dart';
 import '../../../core/utils/price_helper.dart';
-import '../../home/pages/pet_detail_page.dart';
-import '../../home/pages/product_detail_page.dart';
+import '../../pet_detail/pages/pet_detail_page.dart';
+import '../../product_detail/pages/admin_product_detail.dart';
 import '../../home/services/pet_repository.dart';
 import '../../home/services/product_repository.dart';
 import 'admin_pet_form_page.dart';
@@ -152,8 +150,8 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
             context,
             MaterialPageRoute(
               builder: (_) => item.kind == _WarehouseKind.pet
-                  ? PetDetailPage(pet: item.pet!)
-                  : ProductDetailPage(product: item.product!, showAdminActions: true),
+                  ? PetDetailPage(pet: item.pet!, showAdminActions: true)
+                  : AdminProductDetailPage(product: item.product!),
             ),
           );
           if (changed == true && mounted) {
