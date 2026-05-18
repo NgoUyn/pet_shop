@@ -1,11 +1,12 @@
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/pet_provider.dart';
 import '../../../core/services/product_provider.dart';
-import '../../../core/utils/cloudinary_helper.dart';
 import '../../../core/utils/price_helper.dart';
+import '../../admin/services/banner_repository.dart';
 import '../../auth/pages/login_page.dart';
 import '../../auth/services/auth_session.dart';
 import '../../cart/services/cart_repository.dart';
@@ -227,29 +228,7 @@ class _HomePageState extends State<HomePage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // ── BANNER ────────────────────────────────────────────────
-            Container(
-              margin: const EdgeInsets.all(16),
-              height: 160,
-              width: double.infinity,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(20),
-                color: AppColors.accentLight,
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: CachedNetworkImage(
-                  imageUrl: CloudinaryHelper.getBannerImage('banner1'),
-                  fit: BoxFit.cover,
-                  placeholder: (context, url) =>
-                      const Center(child: CircularProgressIndicator(color: AppColors.accent)),
-                  errorWidget: (context, url, error) => Container(
-                    color: AppColors.accentLight,
-                    child: const Center(
-                        child: Icon(Icons.pets, size: 50, color: AppColors.accent)),
-                  ),
-                ),
-              ),
-            ),
+            const BannerCarousel(),
 
             FutureBuilder<_HomeData>(
               future: _homeDataFuture,
@@ -613,4 +592,173 @@ class _RecommendedItem {
   _RecommendedItem.pet(this.pet)
       : kind = _RecommendedKind.pet,
         product = null;
+}
+
+/// Auto-scrolling banner carousel that reads from Firestore in real-time.
+/// Slides left→right every 3 seconds in an infinite loop.
+class BannerCarousel extends StatefulWidget {
+  const BannerCarousel({super.key});
+
+  @override
+  State<BannerCarousel> createState() => _BannerCarouselState();
+}
+
+class _BannerCarouselState extends State<BannerCarousel> {
+  static const _autoScrollDuration = Duration(seconds: 3);
+  static const _animDuration = Duration(milliseconds: 500);
+
+  // Multiplier for virtual infinite list: large enough to never hit an edge
+  static const _virtualMultiplier = 1000;
+
+  late PageController _pageController;
+  Timer? _timer;
+  List<BannerItem> _banners = [];
+  int _virtualPage = 0;
+  StreamSubscription<List<BannerItem>>? _sub;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(initialPage: 0);
+    _sub = BannerRepository.instance.watchActiveBanners().listen((banners) {
+      if (!mounted) return;
+      final hadBanners = _banners.isNotEmpty;
+      setState(() {
+        _banners = banners;
+      });
+      if (!hadBanners && banners.isNotEmpty) {
+        _startTimer();
+      } else if (banners.isEmpty) {
+        _stopTimer();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _stopTimer();
+    _pageController.dispose();
+    _sub?.cancel();
+    super.dispose();
+  }
+
+  void _startTimer() {
+    _stopTimer();
+    if (_banners.length <= 1) return;
+    _timer = Timer.periodic(_autoScrollDuration, (_) => _nextPage());
+  }
+
+  void _stopTimer() {
+    _timer?.cancel();
+    _timer = null;
+  }
+
+  void _nextPage() {
+    if (!mounted || _banners.isEmpty) return;
+    _virtualPage++;
+    _pageController.animateToPage(
+      _virtualPage,
+      duration: _animDuration,
+      curve: Curves.easeInOut,
+    );
+  }
+
+  int _realIndex(int virtualIndex) {
+    if (_banners.isEmpty) return 0;
+    return virtualIndex % _banners.length;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_banners.isEmpty) {
+      return Container(
+        margin: const EdgeInsets.all(16),
+        height: 160,
+        decoration: BoxDecoration(
+          color: AppColors.accentLight,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Center(
+          child: Icon(Icons.pets, size: 50, color: AppColors.accent),
+        ),
+      );
+    }
+
+    if (_banners.length > 1 && _timer == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _startTimer());
+    }
+
+    final initialVirtual = _virtualMultiplier * _banners.length;
+    if (_virtualPage == 0 && _banners.length > 1) {
+      _virtualPage = initialVirtual;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_pageController.hasClients) {
+          _pageController.jumpToPage(_virtualPage);
+        }
+      });
+    }
+
+    return Column(
+      children: [
+        SizedBox(
+          height: 160,
+          child: PageView.builder(
+            controller: _pageController,
+            itemCount: _banners.length == 1 ? 1 : null,
+            onPageChanged: (page) {
+              setState(() => _virtualPage = page);
+            },
+            itemBuilder: (context, virtualIndex) {
+              final banner = _banners[_realIndex(virtualIndex)];
+              return Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(20),
+                  color: AppColors.accentLight,
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(20),
+                  child: CachedNetworkImage(
+                    imageUrl: banner.imageUrl,
+                    fit: BoxFit.cover,
+                    width: double.infinity,
+                    height: 160,
+                    placeholder: (_, __) => Container(
+                      color: AppColors.accentLight,
+                      child: const Center(child: CircularProgressIndicator(color: AppColors.accent, strokeWidth: 2)),
+                    ),
+                    errorWidget: (_, __, ___) => Container(
+                      color: AppColors.accentLight,
+                      child: const Center(child: Icon(Icons.pets, size: 50, color: AppColors.accent)),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        if (_banners.length > 1) ...[
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(_banners.length, (i) {
+              final active = _realIndex(_virtualPage) == i;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 250),
+                width: active ? 18 : 6,
+                height: 6,
+                margin: const EdgeInsets.symmetric(horizontal: 3),
+                decoration: BoxDecoration(
+                  color: active ? AppColors.accent : AppColors.textLight.withValues(alpha: 0.35),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              );
+            }),
+          ),
+        ],
+        const SizedBox(height: 4),
+      ],
+    );
+  }
 }

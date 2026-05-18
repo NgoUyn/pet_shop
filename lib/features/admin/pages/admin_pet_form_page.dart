@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/cloudinary_helper.dart';
 import '../../home/services/pet_repository.dart';
+import '../services/category_repository.dart';
 
 class AdminPetFormPage extends StatefulWidget {
   const AdminPetFormPage({super.key, this.pet});
@@ -33,6 +34,8 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
   bool _isVaccinated = false;
   bool _isSaving = false;
   String? _imagePath;
+  List<PetBreed> _breeds = const [];
+  String? _selectedBreedName;
 
   bool get _isEditing => widget.pet != null;
 
@@ -42,7 +45,8 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
     final pet = widget.pet;
     if (pet != null) {
       _petNameController.text = pet.petName;
-      _species = pet.species;
+      _species = pet.species.isEmpty ? 'Chó' : pet.species;
+      _selectedBreedName = pet.breed;
       _breedController.text = pet.breed ?? '';
       _priceController.text = pet.price?.toStringAsFixed(0) ?? '';
       _ageController.text = pet.age?.toString() ?? '';
@@ -53,6 +57,19 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
       _isVaccinated = pet.isVaccinated;
       _initialImageUrl = pet.imageUrl;
     }
+    _loadBreeds();
+  }
+
+  Future<void> _loadBreeds() async {
+    final breeds = await CategoryRepository.instance.listBreeds(species: _species);
+    if (!mounted) return;
+    setState(() {
+      _breeds = breeds;
+      if (_selectedBreedName != null &&
+          !breeds.any((b) => b.breedName == _selectedBreedName)) {
+        _selectedBreedName = null;
+      }
+    });
   }
 
   @override
@@ -215,8 +232,7 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
         imageUrl = _initialImageUrl;
       }
 
-      final breed = _breedController.text.trim();
-      final resolvedBreed = breed.isEmpty ? null : breed;
+      final resolvedBreed = _selectedBreedName?.trim().isEmpty == true ? null : _selectedBreedName;
 
       if (_isEditing) {
         await PetRepository.instance.updatePet(
@@ -289,15 +305,6 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                     children: [
                       // ── Image Picker ──────────────────────────────────────
                       _buildImagePreview(),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: _isSaving ? null : _pickImage,
-                          icon: const Icon(Icons.upload_outlined),
-                          label: const Text('Tải ảnh thú cưng'),
-                        ),
-                      ),
                       const SizedBox(height: 16),
 
                       // ── Pet Name ──────────────────────────────────────────
@@ -310,7 +317,7 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                       ),
                       const SizedBox(height: 12),
 
-                      // ── Species (Category) Selector ───────────────────────
+                      // ── Species Selector ───────────────────────────────────
                       DropdownButtonFormField<String>(
                         value: _species,
                         decoration: InputDecoration(
@@ -320,6 +327,7 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                         items: const [
                           DropdownMenuItem(value: 'Chó', child: Text('Chó')),
                           DropdownMenuItem(value: 'Mèo', child: Text('Mèo')),
+                          DropdownMenuItem(value: 'Khác', child: Text('Khác')),
                         ],
                         onChanged: _isSaving
                             ? null
@@ -327,16 +335,31 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                                 if (value == null) return;
                                 setState(() {
                                   _species = value;
+                                  _selectedBreedName = null;
                                 });
+                                _loadBreeds();
                               },
                       ),
                       const SizedBox(height: 12),
 
-                      // ── Breed ─────────────────────────────────────────────
-                      _buildTextField(
-                        controller: _breedController,
-                        label: 'Giống',
-                        hintText: 'Ví dụ: Poodle, Husky, Anh lông ngắn',
+                      // ── Breed Dropdown ───────────────────────────────────
+                      DropdownButtonFormField<String>(
+                        value: _selectedBreedName,
+                        decoration: InputDecoration(
+                          labelText: 'Giống',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                          hintText: 'Chọn giống',
+                        ),
+                        items: [
+                          const DropdownMenuItem<String>(value: null, child: Text('--- Không chọn ---')),
+                          ..._breeds.map((b) => DropdownMenuItem<String>(
+                                value: b.breedName,
+                                child: Text(b.breedName),
+                              )),
+                        ],
+                        onChanged: _isSaving
+                            ? null
+                            : (value) => setState(() => _selectedBreedName = value),
                       ),
                       const SizedBox(height: 12),
 
@@ -517,6 +540,8 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                         ),
                       ),
                       const SizedBox(height: 20),
+
+
 
                       // ── Save Button ───────────────────────────────────────
                       SizedBox(

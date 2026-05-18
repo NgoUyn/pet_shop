@@ -210,6 +210,13 @@ class _UserListPageState extends State<UserListPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
+      appBar: AppBar(
+        title: const Text('Người dùng'),
+        backgroundColor: AppColors.white,
+        foregroundColor: AppColors.textDark,
+        elevation: 0,
+        surfaceTintColor: AppColors.white,
+      ),
       body: FutureBuilder<List<Map<String, Object?>>>(
         future: _usersFuture,
         builder: (context, snapshot) {

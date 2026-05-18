@@ -15,6 +15,7 @@ class ProductItem {
     required this.createdAt,
     this.description,
     this.imageUrl,
+    this.subCategoryId,
   });
 
   final int productId;
@@ -26,6 +27,7 @@ class ProductItem {
   final DateTime createdAt;
   final String? description;
   final String? imageUrl;
+  final int? subCategoryId;
 
   static ProductItem fromRow(Map<String, Object?> row) {
     return ProductItem(
@@ -38,6 +40,7 @@ class ProductItem {
       imageUrl: row['ImageURL'] as String?,
       isActive: (row['IsActive'] as int?) == 1,
       createdAt: DateTime.parse(row['CreatedAt'] as String),
+      subCategoryId: row['SubCategoryID'] as int?,
     );
   }
 }
@@ -166,6 +169,7 @@ class ProductRepository {
     String? description,
     String? imageUrl,
     bool isActive = true,
+    int? subCategoryId,
   }) async {
     final db = await AppDatabase.instance;
     final now = DateTime.now().toIso8601String();
@@ -177,6 +181,7 @@ class ProductRepository {
       'Description': description,
       'ImageURL': imageUrl,
       'IsActive': isActive ? 1 : 0,
+      'SubCategoryID': subCategoryId,
       'CreatedAt': now,
       'UpdatedAt': null,
     });
@@ -189,6 +194,7 @@ class ProductRepository {
       description: description,
       imageUrl: imageUrl,
       isActive: isActive,
+      subCategoryId: subCategoryId,
       createdAt: DateTime.parse(now),
     ));
     _notifyChanged();
@@ -204,6 +210,7 @@ class ProductRepository {
     String? description,
     String? imageUrl,
     bool? isActive,
+    int? subCategoryId,
   }) async {
     final db = await AppDatabase.instance;
     final current = await getProductById(productId);
@@ -218,6 +225,7 @@ class ProductRepository {
         'Description': description,
         'ImageURL': imageUrl,
         'IsActive': nextIsActive ? 1 : 0,
+        'SubCategoryID': subCategoryId,
         'UpdatedAt': DateTime.now().toIso8601String(),
       },
       where: 'ProductID = ?',
@@ -275,6 +283,7 @@ class ProductRepository {
         'description': product.description,
         'imageUrl': product.imageUrl,
         'isActive': product.isActive,
+        'subCategoryId': product.subCategoryId,
         'createdAt': product.createdAt.toIso8601String(),
       });
     } catch (e) {

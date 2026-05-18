@@ -22,6 +22,7 @@ import '../../admin/pages/review_statistics_page.dart';
 import '../../admin/pages/revenue_statistics_page.dart';
 import '../../admin/pages/admin_product_form_page.dart';
 import '../../admin/pages/admin_pet_form_page.dart';
+import '../../admin/pages/admin_banner_page.dart';
 import '../../admin/services/promotion_repository.dart';
 import '../../notifications/services/notification_repository.dart';
 import '../../profile/pages/profile_detail_page.dart';
@@ -37,6 +38,7 @@ class AdminShellPage extends StatefulWidget {
 }
 
 class _AdminShellPageState extends State<AdminShellPage> {
+  final _scaffoldKey = GlobalKey<ScaffoldState>();
   late int _selectedTab;
   late Future<_AdminDashboardSummary> _summaryFuture;
   int _unreadNotifications = 0;
@@ -87,6 +89,20 @@ class _AdminShellPageState extends State<AdminShellPage> {
     setState(() {
       _selectedTab = index;
     });
+  }
+
+  void _openDrawer() {
+    _scaffoldKey.currentState?.openDrawer();
+  }
+
+  void _closeDrawerAndSelectTab(int index) {
+    Navigator.of(context).pop();
+    _selectTab(index);
+  }
+
+  void _closeDrawerAndPush(Widget page) {
+    Navigator.of(context).pop();
+    _pushPage(page);
   }
 
   Future<void> _pushPage(Widget page) async {
@@ -172,26 +188,31 @@ class _AdminShellPageState extends State<AdminShellPage> {
         onQuickNavigate: _pushPage,
       ),
       OrderManagementPage(),
-      AdminWarehousePage(),
-      UserListPage(),
-      ReviewManagementPage(),
       _AdminAccountPage(onLogoutTap: _logout),
     ];
 
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: AppColors.background,
+      drawer: _AdminSideDrawer(
+        selectedTab: _selectedTab,
+        onSelectTab: _closeDrawerAndSelectTab,
+        onPushPage: _closeDrawerAndPush,
+      ),
       appBar: AppBar(
         backgroundColor: AppColors.white,
         foregroundColor: AppColors.textDark,
         elevation: 0,
         surfaceTintColor: AppColors.white,
+        leading: IconButton(
+          icon: const Icon(Icons.menu),
+          onPressed: _openDrawer,
+          tooltip: 'Menu',
+        ),
         title: Text(
           switch (_selectedTab) {
             0 => 'Trang chủ',
             1 => 'Đơn hàng',
-            2 => 'Kho hàng',
-            3 => 'Khách hàng',
-            4 => 'Đánh giá',
             _ => 'Tài khoản',
           },
           style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
@@ -237,27 +258,288 @@ class _AdminShellPageState extends State<AdminShellPage> {
             label: 'Đơn hàng',
           ),
           NavigationDestination(
-            icon: Icon(Icons.inventory_2_outlined),
-            selectedIcon: Icon(Icons.inventory_2),
-            label: 'Kho',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.groups_outlined),
-            selectedIcon: Icon(Icons.groups),
-            label: 'Khách',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.rate_review_outlined),
-            selectedIcon: Icon(Icons.rate_review),
-            label: 'Đánh giá',
-          ),
-          NavigationDestination(
             icon: Icon(Icons.person_outline),
             selectedIcon: Icon(Icons.person),
             label: 'Tài khoản',
           ),
         ],
       ),
+    );
+  }
+}
+
+class _AdminSideDrawer extends StatelessWidget {
+  const _AdminSideDrawer({
+    required this.selectedTab,
+    required this.onSelectTab,
+    required this.onPushPage,
+  });
+
+  final int selectedTab;
+  final void Function(int index) onSelectTab;
+  final void Function(Widget page) onPushPage;
+
+  @override
+  Widget build(BuildContext context) {
+    final items = [
+      _DrawerItem(icon: Icons.home_outlined, activeIcon: Icons.home, label: 'Trang chủ', tabIndex: 0),
+      _DrawerItem(icon: Icons.category_outlined, activeIcon: Icons.category, label: 'Danh mục', tabIndex: -1),
+      _DrawerItem(icon: Icons.inventory_2_outlined, activeIcon: Icons.inventory_2, label: 'Kho hàng', tabIndex: -4),
+      _DrawerItem(icon: Icons.receipt_long_outlined, activeIcon: Icons.receipt_long, label: 'Đơn hàng', tabIndex: 1),
+      _DrawerItem(icon: Icons.rate_review_outlined, activeIcon: Icons.rate_review, label: 'Đánh giá', tabIndex: -6),
+      _DrawerItem(icon: Icons.groups_outlined, activeIcon: Icons.groups, label: 'Người dùng', tabIndex: -5),
+      _DrawerItem(icon: Icons.local_offer_outlined, activeIcon: Icons.local_offer, label: 'Khuyến mãi', tabIndex: -2),
+      _DrawerItem(icon: Icons.image_outlined, activeIcon: Icons.image, label: 'Banner', tabIndex: -3),
+      _DrawerItem(icon: Icons.person_outline, activeIcon: Icons.person, label: 'Tài khoản', tabIndex: 2),
+    ];
+
+    return Drawer(
+      backgroundColor: AppColors.white,
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+              decoration: const BoxDecoration(
+                color: AppColors.primary,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.2),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.admin_panel_settings, color: Colors.white, size: 28),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Admin Panel',
+                    style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Quản trị hệ thống',
+                    style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
+                itemCount: items.length,
+                itemBuilder: (context, index) {
+                  final item = items[index];
+                  final isSelected = item.tabIndex >= 0 && item.tabIndex == selectedTab;
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 2),
+                    child: ListTile(
+                      selected: isSelected,
+                      selectedTileColor: AppColors.primary.withValues(alpha: 0.12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                      leading: Icon(
+                        isSelected ? item.activeIcon : item.icon,
+                        color: isSelected ? AppColors.primary : AppColors.textLight,
+                      ),
+                      title: Text(
+                        item.label,
+                        style: TextStyle(
+                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                          color: isSelected ? AppColors.primary : AppColors.textDark,
+                        ),
+                      ),
+                      onTap: () {
+                        if (item.tabIndex >= 0) {
+                          onSelectTab(item.tabIndex);
+                        } else if (item.tabIndex == -1) {
+                          onPushPage(const _AdminCategoryPage());
+                        } else if (item.tabIndex == -2) {
+                          onPushPage(const _AdminServicesPage());
+                        } else if (item.tabIndex == -3) {
+                          onPushPage(const AdminBannerPage());
+                        } else if (item.tabIndex == -4) {
+                          onPushPage(AdminWarehousePage());
+                        } else if (item.tabIndex == -5) {
+                          onPushPage(UserListPage());
+                        } else if (item.tabIndex == -6) {
+                          onPushPage(ReviewManagementPage());
+                        }
+                      },
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DrawerItem {
+  const _DrawerItem({
+    required this.icon,
+    required this.activeIcon,
+    required this.label,
+    required this.tabIndex,
+  });
+
+  final IconData icon;
+  final IconData activeIcon;
+  final String label;
+  final int tabIndex;
+}
+
+class _AdminCategoryPage extends StatelessWidget {
+  const _AdminCategoryPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        backgroundColor: AppColors.background,
+        appBar: AppBar(
+          title: const Text('Danh mục'),
+          backgroundColor: AppColors.white,
+          foregroundColor: AppColors.textDark,
+          elevation: 0,
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'Sản phẩm', icon: Icon(Icons.shopping_bag_outlined)),
+              Tab(text: 'Thú cưng', icon: Icon(Icons.pets_outlined)),
+            ],
+          ),
+        ),
+        body: const TabBarView(
+          children: [
+            _AdminProductCategoryTab(),
+            _AdminPetCategoryTab(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AdminProductCategoryTab extends StatefulWidget {
+  const _AdminProductCategoryTab();
+
+  @override
+  State<_AdminProductCategoryTab> createState() => _AdminProductCategoryTabState();
+}
+
+class _AdminProductCategoryTabState extends State<_AdminProductCategoryTab> {
+  late Future<List<ProductItem>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = ProductRepository.instance.listActiveProducts();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<ProductItem>>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final items = snapshot.data ?? [];
+        if (items.isEmpty) {
+          return const Center(child: Text('Chưa có sản phẩm nào.'));
+        }
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: items.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (context, index) {
+            final item = items[index];
+            return Card(
+              elevation: 0,
+              color: AppColors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: ListTile(
+                leading: const Icon(Icons.shopping_bag_outlined, color: AppColors.primary),
+                title: Text(item.productName, style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: Text('Tồn kho: ${item.stockQuantity}'),
+                trailing: const Icon(Icons.chevron_right, color: AppColors.textLight),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => AdminProductFormPage(product: item)),
+                  );
+                },
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _AdminPetCategoryTab extends StatefulWidget {
+  const _AdminPetCategoryTab();
+
+  @override
+  State<_AdminPetCategoryTab> createState() => _AdminPetCategoryTabState();
+}
+
+class _AdminPetCategoryTabState extends State<_AdminPetCategoryTab> {
+  late Future<List<PetItem>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = PetRepository.instance.listActivePets();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<PetItem>>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        final items = snapshot.data ?? [];
+        if (items.isEmpty) {
+          return const Center(child: Text('Chưa có thú cưng nào.'));
+        }
+        return ListView.separated(
+          padding: const EdgeInsets.all(16),
+          itemCount: items.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 8),
+          itemBuilder: (context, index) {
+            final item = items[index];
+            return Card(
+              elevation: 0,
+              color: AppColors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: ListTile(
+                leading: const Icon(Icons.pets, color: AppColors.primary),
+                title: Text(item.petName, style: const TextStyle(fontWeight: FontWeight.w600)),
+
+                trailing: const Icon(Icons.chevron_right, color: AppColors.textLight),
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => AdminPetFormPage(pet: item)),
+                  );
+                },
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

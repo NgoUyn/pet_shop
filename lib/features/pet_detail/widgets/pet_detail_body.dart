@@ -37,17 +37,10 @@ class _PetDetailBodyState extends State<PetDetailBody> {
   List<PetItem> _relatedPets = [];
   bool _isLoadingReviews = true;
 
-  // Admin-only editable state
-  bool _isDewormed = false;
-  bool _isVaccinated = false;
-  bool _isActive = true;
-  bool _isSavingMedical = false;
-
   @override
   void initState() {
     super.initState();
     _currentPet = widget.pet;
-    _syncMedicalState();
     _loadReviews();
     _loadRelatedPets();
     // Listen for updates from PetProvider for real-time sync
@@ -60,18 +53,11 @@ class _PetDetailBodyState extends State<PetDetailBody> {
     super.dispose();
   }
 
-  void _syncMedicalState() {
-    _isDewormed = _currentPet.isDewormed;
-    _isVaccinated = _currentPet.isVaccinated;
-    _isActive = _currentPet.isActive;
-  }
-
   @override
   void didUpdateWidget(PetDetailBody oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.pet.petId != widget.pet.petId) {
       _currentPet = widget.pet;
-      _syncMedicalState();
       _loadReviews();
       _loadRelatedPets();
     } else if (oldWidget.pet.price != widget.pet.price ||
@@ -83,7 +69,6 @@ class _PetDetailBodyState extends State<PetDetailBody> {
                oldWidget.pet.isVaccinated != widget.pet.isVaccinated) {
       setState(() {
         _currentPet = widget.pet;
-        _syncMedicalState();
       });
     }
   }
@@ -96,7 +81,6 @@ class _PetDetailBodyState extends State<PetDetailBody> {
     if (updated != null) {
       setState(() {
         _currentPet = updated;
-        _syncMedicalState();
       });
       widget.onPetChanged?.call(updated);
     }
@@ -143,7 +127,6 @@ class _PetDetailBodyState extends State<PetDetailBody> {
     if (refreshed != null && mounted) {
       setState(() {
         _currentPet = refreshed;
-        _syncMedicalState();
       });
       widget.onPetChanged?.call(refreshed);
     }
@@ -152,49 +135,6 @@ class _PetDetailBodyState extends State<PetDetailBody> {
   String _formatDateTime(DateTime value) {
     String twoDigits(int input) => input.toString().padLeft(2, '0');
     return '${twoDigits(value.day)}/${twoDigits(value.month)}/${value.year} ${twoDigits(value.hour)}:${twoDigits(value.minute)}';
-  }
-
-  // ── Admin: Save medical condition toggle ──────────────────────────────
-
-  Future<void> _saveMedicalCondition() async {
-    setState(() => _isSavingMedical = true);
-    try {
-      final updated = await PetRepository.instance.updatePet(
-        petId: _currentPet.petId,
-        petName: _currentPet.petName,
-        species: _currentPet.species,
-        breed: _currentPet.breed,
-        gender: _currentPet.gender ?? '',
-        price: _currentPet.price ?? 0,
-        description: _currentPet.description,
-        age: _currentPet.age,
-        personality: _currentPet.personality,
-        isDewormed: _isDewormed,
-        isVaccinated: _isVaccinated,
-        imageUrl: _currentPet.imageUrl,
-        isActive: _isActive,
-      );
-      if (mounted) {
-        setState(() {
-          _currentPet = updated;
-        });
-        widget.onPetChanged?.call(updated);
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Đã cập nhật tình trạng y tế'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Lỗi: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isSavingMedical = false);
-    }
   }
 
   @override
@@ -336,50 +276,28 @@ class _PetDetailBodyState extends State<PetDetailBody> {
                 const SizedBox(height: 16),
               ],
 
-              // ── Medical Condition ─────────────────────────────────
+              // ── Medical Condition (read-only for all) ─────────────
+              _buildSectionLabel('Tình trạng y tế'),
+              const SizedBox(height: 8),
+              _buildBadge(
+                pet.isVaccinated ? 'Đã tiêm phòng' : 'Chưa tiêm phòng',
+                background: pet.isVaccinated ? const Color(0xFFD8EEE4) : const Color(0xFFF3F4F6),
+                foreground: pet.isVaccinated ? const Color(0xFF3E7C63) : const Color(0xFF6B7280),
+              ),
+              const SizedBox(height: 8),
+              _buildBadge(
+                pet.isDewormed ? 'Đã tẩy giun' : 'Chưa tẩy giun',
+                background: pet.isDewormed ? const Color(0xFFD8EEE4) : const Color(0xFFF3F4F6),
+                foreground: pet.isDewormed ? const Color(0xFF3E7C63) : const Color(0xFF6B7280),
+              ),
               if (widget.showAdminActions) ...[
-                // Admin: Editable toggle mode
-                _buildSectionLabel('Tình trạng y tế'),
-                const SizedBox(height: 8),
-                _buildMedicalSwitch(
-                  label: 'Đã tẩy giun',
-                  subtitle: _isDewormed ? 'Đã tẩy giun' : 'Chưa tẩy giun',
-                  value: _isDewormed,
-                  onChanged: (val) {
-                    setState(() => _isDewormed = val);
-                    _saveMedicalCondition();
-                  },
-                ),
-                const SizedBox(height: 8),
-                _buildMedicalSwitch(
-                  label: 'Đã tiêm phòng',
-                  subtitle: _isVaccinated ? 'Đã tiêm phòng đầy đủ' : 'Chưa tiêm phòng',
-                  value: _isVaccinated,
-                  onChanged: (val) {
-                    setState(() => _isVaccinated = val);
-                    _saveMedicalCondition();
-                  },
-                ),
                 const SizedBox(height: 16),
-
-                // ── Status (For Sale / Not For Sale) ────────────────
                 _buildSectionLabel('Trạng thái'),
                 const SizedBox(height: 8),
-                _buildStatusDropdown(),
-              ] else ...[
-                // Customer: Read-only medical condition
-                _buildSectionLabel('Tình trạng y tế'),
-                const SizedBox(height: 8),
                 _buildBadge(
-                  pet.isVaccinated ? 'Đã tiêm phòng' : 'Chưa tiêm phòng',
-                  background: pet.isVaccinated ? const Color(0xFFD8EEE4) : const Color(0xFFF3F4F6),
-                  foreground: pet.isVaccinated ? const Color(0xFF3E7C63) : const Color(0xFF6B7280),
-                ),
-                const SizedBox(height: 8),
-                _buildBadge(
-                  pet.isDewormed ? 'Đã tẩy giun' : 'Chưa tẩy giun',
-                  background: pet.isDewormed ? const Color(0xFFD8EEE4) : const Color(0xFFF3F4F6),
-                  foreground: pet.isDewormed ? const Color(0xFF3E7C63) : const Color(0xFF6B7280),
+                  pet.isActive ? 'Đang bán' : 'Ngưng bán',
+                  background: pet.isActive ? const Color(0xFFD8EEE4) : const Color(0xFFFDECEC),
+                  foreground: pet.isActive ? const Color(0xFF3E7C63) : const Color(0xFFB42318),
                 ),
               ],
             ],
@@ -542,101 +460,6 @@ class _PetDetailBodyState extends State<PetDetailBody> {
             fontWeight: FontWeight.w700,
             fontFamily: 'Times New Roman',
           ),
-        ),
-      ),
-    );
-  }
-
-  // ── Medical Switch (Admin) ─────────────────────────────────────────
-
-  Widget _buildMedicalSwitch({
-    required String label,
-    required String subtitle,
-    required bool value,
-    required ValueChanged<bool> onChanged,
-  }) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color: value ? const Color(0xFFE8F5E9) : const Color(0xFFF5F5F5),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: SwitchListTile.adaptive(
-        contentPadding: EdgeInsets.zero,
-        value: value,
-        onChanged: _isSavingMedical ? null : onChanged,
-        title: Text(
-          label,
-          style: const TextStyle(fontWeight: FontWeight.w600),
-        ),
-        subtitle: Text(
-          subtitle,
-          style: TextStyle(
-            color: value ? Colors.green.shade700 : AppColors.textLight,
-            fontSize: 12,
-          ),
-        ),
-        activeTrackColor: AppColors.primary,
-      ),
-    );
-  }
-
-  // ── Status Dropdown (Admin) ────────────────────────────────────────
-
-  Widget _buildStatusDropdown() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F9FB),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE7EAF0)),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<bool>(
-          value: _isActive,
-          isExpanded: true,
-          icon: const Icon(Icons.arrow_drop_down),
-          onChanged: _isSavingMedical
-              ? null
-              : (val) async {
-                  if (val == null) return;
-                  setState(() => _isActive = val);
-                  await _saveMedicalCondition();
-                },
-          items: const [
-            DropdownMenuItem(
-              value: true,
-              child: Row(
-                children: [
-                  Icon(Icons.check_circle, color: Colors.green, size: 20),
-                  SizedBox(width: 8),
-                  Text(
-                    'Đang bán',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            DropdownMenuItem(
-              value: false,
-              child: Row(
-                children: [
-                  Icon(Icons.cancel, color: Colors.red, size: 20),
-                  SizedBox(width: 8),
-                  Text(
-                    'Ngưng bán',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
         ),
       ),
     );

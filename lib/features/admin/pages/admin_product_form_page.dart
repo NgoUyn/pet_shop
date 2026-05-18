@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/constants/app_colors.dart';
-import '../../../core/db/app_database.dart';
 import '../../../core/utils/cloudinary_helper.dart';
 import '../../home/services/product_repository.dart';
+import '../services/category_repository.dart';
 
 class AdminProductFormPage extends StatefulWidget {
   const AdminProductFormPage({super.key, this.product});
@@ -18,31 +18,18 @@ class AdminProductFormPage extends StatefulWidget {
 }
 
 class _AdminProductFormPageState extends State<AdminProductFormPage> {
-  static const List<String> _accessoryTypes = [
-    'Vòng cổ',
-    'Dây dắt',
-    'Đồ chơi',
-    'Thức ăn',
-    'Vệ sinh',
-    'Bát ăn',
-    'Nhà ngủ',
-    'Khác',
-  ];
-
   final _formKey = GlobalKey<FormState>();
   final _productNameController = TextEditingController();
   final _priceController = TextEditingController();
   final _stockController = TextEditingController();
   final _descriptionController = TextEditingController();
-  final _imageUrlController = TextEditingController();
   final ImagePicker _imagePicker = ImagePicker();
 
   String _status = 'Đang bán';
-  String _accessoryType = _accessoryTypes.first;
   String? _imagePath;
   bool _isSaving = false;
-  int? _selectedCategoryId;
-  List<_CategoryChoice> _categories = const [];
+  int? _selectedSubCategoryId;
+  List<ProductSubCategory> _subCategories = const [];
 
   bool get _isEditing => widget.product != null;
 
@@ -55,11 +42,10 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
       _priceController.text = product.price.toStringAsFixed(0);
       _stockController.text = product.stockQuantity.toString();
       _descriptionController.text = product.description ?? '';
-      _imageUrlController.text = product.imageUrl ?? '';
-      _selectedCategoryId = product.categoryId;
+      _selectedSubCategoryId = product.subCategoryId;
       _status = _deriveStatus(product);
     }
-    _loadCategories();
+    _loadSubCategories();
   }
 
   @override
@@ -68,7 +54,6 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
     _priceController.dispose();
     _stockController.dispose();
     _descriptionController.dispose();
-    _imageUrlController.dispose();
     super.dispose();
   }
 
@@ -78,26 +63,13 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
     return 'Đang bán';
   }
 
-  Future<void> _loadCategories() async {
-    final db = await AppDatabase.instance;
-    final rows = await db.query(
-      'Category',
-      columns: ['CategoryID', 'CategoryName'],
-      orderBy: 'CategoryName ASC',
-    );
-
+  Future<void> _loadSubCategories() async {
+    final subs = await CategoryRepository.instance.listSubCategories();
     if (!mounted) return;
     setState(() {
-      _categories = rows
-          .map(
-            (row) => _CategoryChoice(
-              id: row['CategoryID'] as int,
-              name: (row['CategoryName'] as String?) ?? '',
-            ),
-          )
-          .toList();
-      if (_selectedCategoryId == null && _categories.isNotEmpty) {
-        _selectedCategoryId = _categories.first.id;
+      _subCategories = subs;
+      if (_selectedSubCategoryId == null && subs.isNotEmpty) {
+        _selectedSubCategoryId = subs.first.subCategoryId;
       }
     });
   }
@@ -146,7 +118,7 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
 
   Widget _buildImagePreview() {
     final hasNewImage = (_imagePath?.trim().isNotEmpty == true);
-    final existingUrl = _imageUrlController.text.trim();
+    final existingUrl = widget.product?.imageUrl ?? '';
     final hasExistingImage = existingUrl.isNotEmpty && (existingUrl.startsWith('http://') || existingUrl.startsWith('https://'));
 
     Widget imageWidget;
@@ -216,13 +188,6 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
     if (!(_formKey.currentState?.validate() ?? false)) {
       return;
     }
-    if (_selectedCategoryId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Chưa có danh mục phù hợp')),
-      );
-      return;
-    }
-
     setState(() {
       _isSaving = true;
     });
@@ -241,8 +206,7 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
           return;
         }
       } else {
-        imageUrl = _imageUrlController.text.trim();
-        if (imageUrl.isEmpty) imageUrl = null;
+        imageUrl = widget.product?.imageUrl;
       }
 
       final enteredStock = int.parse(_stockController.text.trim());
@@ -253,23 +217,25 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
       if (_isEditing) {
         await ProductRepository.instance.updateProduct(
           productId: widget.product!.productId,
-          categoryId: _selectedCategoryId!,
+          categoryId: widget.product!.categoryId,
           productName: _productNameController.text.trim(),
           price: double.parse(_priceController.text.trim()),
           stockQuantity: stockQuantity,
           description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
           imageUrl: (imageUrl == null || imageUrl.isEmpty) ? null : imageUrl,
           isActive: isActive,
+          subCategoryId: _selectedSubCategoryId,
         );
       } else {
         await ProductRepository.instance.addProduct(
-          categoryId: _selectedCategoryId!,
+          categoryId: 1,
           productName: _productNameController.text.trim(),
           price: double.parse(_priceController.text.trim()),
           stockQuantity: stockQuantity,
           description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
           imageUrl: (imageUrl == null || imageUrl.isEmpty) ? null : imageUrl,
           isActive: isActive,
+          subCategoryId: _selectedSubCategoryId,
         );
       }
 
@@ -291,10 +257,6 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
 
   @override
   Widget build(BuildContext context) {
-    if (_categories.isNotEmpty && _selectedCategoryId == null) {
-      _selectedCategoryId = _categories.first.id;
-    }
-
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -316,15 +278,6 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       _buildImagePreview(),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: _isSaving ? null : _pickImage,
-                          icon: const Icon(Icons.upload_outlined),
-                          label: const Text('Tải ảnh phụ kiện'),
-                        ),
-                      ),
                       const SizedBox(height: 16),
                       _buildTextField(
                         controller: _productNameController,
@@ -333,46 +286,25 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
                         validator: (value) => value == null || value.trim().isEmpty ? 'Vui lòng nhập tên phụ kiện' : null,
                       ),
                       const SizedBox(height: 12),
-                      // ── Accessory Type ──────────────────────────────────────
-                      DropdownButtonFormField<String>(
-                        value: _accessoryType,
-                        decoration: InputDecoration(
-                          labelText: 'Loại phụ kiện',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-                          prefixIcon: const Icon(Icons.category_outlined),
+                      // ── Sub Category ────────────────────────────────────────
+                      if (_subCategories.isNotEmpty)
+                        DropdownButtonFormField<int>(
+                          value: _selectedSubCategoryId,
+                          decoration: InputDecoration(
+                            labelText: 'Loại phụ kiện',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                            prefixIcon: const Icon(Icons.category_outlined),
+                          ),
+                          items: _subCategories
+                              .map((s) => DropdownMenuItem<int>(
+                                    value: s.subCategoryId,
+                                    child: Text(s.subCategoryName),
+                                  ))
+                              .toList(),
+                          onChanged: _isSaving
+                              ? null
+                              : (value) => setState(() => _selectedSubCategoryId = value),
                         ),
-                        items: _accessoryTypes
-                            .map(
-                              (type) => DropdownMenuItem<String>(
-                                value: type,
-                                child: Text(type),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: _isSaving
-                            ? null
-                            : (value) {
-                                if (value == null) return;
-                                setState(() => _accessoryType = value);
-                              },
-                      ),
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<int>(
-                        value: _selectedCategoryId,
-                        decoration: InputDecoration(
-                          labelText: 'Danh mục',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-                        ),
-                        items: _categories
-                            .map(
-                              (category) => DropdownMenuItem<int>(
-                                value: category.id,
-                                child: Text(category.name),
-                              ),
-                            )
-                            .toList(),
-                        onChanged: _isSaving ? null : (value) => setState(() => _selectedCategoryId = value),
-                      ),
                       const SizedBox(height: 12),
                       // ── Description ─────────────────────────────────────────
                       _buildTextField(
@@ -440,14 +372,6 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
                           });
                         },
                       ),
-                      const SizedBox(height: 12),
-                      _buildTextField(
-                        controller: _imageUrlController,
-                        label: 'URL ảnh',
-                        hintText: 'https://...',
-                        keyboardType: TextInputType.url,
-                      ),
-
                       const SizedBox(height: 20),
                       SizedBox(
                         width: double.infinity,
@@ -497,9 +421,3 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
   }
 }
 
-class _CategoryChoice {
-  _CategoryChoice({required this.id, required this.name});
-
-  final int id;
-  final String name;
-}

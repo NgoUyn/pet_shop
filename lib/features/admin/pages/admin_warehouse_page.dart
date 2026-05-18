@@ -47,6 +47,13 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
       context: context,
       backgroundColor: AppColors.background,
       showDragHandle: true,
+      
+      
+      
+      
+      
+      
+      
       builder: (sheetContext) {
         var currentValue = _selectedFilter;
         return StatefulBuilder(
@@ -252,6 +259,13 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
 
         return Scaffold(
           backgroundColor: AppColors.background,
+          appBar: AppBar(
+            title: const Text('Kho hàng'),
+            backgroundColor: AppColors.white,
+            foregroundColor: AppColors.textDark,
+            elevation: 0,
+            surfaceTintColor: AppColors.white,
+          ),
           body: RefreshIndicator(
             onRefresh: () async => _reload(),
             child: ListView(
