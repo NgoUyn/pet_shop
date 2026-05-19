@@ -135,14 +135,14 @@ class ChatRepository {
 
     final profile = await getCurrentProfile();
     final fullName = (profile?.fullName.trim().isNotEmpty == true
-            ? profile!.fullName.trim()
-            : firebaseUser.displayName?.trim().isNotEmpty == true
-                ? firebaseUser.displayName!.trim()
-                : firebaseUser.email?.split('@').first ?? 'Người dùng')
+        ? profile!.fullName.trim()
+        : firebaseUser.displayName?.trim().isNotEmpty == true
+        ? firebaseUser.displayName!.trim()
+        : firebaseUser.email?.split('@').first ?? 'Người dùng')
         .trim();
     final email = (profile?.email.trim().isNotEmpty == true
-            ? profile!.email.trim()
-            : firebaseUser.email?.trim() ?? '')
+        ? profile!.email.trim()
+        : firebaseUser.email?.trim() ?? '')
         .toLowerCase();
     final role = (profile?.role.trim().isNotEmpty == true ? profile!.role.trim() : 'customer').toLowerCase();
 
