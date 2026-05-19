@@ -567,6 +567,29 @@ class ChatRepository {
     );
   }
 
+  /// Mark all chat documents that belong to the current customer as read
+  /// (set `customerUnreadCount` = 0). This covers cases where multiple
+  /// chat documents exist for the same customer (e.g. different adminUid).
+  Future<void> markAllCustomerThreadsAsRead() async {
+    final currentUser = await ensureCurrentUserSynced();
+    if (currentUser.isAdmin) return;
+
+    try {
+      final snapshot = await _firestore.collection('chats').where('customerUid', isEqualTo: currentUser.uid).get();
+      for (final doc in snapshot.docs) {
+        await _firestore.collection('chats').doc(doc.id).set(
+          {
+            'customerUnreadCount': 0,
+            'updatedAt': Timestamp.now(),
+          },
+          SetOptions(merge: true),
+        );
+      }
+    } catch (e) {
+      print('markAllCustomerThreadsAsRead error: $e');
+    }
+  }
+
   Future<void> sendMessage({
     required ChatThreadContext thread,
     required String content,
