@@ -132,6 +132,54 @@ class OrderRepository {
 
   static final OrderRepository instance = OrderRepository._();
 
+  DateTime? _parseIsoDate(String? value) {
+    if (value == null || value.isEmpty) return null;
+    try {
+      return DateTime.parse(value);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  bool _shouldPreferFirestore(OrderInfo local, OrderInfo remote) {
+    if (local.orderStatus != remote.orderStatus) {
+      return true;
+    }
+
+    final localTime = _parseIsoDate(local.updatedAt) ?? _parseIsoDate(local.createdAt);
+    final remoteTime = _parseIsoDate(remote.updatedAt) ?? _parseIsoDate(remote.createdAt);
+    if (remoteTime == null) return false;
+    if (localTime == null) return true;
+    return remoteTime.isAfter(localTime);
+  }
+
+  bool _matchesStatusFilter(OrderInfo order, String statusFilter) {
+    if (statusFilter == 'Unpaid') {
+      return order.orderStatus == 'Unpaid' ||
+          order.paymentStatus == 'Unpaid' ||
+          order.paymentStatus == 'Pending';
+    }
+
+    if (statusFilter == 'Preparing') {
+      return order.orderStatus == 'Preparing' || order.paymentStatus == 'Processing';
+    }
+
+    if (statusFilter == 'Shipping') {
+      return order.orderStatus == 'Shipping' || order.paymentStatus == 'Shipping';
+    }
+
+    if (statusFilter == 'Completed') {
+      return order.orderStatus == 'Completed' || order.paymentStatus == 'Completed';
+    }
+
+    if (statusFilter == 'Cancelled') {
+      return order.orderStatus == 'Cancelled' || order.paymentStatus == 'Cancelled';
+    }
+
+    return order.orderStatus == statusFilter ||
+        (order.orderStatus.isEmpty && order.paymentStatus == statusFilter);
+  }
+
   /// Get all orders for the current user
   Future<List<OrderInfo>> getOrdersForCurrentUser({String? statusFilter}) async {
     final userId = AuthSession.instance.currentUserId.value;
@@ -151,15 +199,9 @@ class OrderRepository {
     if (customerRows.isEmpty) return [];
     final customerId = customerRows.first['CustomerID'] as int;
 
-    // Build query
+    // Build query (load all, filter in memory after Firestore merge)
     String where = 'i.CustomerID = ?';
     List<dynamic> whereArgs = [customerId];
-
-    if (statusFilter != null && statusFilter.isNotEmpty) {
-      where += ' AND (i.OrderStatus = ? OR (i.OrderStatus IS NULL AND i.PaymentStatus = ?))';
-      whereArgs.add(statusFilter);
-      whereArgs.add(statusFilter);
-    }
 
     final invoiceRows = await db.rawQuery(
       '''
@@ -194,14 +236,29 @@ class OrderRepository {
     // Merge with Firestore orders (cross-device)
     try {
       final firestoreOrders = await OrderFirestoreService.instance
-          .getOrdersForCurrentFirebaseUser(statusFilter: statusFilter);
-      final localInvoiceIds = orders.map((o) => o.invoiceId).toSet();
+          .getOrdersForCurrentFirebaseUser();
+      final merged = <int, OrderInfo>{
+        for (final order in orders) order.invoiceId: order,
+      };
+
       for (final fo in firestoreOrders) {
-        if (!localInvoiceIds.contains(fo.invoiceId)) {
-          orders.add(fo);
+        final local = merged[fo.invoiceId];
+        if (local == null || _shouldPreferFirestore(local, fo)) {
+          merged[fo.invoiceId] = fo;
+          if (local != null && local.orderStatus != fo.orderStatus && fo.orderStatus.isNotEmpty) {
+            await _tryUpdateLocalStatus(fo.invoiceId, fo.orderStatus);
+          }
         }
       }
+
+      orders
+        ..clear()
+        ..addAll(merged.values);
     } catch (_) {}
+
+    if (statusFilter != null && statusFilter.isNotEmpty) {
+      orders.retainWhere((order) => _matchesStatusFilter(order, statusFilter));
+    }
 
     orders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return orders;
@@ -213,12 +270,6 @@ class OrderRepository {
 
     String where = '1=1';
     List<dynamic> whereArgs = [];
-
-    if (statusFilter != null && statusFilter.isNotEmpty) {
-      where += ' AND (i.OrderStatus = ? OR (i.OrderStatus IS NULL AND i.PaymentStatus = ?))';
-      whereArgs.add(statusFilter);
-      whereArgs.add(statusFilter);
-    }
 
     final invoiceRows = await db.rawQuery(
       '''
@@ -257,14 +308,29 @@ class OrderRepository {
     // Merge with Firestore orders (cross-device)
     try {
       final firestoreOrders = await OrderFirestoreService.instance
-          .getOrdersForCurrentFirebaseUser(statusFilter: statusFilter);
-      final localInvoiceIds = orders.map((o) => o.invoiceId).toSet();
+          .getAllOrdersFromFirestore();
+      final merged = <int, OrderInfo>{
+        for (final order in orders) order.invoiceId: order,
+      };
+
       for (final fo in firestoreOrders) {
-        if (!localInvoiceIds.contains(fo.invoiceId)) {
-          orders.add(fo);
+        final local = merged[fo.invoiceId];
+        if (local == null || _shouldPreferFirestore(local, fo)) {
+          merged[fo.invoiceId] = fo;
+          if (local != null && local.orderStatus != fo.orderStatus && fo.orderStatus.isNotEmpty) {
+            await _tryUpdateLocalStatus(fo.invoiceId, fo.orderStatus);
+          }
         }
       }
+
+      orders
+        ..clear()
+        ..addAll(merged.values);
     } catch (_) {}
+
+    if (statusFilter != null && statusFilter.isNotEmpty) {
+      orders.retainWhere((order) => _matchesStatusFilter(order, statusFilter));
+    }
 
     orders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return orders;
@@ -320,10 +386,11 @@ class OrderRepository {
     await OrderFirestoreService.instance.updateOrderStatusInFirestore(
       invoiceId: invoiceId,
       orderStatus: 'Completed',
+      paymentStatus: 'Paid',
     );
 
     // 2. Try local SQLite (may not exist on admin device)
-    await _tryUpdateLocalStatus(invoiceId, 'Completed');
+    await _tryUpdateLocalStatus(invoiceId, 'Completed', paymentStatus: 'Paid');
 
     // 3. Notify customer via Firestore
     await _notifyCustomer(doc, invoiceId, 'order',
@@ -347,7 +414,7 @@ class OrderRepository {
     );
 
     // 2. Try local SQLite (may not exist on admin device)
-    await _tryUpdateLocalStatus(invoiceId, 'Cancelled');
+    await _tryUpdateLocalStatus(invoiceId, 'Cancelled', paymentStatus: 'Cancelled');
 
     // 3. Notify customer via Firestore
     await _notifyCustomer(doc, invoiceId, 'order',
@@ -368,18 +435,48 @@ class OrderRepository {
   }
 
   /// Best-effort update to local SQLite (order may not exist on admin device)
-  Future<void> _tryUpdateLocalStatus(int invoiceId, String orderStatus) async {
+  Future<void> _tryUpdateLocalStatus(
+    int invoiceId,
+    String orderStatus, {
+    String? paymentStatus,
+  }) async {
     try {
       final db = await AppDatabase.instance;
+      final now = DateTime.now().toIso8601String();
+      final invoiceData = <String, Object?>{
+        'OrderStatus': orderStatus,
+        'UpdatedAt': now,
+      };
+
+      if (paymentStatus != null && paymentStatus.isNotEmpty) {
+        invoiceData['PaymentStatus'] = paymentStatus;
+      }
+
       await db.update(
         'Invoice',
-        {
-          'OrderStatus': orderStatus,
-          'UpdatedAt': DateTime.now().toIso8601String(),
-        },
+        invoiceData,
         where: 'InvoiceID = ?',
         whereArgs: [invoiceId],
       );
+
+      if (paymentStatus != null && paymentStatus.isNotEmpty) {
+        final paymentData = <String, Object?>{
+          'Status': paymentStatus,
+        };
+
+        if (paymentStatus == 'Paid') {
+          paymentData['PaidAt'] = now;
+        } else if (paymentStatus == 'Cancelled') {
+          paymentData['PaidAt'] = null;
+        }
+
+        await db.update(
+          'Payment',
+          paymentData,
+          where: 'InvoiceID = ?',
+          whereArgs: [invoiceId],
+        );
+      }
     } catch (_) {}
   }
 

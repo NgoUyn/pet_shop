@@ -9,6 +9,7 @@ import '../../chat/pages/chat_page.dart';
 import '../../chat/services/chat_repository.dart';
 import '../../favorites/pages/favorites_page.dart';
 import '../../orders/pages/order_history_page.dart';
+import '../../reviews/pages/review_list_page.dart';
 import '../services/profile_repository.dart';
 import 'profile_detail_page.dart';
 
@@ -204,7 +205,17 @@ class _ProfilePageState extends State<ProfilePage> {
                                 _buildStatusItem(Icons.payment, 'Chờ xác nhận', 'Unpaid'),
                                 _buildStatusItem(Icons.inventory_2_outlined, 'Chờ lấy hàng', 'Preparing'),
                                 _buildStatusItem(Icons.local_shipping_outlined, 'Đang giao', 'Shipping'),
-                                _buildStatusItem(Icons.star_outline, 'Đánh giá', 'Completed'),
+                                _buildStatusItem(
+                                  Icons.star_outline,
+                                  'Đánh giá',
+                                  'Completed',
+                                  onTap: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(builder: (_) => const ReviewListPage()),
+                                    );
+                                  },
+                                ),
                               ],
                             ),
                           ],
@@ -289,16 +300,17 @@ class _ProfilePageState extends State<ProfilePage> {
     );
   }
 
-  Widget _buildStatusItem(IconData icon, String label, String filter) {
+  Widget _buildStatusItem(IconData icon, String label, String filter, {VoidCallback? onTap}) {
     return InkWell(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => OrderHistoryPage(initialFilter: filter),
-          ),
-        );
-      },
+      onTap: onTap ??
+          () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => OrderHistoryPage(initialFilter: filter),
+              ),
+            );
+          },
       borderRadius: BorderRadius.circular(8),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
