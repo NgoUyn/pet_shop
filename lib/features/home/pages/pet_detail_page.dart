@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../admin/pages/admin_pet_form_page.dart';
+import '../../reviews/services/review_repository.dart';
+import '../../profile/services/profile_repository.dart';
+import '../../favorites/services/favorite_repository.dart';
+import '../../cart/services/cart_repository.dart';
 import '../services/pet_repository.dart';
 
 class PetDetailPage extends StatefulWidget {
@@ -15,11 +19,76 @@ class PetDetailPage extends StatefulWidget {
 
 class _PetDetailPageState extends State<PetDetailPage> {
   late PetItem _currentPet;
+  List<ReviewItem> _reviews = [];
+  bool _isAdmin = false;
+  bool _isFavorited = false;
+  bool _isProcessingFavorite = false;
+  bool _isAddingToCart = false;
+  bool _isLoadingReviews = true;
 
   @override
   void initState() {
     super.initState();
     _currentPet = widget.pet;
+    _loadReviews();
+    _checkAdmin();
+    _loadFavoriteStatus();
+  }
+
+  Future<void> _loadFavoriteStatus() async {
+    try {
+      final fav = await FavoriteRepository.instance.isPetFavorited(_currentPet.petId);
+      if (!mounted) return;
+      setState(() {
+        _isFavorited = fav;
+      });
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_isProcessingFavorite) return;
+    setState(() {
+      _isProcessingFavorite = true;
+    });
+
+    try {
+      await FavoriteRepository.instance.togglePetFavorite(_currentPet.petId);
+      final fav = await FavoriteRepository.instance.isPetFavorited(_currentPet.petId);
+      if (!mounted) return;
+      setState(() {
+        _isFavorited = fav;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))),
+      );
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _isProcessingFavorite = false;
+      });
+    }
+  }
+
+  Future<void> _addToCart() async {
+    if (_isAddingToCart) return;
+    setState(() { _isAddingToCart = true; });
+    try {
+      await CartRepository.instance.addPetToCart(petId: _currentPet.petId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã thêm thú cưng vào giỏ hàng')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))),
+      );
+    } finally {
+      if (!mounted) return;
+      setState(() { _isAddingToCart = false; });
+    }
   }
 
   String _formatPrice(double value) {
@@ -61,6 +130,39 @@ class _PetDetailPageState extends State<PetDetailPage> {
       return 'Chưa cập nhật';
     }
     return '$age tháng tuổi';
+  }
+
+  Future<void> _loadReviews() async {
+    try {
+      final reviews = await ReviewRepository.instance.getByPetId(_currentPet.petId);
+      if (mounted) {
+        setState(() {
+          _reviews = reviews;
+          _isLoadingReviews = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingReviews = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _checkAdmin() async {
+    try {
+      final profile = await ProfileRepository.instance.getCurrentProfile();
+      if (!mounted) return;
+      setState(() {
+        _isAdmin = profile?.role.toLowerCase() == 'admin';
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isAdmin = false;
+      });
+    }
   }
 
   Widget _buildHeroImage(PetItem pet) {
@@ -307,26 +409,47 @@ class _PetDetailPageState extends State<PetDetailPage> {
                         ],
                       ),
                       const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _buildActionButton(
-                            label: 'Chỉnh sửa',
-                            icon: Icons.edit_outlined,
-                            background: const Color(0xFFEAF3FF),
-                            foreground: const Color(0xFF2F80ED),
-                            onPressed: _editPet,
-                          ),
-                          _buildActionButton(
-                            label: 'Xóa',
-                            icon: Icons.delete_outline,
-                            background: const Color(0xFFFDECEC),
-                            foreground: const Color(0xFFB42318),
-                            onPressed: _deletePet,
-                          ),
-                        ],
-                      ),
+                      if (_isAdmin)
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            _buildActionButton(
+                              label: 'Chỉnh sửa',
+                              icon: Icons.edit_outlined,
+                              background: const Color(0xFFEAF3FF),
+                              foreground: const Color(0xFF2F80ED),
+                              onPressed: _editPet,
+                            ),
+                            _buildActionButton(
+                              label: 'Xóa',
+                              icon: Icons.delete_outline,
+                              background: const Color(0xFFFDECEC),
+                              foreground: const Color(0xFFB42318),
+                              onPressed: _deletePet,
+                            ),
+                          ],
+                        )
+                      else
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              onPressed: _isProcessingFavorite ? null : _toggleFavorite,
+                              icon: Icon(
+                                _isFavorited ? Icons.favorite : Icons.favorite_border,
+                                color: _isFavorited ? const Color(0xFFFF2D55) : AppColors.textLight,
+                              ),
+                              tooltip: 'Yêu thích',
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              onPressed: _isAddingToCart ? null : _addToCart,
+                              icon: const Icon(Icons.add_shopping_cart, color: Color(0xFF2F80ED)),
+                              tooltip: 'Thêm vào giỏ',
+                            ),
+                          ],
+                        ),
                       const SizedBox(height: 18),
                       _buildInfoRow('Mã thú cưng', pet.petId.toString()),
                       _buildInfoRow('Loài', pet.species),
@@ -472,8 +595,170 @@ class _PetDetailPageState extends State<PetDetailPage> {
                 },
               ),
             ),
+            const SizedBox(height: 24),
+            _buildReviewsSection(),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildReviewsSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(Icons.star_rounded, color: Color(0xFFFFB300), size: 24),
+            const SizedBox(width: 6),
+            Text(
+              'Đánh giá (${_reviews.length})',
+              style: const TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.w800,
+                fontFamily: 'Times New Roman',
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        if (_isLoadingReviews)
+          const Center(
+            child: Padding(
+              padding: EdgeInsets.all(24),
+              child: CircularProgressIndicator(),
+            ),
+          )
+        else if (_reviews.isEmpty)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Center(
+              child: Text(
+                'Chưa có đánh giá nào cho thú cưng này',
+                style: TextStyle(
+                  color: AppColors.textLight,
+                  fontSize: 15,
+                  fontFamily: 'Times New Roman',
+                ),
+              ),
+            ),
+          )
+        else
+          ..._reviews.map(_buildReviewCard),
+      ],
+    );
+  }
+
+  String _reviewDateLabel(DateTime value) {
+    String twoDigits(int input) => input.toString().padLeft(2, '0');
+    return '${twoDigits(value.day)}/${twoDigits(value.month)}/${value.year}';
+  }
+
+  Widget _buildReviewCard(ReviewItem review) {
+    final customerName = (review.customerName ?? '').trim();
+    final displayName = customerName.isNotEmpty ? customerName : 'Khách hàng';
+    final avatarText = displayName.isNotEmpty ? displayName[0].toUpperCase() : '?';
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.white,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 16,
+                backgroundColor: const Color(0xFFEAF3FF),
+                child: Text(
+                  avatarText,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF2F80ED),
+                    fontSize: 14,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      displayName,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                        fontFamily: 'Times New Roman',
+                      ),
+                    ),
+                    Text(
+                      _reviewDateLabel(review.createdAt.toLocal()),
+                      style: const TextStyle(
+                        color: AppColors.textLight,
+                        fontSize: 12,
+                        fontFamily: 'Times New Roman',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(5, (i) {
+                  return Icon(
+                    i < review.rating ? Icons.star : Icons.star_border,
+                    size: 16,
+                    color: const Color(0xFFFFB300),
+                  );
+                }),
+              ),
+            ],
+          ),
+          if ((review.content ?? '').trim().isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              review.content!,
+              style: const TextStyle(
+                fontSize: 14,
+                color: AppColors.textDark,
+                height: 1.4,
+                fontFamily: 'Times New Roman',
+              ),
+            ),
+          ],
+          if (review.imageUrls.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 80,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: review.imageUrls.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 6),
+                itemBuilder: (_, i) => ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: Image.network(
+                    review.imageUrls[i],
+                    width: 80,
+                    height: 80,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, size: 32, color: Colors.grey),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }

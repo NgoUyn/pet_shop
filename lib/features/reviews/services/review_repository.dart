@@ -201,6 +201,7 @@ class ReviewRepository {
       final detailRows = await db.rawQuery('''
         SELECT
           id.ProductID,
+          id.PetID,
           p.ProductName,
           p.ImageURL,
           id.Quantity,
@@ -213,12 +214,14 @@ class ReviewRepository {
         WHERE id.InvoiceID = ?
       ''', [invoiceId]);
       final productIds = <int>[];
+      final petIds = <int>[];
       final orderItems = <Map<String, dynamic>>[];
       for (final r in detailRows) {
         final pid = r['ProductID'] as int?;
         final petId = r['PetID'] as int?;
         final itemName = (pid != null ? (r['ProductName'] as String?) : (r['PetName'] as String?)) ?? 'Sản phẩm';
         if (pid != null) productIds.add(pid);
+        if (petId != null) petIds.add(petId);
         orderItems.add({
           'productId': pid,
           'petId': petId,
@@ -240,6 +243,7 @@ class ReviewRepository {
         'content': content?.trim().isEmpty == true ? null : content?.trim(),
         'imageUrls': imageUrls ?? [],
         'productIds': productIds,
+        'petIds': petIds,
         'orderItems': orderItems,
         'createdAt': now,
         'moderationStatus': moderationStatus,
@@ -424,6 +428,43 @@ class ReviewRepository {
     return merged;
   }
 
+  /// Get all reviews for a specific pet (local + Firestore)
+  Future<List<ReviewItem>> getByPetId(int petId) async {
+    final results = await Future.wait([
+      _getLocalByPetId(petId),
+      _getFirestoreByPetId(petId),
+    ]);
+
+    final localItems = results[0];
+    final firestoreItems = results[1];
+
+    final firestoreKeys = <String>{};
+    for (final item in firestoreItems) {
+      final key = '${item.invoiceId}_${item.customerName ?? ''}';
+      firestoreKeys.add(key);
+    }
+
+    final map = <String, ReviewItem>{};
+    for (final item in localItems) {
+      final key = '${item.invoiceId}_${item.customerName ?? ''}';
+      if (item.firestoreDocId != null && !firestoreKeys.contains(key)) {
+        continue;
+      }
+      map[key] = item;
+    }
+    for (final item in firestoreItems) {
+      final key = '${item.invoiceId}_${item.customerName ?? ''}';
+      map[key] = item;
+    }
+
+    final merged = map.values.toList();
+    merged.removeWhere((item) =>
+        item.isDeleted ||
+        (item.isFlagged && item.moderationStatus == 'rejected'));
+    merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return merged;
+  }
+
   Future<List<ReviewItem>> _getLocalByProductId(int productId) async {
     final db = await AppDatabase.instance;
     final rows = await db.rawQuery('''
@@ -435,6 +476,27 @@ class ReviewRepository {
       WHERE id.ProductID = ?
       ORDER BY r.CreatedAt DESC
     ''', [productId]);
+
+    final items = <ReviewItem>[];
+    for (final row in rows) {
+      final reviewId = row['ReviewID'] as int;
+      final images = await _loadImages(db, reviewId);
+      items.add(ReviewItem.fromRow(row, imageUrls: images));
+    }
+    return items;
+  }
+
+  Future<List<ReviewItem>> _getLocalByPetId(int petId) async {
+    final db = await AppDatabase.instance;
+    final rows = await db.rawQuery('''
+      SELECT DISTINCT r.*, u.FullName as CustomerName
+      FROM Review r
+      LEFT JOIN User u ON r.UserID = u.UserID
+      JOIN Invoice i ON r.InvoiceID = i.InvoiceID
+      JOIN InvoiceDetail id ON i.InvoiceID = id.InvoiceID
+      WHERE id.PetID = ?
+      ORDER BY r.CreatedAt DESC
+    ''', [petId]);
 
     final items = <ReviewItem>[];
     for (final row in rows) {
@@ -462,6 +524,31 @@ class ReviewRepository {
       return items;
     } catch (e) {
       print('ReviewRepository._getFirestoreByProductId error: $e');
+      return [];
+    }
+  }
+
+  Future<List<ReviewItem>> _getFirestoreByPetId(int petId) async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('reviews')
+          .where('petIds', arrayContains: petId)
+          .get();
+
+      var items = snapshot.docs.map((doc) => ReviewItem.fromFirestore(doc)).toList();
+
+      if (items.isEmpty) {
+        final fallbackSnapshot = await FirebaseFirestore.instance.collection('reviews').get();
+        items = fallbackSnapshot.docs
+            .map((doc) => ReviewItem.fromFirestore(doc))
+            .where((item) => item.orderItems.any((orderItem) => (orderItem['petId'] as num?)?.toInt() == petId))
+            .toList();
+      }
+
+      items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      return items;
+    } catch (e) {
+      print('ReviewRepository._getFirestoreByPetId error: $e');
       return [];
     }
   }
