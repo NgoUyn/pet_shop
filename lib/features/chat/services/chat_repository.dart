@@ -463,7 +463,9 @@ class ChatRepository {
     // may be a synthetic UID (e.g. 'admin_synthetic_1') that doesn't match the
     // current Firebase Auth UID. We'll filter out admin-to-admin conversations later.
     yield* _firestore.collection('chats').snapshots().map((snapshot) {
-      final items = <ChatConversationSummary>[];
+      // Use a map keyed by customerUid to dedupe multiple chat documents
+      // for the same customer (can happen when adminUid differs).
+      final map = <String, ChatConversationSummary>{};
 
       for (final doc in snapshot.docs) {
         final data = doc.data();
@@ -475,8 +477,13 @@ class ChatRepository {
         // Skip if the customerUid matches the current user (admin chatting with themselves)
         if (customerUid == user.uid) continue;
 
-        items.add(
-          ChatConversationSummary(
+        final lastMessageAt = _timestampToDateTime(data['lastMessageAt']);
+        final adminUnread = (data['adminUnreadCount'] as num?)?.toInt() ?? 0;
+        final customerUnread = (data['customerUnreadCount'] as num?)?.toInt() ?? 0;
+
+        final existing = map[customerUid];
+        if (existing == null) {
+          map[customerUid] = ChatConversationSummary(
             threadId: doc.id,
             customerUser: ChatUser(
               uid: customerUid,
@@ -491,13 +498,43 @@ class ChatRepository {
               role: user.role,
             ),
             lastMessage: (data['lastMessage'] as String?) ?? '',
-            lastMessageAt: _timestampToDateTime(data['lastMessageAt']),
-            customerUnreadCount: (data['customerUnreadCount'] as num?)?.toInt() ?? 0,
-            adminUnreadCount: (data['adminUnreadCount'] as num?)?.toInt() ?? 0,
-          ),
-        );
+            lastMessageAt: lastMessageAt,
+            customerUnreadCount: customerUnread,
+            adminUnreadCount: adminUnread,
+          );
+        } else {
+          // Accumulate unread counts across multiple thread documents for
+          // the same customer, and keep the most recent last message.
+          final combinedAdminUnread = existing.adminUnreadCount + adminUnread;
+          final combinedCustomerUnread = existing.customerUnreadCount + customerUnread;
+
+          if (lastMessageAt.isAfter(existing.lastMessageAt)) {
+            // Replace with newer message data
+            map[customerUid] = ChatConversationSummary(
+              threadId: doc.id,
+              customerUser: existing.customerUser,
+              adminUser: existing.adminUser,
+              lastMessage: (data['lastMessage'] as String?) ?? existing.lastMessage,
+              lastMessageAt: lastMessageAt,
+              customerUnreadCount: combinedCustomerUnread,
+              adminUnreadCount: combinedAdminUnread,
+            );
+          } else {
+            // Keep existing lastMessageAt but update unread totals
+            map[customerUid] = ChatConversationSummary(
+              threadId: existing.threadId,
+              customerUser: existing.customerUser,
+              adminUser: existing.adminUser,
+              lastMessage: existing.lastMessage,
+              lastMessageAt: existing.lastMessageAt,
+              customerUnreadCount: combinedCustomerUnread,
+              adminUnreadCount: combinedAdminUnread,
+            );
+          }
+        }
       }
 
+      final items = map.values.toList();
       items.sort((left, right) => right.lastMessageAt.compareTo(left.lastMessageAt));
       return items;
     });
@@ -528,6 +565,29 @@ class ChatRepository {
       },
       SetOptions(merge: true),
     );
+  }
+
+  /// Mark all chat documents that belong to the current customer as read
+  /// (set `customerUnreadCount` = 0). This covers cases where multiple
+  /// chat documents exist for the same customer (e.g. different adminUid).
+  Future<void> markAllCustomerThreadsAsRead() async {
+    final currentUser = await ensureCurrentUserSynced();
+    if (currentUser.isAdmin) return;
+
+    try {
+      final snapshot = await _firestore.collection('chats').where('customerUid', isEqualTo: currentUser.uid).get();
+      for (final doc in snapshot.docs) {
+        await _firestore.collection('chats').doc(doc.id).set(
+          {
+            'customerUnreadCount': 0,
+            'updatedAt': Timestamp.now(),
+          },
+          SetOptions(merge: true),
+        );
+      }
+    } catch (e) {
+      print('markAllCustomerThreadsAsRead error: $e');
+    }
   }
 
   Future<void> sendMessage({

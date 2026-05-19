@@ -185,7 +185,7 @@ class _ReviewPageState extends State<ReviewPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Gửi đánh giá thành công')),
         );
-        Navigator.pop(context);
+        Navigator.pop(context, true);
       }
     } catch (e) {
       if (mounted) {
