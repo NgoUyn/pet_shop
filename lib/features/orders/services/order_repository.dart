@@ -180,6 +180,93 @@ class OrderRepository {
         (order.orderStatus.isEmpty && order.paymentStatus == statusFilter);
   }
 
+  Future<OrderInfo?> getOrderById(int invoiceId) async {
+    final local = await _getLocalOrderById(invoiceId);
+    OrderInfo? remote;
+
+    try {
+      final data = await OrderFirestoreService.instance.getOrderDoc(invoiceId);
+      if (data != null) {
+        remote = _orderFromFirestoreMap(data);
+      }
+    } catch (_) {}
+
+    if (local == null) {
+      return remote;
+    }
+    if (remote == null) {
+      return local;
+    }
+
+    final preferred = _shouldPreferFirestore(local, remote) ? remote : local;
+    if (preferred == remote && local.orderStatus != remote.orderStatus && remote.orderStatus.isNotEmpty) {
+      await _tryUpdateLocalStatus(remote.invoiceId, remote.orderStatus);
+    }
+    return preferred;
+  }
+
+  Future<OrderInfo?> _getLocalOrderById(int invoiceId) async {
+    try {
+      final db = await AppDatabase.instance;
+      final rows = await db.rawQuery(
+        '''
+        SELECT i.*,
+          COALESCE(i.OrderStatus, i.PaymentStatus) as EffectiveStatus
+        FROM Invoice i
+        WHERE i.InvoiceID = ?
+        LIMIT 1
+        ''',
+        [invoiceId],
+      );
+      if (rows.isEmpty) return null;
+
+      final detailRows = await db.rawQuery(
+        '''
+        SELECT id.*, p.ProductName, pet.PetName
+        FROM InvoiceDetail id
+        LEFT JOIN Product p ON id.ProductID = p.ProductID
+        LEFT JOIN Pet pet ON id.PetID = pet.PetID
+        WHERE id.InvoiceID = ?
+        ''',
+        [invoiceId],
+      );
+
+      final items = detailRows.map(OrderItemInfo.fromRow).toList();
+      return OrderInfo.fromRow(rows.first, items);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  OrderInfo _orderFromFirestoreMap(Map<String, dynamic> data) {
+    final itemsList = (data['items'] as List<dynamic>?) ?? [];
+    final items = itemsList.map((item) {
+      final map = Map<String, Object?>.from(item as Map);
+      return OrderItemInfo(
+        invoiceDetailId: (map['invoiceDetailId'] as num?)?.toInt() ?? 0,
+        productId: (map['productId'] as num?)?.toInt(),
+        productName: map['productName'] as String?,
+        petId: (map['petId'] as num?)?.toInt(),
+        petName: map['petName'] as String?,
+        quantity: (map['quantity'] as num?)?.toInt() ?? 1,
+        unitPrice: (map['unitPrice'] as num?)?.toDouble() ?? 0.0,
+      );
+    }).toList();
+
+    return OrderInfo(
+      invoiceId: (data['invoiceId'] as num?)?.toInt() ?? 0,
+      paymentStatus: (data['paymentStatus'] as String?) ?? '',
+      orderStatus: (data['orderStatus'] as String?) ?? '',
+      totalAmount: (data['totalAmount'] as num?)?.toDouble() ?? 0.0,
+      shippingAddress: data['shippingAddress'] as String?,
+      paymentMethod: data['paymentMethod'] as String?,
+      createdAt: (data['createdAt'] as String?) ?? '',
+      updatedAt: data['updatedAt'] as String?,
+      items: items,
+      customerName: data['customerName'] as String?,
+    );
+  }
+
   /// Get all orders for the current user
   Future<List<OrderInfo>> getOrdersForCurrentUser({String? statusFilter}) async {
     final userId = AuthSession.instance.currentUserId.value;
@@ -416,6 +503,9 @@ class OrderRepository {
     // 2. Try local SQLite (may not exist on admin device)
     await _tryUpdateLocalStatus(invoiceId, 'Cancelled', paymentStatus: 'Cancelled');
 
+    // 2b. Restore stock locally
+    await _tryRestoreStockLocal(invoiceId);
+
     // 3. Notify customer via Firestore
     await _notifyCustomer(doc, invoiceId, 'order',
         'Đơn hàng đã bị hủy',
@@ -476,6 +566,32 @@ class OrderRepository {
           where: 'InvoiceID = ?',
           whereArgs: [invoiceId],
         );
+      }
+    } catch (_) {}
+  }
+
+  /// Best-effort restore stock quantities for products in the cancelled invoice
+  Future<void> _tryRestoreStockLocal(int invoiceId) async {
+    try {
+      final db = await AppDatabase.instance;
+
+      final details = await db.query(
+        'InvoiceDetail',
+        columns: ['ProductID', 'Quantity'],
+        where: 'InvoiceID = ?',
+        whereArgs: [invoiceId],
+      );
+
+      for (final detail in details) {
+        final productId = detail['ProductID'] as int?;
+        final quantity = (detail['Quantity'] as int?) ?? 0;
+
+        if (productId != null && quantity > 0) {
+          await db.rawUpdate(
+            'UPDATE Product SET StockQuantity = StockQuantity + ? WHERE ProductID = ?',
+            [quantity, productId],
+          );
+        }
       }
     } catch (_) {}
   }

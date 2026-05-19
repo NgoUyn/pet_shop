@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../orders/pages/order_history_page.dart';
+import '../../orders/pages/order_detail_page.dart';
+import '../../orders/services/order_repository.dart';
 import '../../reviews/pages/review_page.dart';
+import '../../reviews/services/review_repository.dart';
 import '../services/notification_repository.dart';
 
 class NotificationPage extends StatefulWidget {
@@ -101,25 +103,29 @@ class _NotificationPageState extends State<NotificationPage> {
 
     if (item.type == 'order' && item.referenceId != null) {
       if (!mounted) return;
-      final isCompleted = item.title.contains('hoàn thành') ||
-          item.title.contains('giao thành công');
+      final order = await OrderRepository.instance.getOrderById(item.referenceId!);
+      final isCompleted = order?.orderStatus == 'Completed';
       if (isCompleted) {
-        final submitted = await Navigator.push<bool>(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ReviewPage(invoiceId: item.referenceId!),
-          ),
-        );
-        if (mounted && submitted == true) {
-          _load();
+        final reviewed = await ReviewRepository.instance.hasReviewed(item.referenceId!);
+        if (!reviewed) {
+          final submitted = await Navigator.push<bool>(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ReviewPage(invoiceId: item.referenceId!),
+            ),
+          );
+          if (mounted && submitted == true) {
+            _load();
+          }
+          return;
         }
-      } else {
-        await Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const OrderHistoryPage()),
-        );
-        if (mounted) _load();
       }
+
+      await Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => OrderDetailPage(invoiceId: item.referenceId!)),
+      );
+      if (mounted) _load();
     }
   }
 
