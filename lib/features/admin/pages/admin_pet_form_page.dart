@@ -30,6 +30,7 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
   String _species = 'Chó';
   String? _initialImageUrl;
   String _gender = 'Cái';
+  String _status = 'đang bán';
   bool _isDewormed = false;
   bool _isVaccinated = false;
   bool _isSaving = false;
@@ -53,6 +54,7 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
       _personalityController.text = pet.personality ?? '';
       _descriptionController.text = pet.description ?? '';
       _gender = pet.gender ?? 'Chưa xác định';
+      _status = pet.status;
       _isDewormed = pet.isDewormed;
       _isVaccinated = pet.isVaccinated;
       _initialImageUrl = pet.imageUrl;
@@ -248,6 +250,7 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
           isDewormed: _isDewormed,
           isVaccinated: _isVaccinated,
           imageUrl: imageUrl,
+          status: _status,
         );
       } else {
         await PetRepository.instance.addPet(
@@ -382,6 +385,27 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                                 setState(() {
                                   _gender = value;
                                 });
+                              },
+                      ),
+                      const SizedBox(height: 12),
+
+                      // ── Status Dropdown ───────────────────────────────────
+                      DropdownButtonFormField<String>(
+                        value: _status,
+                        decoration: InputDecoration(
+                          labelText: 'Trạng thái',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        items: const [
+                          DropdownMenuItem(value: 'đang bán', child: Text('Đang bán')),
+                          DropdownMenuItem(value: 'đã bán', child: Text('Đã bán')),
+                          DropdownMenuItem(value: 'ngưng bán', child: Text('Ngưng bán')),
+                        ],
+                        onChanged: _isSaving
+                            ? null
+                            : (value) {
+                                if (value == null) return;
+                                setState(() => _status = value);
                               },
                       ),
                       const SizedBox(height: 12),

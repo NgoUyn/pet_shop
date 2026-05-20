@@ -58,8 +58,8 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
   }
 
   String _deriveStatus(ProductItem product) {
-    if (!product.isActive) return 'Không bán';
-    if (product.stockQuantity <= 0) return 'Hết hàng';
+    if (!product.isActive) return 'Ngưng bán';
+    if (product.stockQuantity < 5) return 'Hết hàng';
     return 'Đang bán';
   }
 
@@ -211,7 +211,7 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
 
       final enteredStock = int.parse(_stockController.text.trim());
       final status = _status;
-      final isActive = status != 'Không bán';
+      final isActive = status != 'Ngưng bán';
       final stockQuantity = status == 'Hết hàng' ? 0 : enteredStock;
 
       if (_isEditing) {
@@ -225,6 +225,7 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
           imageUrl: (imageUrl == null || imageUrl.isEmpty) ? null : imageUrl,
           isActive: isActive,
           subCategoryId: _selectedSubCategoryId,
+          status: status,
         );
       } else {
         await ProductRepository.instance.addProduct(
@@ -236,6 +237,7 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
           imageUrl: (imageUrl == null || imageUrl.isEmpty) ? null : imageUrl,
           isActive: isActive,
           subCategoryId: _selectedSubCategoryId,
+          status: status,
         );
       }
 
@@ -360,7 +362,7 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
                         items: const [
                           DropdownMenuItem(value: 'Đang bán', child: Text('Đang bán')),
                           DropdownMenuItem(value: 'Hết hàng', child: Text('Hết hàng')),
-                          DropdownMenuItem(value: 'Không bán', child: Text('Không bán')),
+                          DropdownMenuItem(value: 'Ngưng bán', child: Text('Ngưng bán')),
                         ],
                         onChanged: _isSaving ? null : (value) {
                           if (value == null) return;

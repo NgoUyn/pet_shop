@@ -137,9 +137,16 @@ class _ShopListPageState extends State<ShopListPage> {
     final isLoading = provider.isLoading;
     final error = provider.error;
 
+    // Additional safety filter: hide out-of-stock/discontinued products from customer view
+    final availableItems = items.where((p) =>
+      p.status != 'Hết hàng' &&
+      p.status != 'Ngưng bán' &&
+      p.stockQuantity >= 5
+    ).toList();
+
     final filtered = _query.isEmpty
-        ? items
-        : items.where((p) => p.productName.toLowerCase().contains(_query)).toList();
+        ? availableItems
+        : availableItems.where((p) => p.productName.toLowerCase().contains(_query)).toList();
 
     return Scaffold(
       backgroundColor: AppColors.background,

@@ -10,6 +10,7 @@ import '../../auth/services/auth_repository.dart';
 import '../../auth/services/auth_session.dart';
 import '../../chat/pages/admin_chat_inbox_page.dart';
 import '../../chat/services/chat_repository.dart';
+
 import '../../pet_detail/pages/pet_detail_page.dart';
 import '../../product_detail/pages/product_detail_page.dart';
 import '../../home/services/product_repository.dart';
@@ -904,7 +905,7 @@ class _AdminInventoryPage extends StatelessWidget {
       future: ProductRepository.instance.listActiveProducts(),
       builder: (context, snapshot) {
         final items = snapshot.data ?? const <ProductItem>[];
-        final lowStock = items.where((item) => item.stockQuantity <= 5).toList();
+        final lowStock = items.where((item) => item.stockQuantity < 5).toList();
 
         return Scaffold(
           backgroundColor: AppColors.background,
@@ -2140,12 +2141,12 @@ class _AdminDashboardSummary {
     }
 
     final customers = await db.rawQuery("SELECT COUNT(*) AS Cnt FROM User WHERE lower(Role) = 'customer'");
-    final pets = await db.rawQuery('SELECT COUNT(*) AS Cnt FROM Pet');
+    final pets = await db.rawQuery("SELECT COUNT(*) AS Cnt FROM Pet WHERE Status = 'đang bán'");
     final products = await db.rawQuery('SELECT COUNT(*) AS Cnt FROM Product');
     final lowStockRows = await db.rawQuery('''
       SELECT ProductName, StockQuantity, Price
       FROM Product
-      WHERE StockQuantity <= 5
+      WHERE StockQuantity < 5
       ORDER BY StockQuantity ASC, ProductID DESC
       LIMIT 6
     ''');

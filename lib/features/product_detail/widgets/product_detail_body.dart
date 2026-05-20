@@ -54,6 +54,7 @@ class _ProductDetailBodyState extends State<ProductDetailBody> {
     } else if (oldWidget.product.stockQuantity != widget.product.stockQuantity ||
                oldWidget.product.price != widget.product.price ||
                oldWidget.product.isActive != widget.product.isActive ||
+               oldWidget.product.status != widget.product.status ||
                oldWidget.product.productName != widget.product.productName ||
                oldWidget.product.description != widget.product.description ||
                oldWidget.product.imageUrl != widget.product.imageUrl) {
@@ -138,6 +139,8 @@ class _ProductDetailBodyState extends State<ProductDetailBody> {
   Widget build(BuildContext context) {
     final product = _currentProduct;
     final description = (product.description ?? '').trim();
+    final hideInfoCardForCustomer = !widget.showAdminActions &&
+        (product.status == 'Hết hàng' || product.stockQuantity < 5);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -147,179 +150,181 @@ class _ProductDetailBodyState extends State<ProductDetailBody> {
         const SizedBox(height: 18),
 
         // ── Info Card ──────────────────────────────────────────────
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: AppColors.white,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x0F000000),
-                blurRadius: 18,
-                offset: Offset(0, 8),
-              ),
-            ],
-          ),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final isNarrow = constraints.maxWidth < 720;
+        if (!hideInfoCardForCustomer)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x0F000000),
+                  blurRadius: 18,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final isNarrow = constraints.maxWidth < 720;
+                final isOutOfStock = product.status == 'Hết hàng' || product.stockQuantity < 5;
 
-              final leftColumn = Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Text(
-                          product.productName,
-                          style: const TextStyle(
-                            color: AppColors.textDark,
-                            fontSize: 28,
-                            fontWeight: FontWeight.w800,
-                            fontFamily: 'Times New Roman',
+                final leftColumn = Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Text(
+                            product.productName,
+                            style: const TextStyle(
+                              color: AppColors.textDark,
+                              fontSize: 28,
+                              fontWeight: FontWeight.w800,
+                              fontFamily: 'Times New Roman',
+                            ),
                           ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Admin actions (only visible to admin)
+                    if (widget.showAdminActions)
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _buildActionButton(
+                            label: 'Chỉnh sửa',
+                            icon: Icons.edit_outlined,
+                            background: const Color(0xFFEAF3FF),
+                            foreground: const Color(0xFF2F80ED),
+                            onPressed: widget.onEditPressed ?? () {},
+                          ),
+                          _buildActionButton(
+                            label: 'Xóa',
+                            icon: Icons.delete_outline,
+                            background: const Color(0xFFFDECEC),
+                            foreground: const Color(0xFFB42318),
+                            onPressed: widget.onDeletePressed ?? () {},
+                          ),
+                        ],
+                      ),
+                    const SizedBox(height: 18),
+                    _buildInfoRow('Mã phụ kiện', product.productId.toString()),
+                    _buildInfoRow('Danh mục', _categoryName ?? 'Đang tải...'),
+                    _buildInfoRow('Tồn kho', '${product.stockQuantity} sản phẩm'),
+                    _buildInfoRow('Trạng thái', product.status),
+                    _buildInfoRow('Ngày tạo', _formatDateTime(product.createdAt.toLocal())),
+                    if (description.isNotEmpty) ...[
+                      const Text(
+                        'Mô tả',
+                        style: TextStyle(
+                          color: Color(0xFF7A7A7A),
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          fontFamily: 'Times New Roman',
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        description,
+                        style: const TextStyle(
+                          color: AppColors.textDark,
+                          fontSize: 15,
+                          height: 1.45,
+                          fontFamily: 'Times New Roman',
                         ),
                       ),
                     ],
-                  ),
-                  const SizedBox(height: 12),
-
-                  // Admin actions (only visible to admin)
-                  if (widget.showAdminActions)
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        _buildActionButton(
-                          label: 'Chỉnh sửa',
-                          icon: Icons.edit_outlined,
-                          background: const Color(0xFFEAF3FF),
-                          foreground: const Color(0xFF2F80ED),
-                          onPressed: widget.onEditPressed ?? () {},
-                        ),
-                        _buildActionButton(
-                          label: 'Xóa',
-                          icon: Icons.delete_outline,
-                          background: const Color(0xFFFDECEC),
-                          foreground: const Color(0xFFB42318),
-                          onPressed: widget.onDeletePressed ?? () {},
-                        ),
-                      ],
-                    ),
-                  const SizedBox(height: 18),
-                  _buildInfoRow('Mã phụ kiện', product.productId.toString()),
-                  _buildInfoRow('Danh mục', _categoryName ?? 'Đang tải...'),
-                  _buildInfoRow('Tồn kho', '${product.stockQuantity} sản phẩm'),
-                  _buildInfoRow('Trạng thái', product.isActive ? 'Đang bán' : 'Ngừng bán'),
-                  _buildInfoRow('Ngày tạo', _formatDateTime(product.createdAt.toLocal())),
-                  if (description.isNotEmpty) ...[
-                    const Text(
-                      'Mô tả',
-                      style: TextStyle(
-                        color: Color(0xFF7A7A7A),
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        fontFamily: 'Times New Roman',
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      description,
-                      style: const TextStyle(
-                        color: AppColors.textDark,
-                        fontSize: 15,
-                        height: 1.45,
-                        fontFamily: 'Times New Roman',
-                      ),
-                    ),
-                  ],
-                ],
-              );
-
-              final rightColumn = Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const SizedBox(height: 18),
-                  _buildBadge(
-                    product.stockQuantity > 0 ? 'Còn hàng' : 'Hết hàng',
-                    background: product.stockQuantity > 0 ? const Color(0xFFD8EEE4) : const Color(0xFFFDECEC),
-                    foreground: product.stockQuantity > 0 ? const Color(0xFF3E7C63) : const Color(0xFFB42318),
-                  ),
-                  const SizedBox(height: 10),
-                  _buildBadge(
-                    product.isActive ? 'Đang bán' : 'Ngừng bán',
-                    background: product.isActive ? const Color(0xFFEAF3FF) : const Color(0xFFF3F4F6),
-                    foreground: product.isActive ? const Color(0xFF2F80ED) : const Color(0xFF6B7280),
-                  ),
-                  const SizedBox(height: 10),
-                  if (product.stockQuantity <= 5 && product.stockQuantity > 0)
-                    _buildBadge(
-                      'Sắp hết hàng',
-                      background: const Color(0xFFFFF3E0),
-                      foreground: Colors.orange,
-                    ),
-                  const SizedBox(height: 10),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8F9FB),
-                      borderRadius: BorderRadius.circular(18),
-                      border: Border.all(color: const Color(0xFFE7EAF0)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.sell_outlined, color: Color(0xFFF59E0B)),
-                        const SizedBox(width: 10),
-                        const Text(
-                          'Giá',
-                          style: TextStyle(
-                            color: AppColors.textLight,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            fontFamily: 'Times New Roman',
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          _formatPrice(product.price),
-                          style: const TextStyle(
-                            color: Color(0xFFF59E0B),
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                            fontFamily: 'Times New Roman',
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              );
-
-              if (isNarrow) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    leftColumn,
-                    const SizedBox(height: 20),
-                    rightColumn,
                   ],
                 );
-              }
 
-              return Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(child: leftColumn),
-                  const SizedBox(width: 16),
-                  Expanded(child: rightColumn),
-                ],
-              );
-            },
+                final rightColumn = Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 18),
+                    _buildBadge(
+                      isOutOfStock ? 'Hết hàng' : 'Còn hàng',
+                      background: isOutOfStock ? const Color(0xFFFDECEC) : const Color(0xFFD8EEE4),
+                      foreground: isOutOfStock ? const Color(0xFFB42318) : const Color(0xFF3E7C63),
+                    ),
+                    const SizedBox(height: 10),
+                    _buildBadge(
+                      product.isActive ? 'Đang bán' : 'Ngừng bán',
+                      background: product.isActive ? const Color(0xFFEAF3FF) : const Color(0xFFF3F4F6),
+                      foreground: product.isActive ? const Color(0xFF2F80ED) : const Color(0xFF6B7280),
+                    ),
+                    const SizedBox(height: 10),
+                    if (!isOutOfStock && product.stockQuantity == 5)
+                      _buildBadge(
+                        'Sắp hết hàng',
+                        background: const Color(0xFFFFF3E0),
+                        foreground: Colors.orange,
+                      ),
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8F9FB),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: const Color(0xFFE7EAF0)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.sell_outlined, color: Color(0xFFF59E0B)),
+                          const SizedBox(width: 10),
+                          const Text(
+                            'Giá',
+                            style: TextStyle(
+                              color: AppColors.textLight,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: 'Times New Roman',
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            _formatPrice(product.price),
+                            style: const TextStyle(
+                              color: Color(0xFFF59E0B),
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              fontFamily: 'Times New Roman',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+
+                if (isNarrow) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      leftColumn,
+                      const SizedBox(height: 20),
+                      rightColumn,
+                    ],
+                  );
+                }
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: leftColumn),
+                    const SizedBox(width: 16),
+                    Expanded(child: rightColumn),
+                  ],
+                );
+              },
+            ),
           ),
-        ),
 
         const SizedBox(height: 24),
 

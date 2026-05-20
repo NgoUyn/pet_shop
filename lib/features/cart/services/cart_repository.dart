@@ -4,6 +4,8 @@ import 'package:sqflite/sqflite.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../auth/services/auth_session.dart';
+import '../../home/services/pet_repository.dart';
+import '../../home/services/product_repository.dart';
 import '../../profile/services/profile_repository.dart';
 import '../../notifications/services/notification_repository.dart';
 import '../../orders/services/order_firestore_service.dart';
@@ -608,6 +610,7 @@ class CartRepository {
   Future<void> updateOrderToPaid(int invoiceId, {String? transactionCode}) async {
     final db = await AppDatabase.instance;
     int? customerUserId;
+    final updatedProductIds = <int>{};
 
     await db.transaction((txn) async {
       // Get invoice info
@@ -656,6 +659,7 @@ class CartRepository {
         final quantity = (detail['Quantity'] as int?) ?? 1;
 
         if (productId != null) {
+          updatedProductIds.add(productId);
           final affected = await txn.rawUpdate(
             'UPDATE Product SET StockQuantity = StockQuantity - ? WHERE ProductID = ? AND StockQuantity >= ?',
             [quantity, productId, quantity],
@@ -700,6 +704,27 @@ class CartRepository {
         );
       }
     });
+
+    await _updateLowStockStatuses(updatedProductIds);
+
+    // Mark pets in this order as sold immediately
+    try {
+      final db = await AppDatabase.instance;
+      final detailRows = await db.query(
+        'InvoiceDetail',
+        columns: ['PetID'],
+        where: 'InvoiceID = ? AND PetID IS NOT NULL',
+        whereArgs: [invoiceId],
+      );
+      for (final detail in detailRows) {
+        final petId = detail['PetID'] as int?;
+        if (petId != null) {
+          await PetRepository.instance.markPetAsSold(petId);
+        }
+      }
+    } catch (e) {
+      print('updateOrderToPaid: mark pets as sold error (non-fatal): $e');
+    }
 
     // Sync status to Firestore
     await OrderFirestoreService.instance.updateOrderStatusInFirestore(
@@ -777,6 +802,7 @@ class CartRepository {
     final firestoreItems = <Map<String, dynamic>>[];
 
     try {
+      final updatedProductIds = <int>{};
       await db.transaction((txn) async {
         final cartId = await _ensureCartIdForCustomer(customerId, txnOrDb: txn);
 
@@ -899,6 +925,7 @@ class CartRepository {
           });
 
           if (productId != null) {
+            updatedProductIds.add(productId);
             final affected = await txn.rawUpdate(
               '''
               UPDATE Product
@@ -932,6 +959,8 @@ class CartRepository {
           'TransactionCode': isOnlinePayment ? (transactionCode ?? 'QR-$invoiceId') : null,
           'PaidAt': isOnlinePayment ? now : null,
         });
+
+        await _updateLowStockStatuses(updatedProductIds);
 
         // Compute and award loyalty points (1 point per 10,000 units)
         try {
@@ -1021,6 +1050,18 @@ class CartRepository {
       );
     } catch (_) {}
 
+    // Mark pets in this order as sold immediately
+    try {
+      for (final item in firestoreItems) {
+        final petId = item['petId'] as int?;
+        if (petId != null) {
+          await PetRepository.instance.markPetAsSold(petId);
+        }
+      }
+    } catch (e) {
+      print('checkoutCurrentUser: mark pets as sold error (non-fatal): $e');
+    }
+
     return CheckoutResult(
       invoiceId: invoiceId,
       totalItems: totalItems,
@@ -1029,5 +1070,22 @@ class CartRepository {
       usedPoints: usedPoints,
       earnedPoints: earnedPoints,
     );
+  }
+
+  Future<void> _updateLowStockStatuses(Set<int> productIds) async {
+    if (productIds.isEmpty) return;
+    for (final productId in productIds) {
+      try {
+        final product = await ProductRepository.instance.getProductById(productId);
+        if (product == null) continue;
+        if (product.stockQuantity < 5 &&
+            product.status != 'Hết hàng' &&
+            product.status != 'Ngưng bán') {
+          await ProductRepository.instance.updateProductStatus(product.productId, 'Hết hàng');
+        }
+      } catch (e) {
+        debugPrint('_updateLowStockStatuses error: $e');
+      }
+    }
   }
 }

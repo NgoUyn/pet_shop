@@ -16,7 +16,7 @@ class PetProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
-  /// Load all active pets from the repository (local + Firestore merged).
+  /// Load all active pets visible to customers (only active + đang bán).
   Future<void> loadPets({int limit = 200}) async {
     _isLoading = true;
     _error = null;
@@ -28,6 +28,24 @@ class PetProvider extends ChangeNotifier {
     } catch (e) {
       _error = 'Không thể tải danh sách thú cưng';
       debugPrint('PetProvider.loadPets error: $e');
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Load ALL pets (including inactive/sold) — for admin use.
+  Future<void> loadAllPets({int limit = 500}) async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      _pets = await PetRepository.instance.listAllPets(limit: limit);
+      _error = null;
+    } catch (e) {
+      _error = 'Không thể tải danh sách thú cưng';
+      debugPrint('PetProvider.loadAllPets error: $e');
     } finally {
       _isLoading = false;
       notifyListeners();

@@ -16,6 +16,7 @@ class ProductItem {
     this.description,
     this.imageUrl,
     this.subCategoryId,
+    this.status = 'Đang bán',
   });
 
   final int productId;
@@ -28,19 +29,37 @@ class ProductItem {
   final String? description;
   final String? imageUrl;
   final int? subCategoryId;
+  final String status;
 
   static ProductItem fromRow(Map<String, Object?> row) {
+    final rawStatus = row['Status'] as String?;
+    final isActive = (row['IsActive'] as int?) == 1;
+    final stockQuantity = (row['StockQuantity'] as int?) ?? 0;
+
+    // Derive status if not explicitly set
+    String status;
+    if (rawStatus != null && rawStatus.isNotEmpty) {
+      status = rawStatus;
+    } else if (!isActive) {
+      status = 'Ngưng bán';
+    } else if (stockQuantity < 5) {
+      status = 'Hết hàng';
+    } else {
+      status = 'Đang bán';
+    }
+
     return ProductItem(
       productId: row['ProductID'] as int,
       categoryId: row['CategoryID'] as int,
       productName: (row['ProductName'] as String?) ?? '',
       price: (row['Price'] as num).toDouble(),
-      stockQuantity: (row['StockQuantity'] as int?) ?? 0,
+      stockQuantity: stockQuantity,
       description: row['Description'] as String?,
       imageUrl: row['ImageURL'] as String?,
-      isActive: (row['IsActive'] as int?) == 1,
+      isActive: isActive,
       createdAt: DateTime.parse(row['CreatedAt'] as String),
       subCategoryId: row['SubCategoryID'] as int?,
+      status: status,
     );
   }
 }
@@ -105,16 +124,24 @@ class ProductRepository {
 
       return snapshot.docs.map((doc) {
         final data = doc.data();
+        final isActive = data['isActive'] as bool? ?? true;
+        final stockQuantity = (data['stockQuantity'] as num?)?.toInt() ?? 0;
+        final rawStatus = (data['status'] as String?) ?? '';
+        final status = rawStatus.isNotEmpty
+            ? rawStatus
+            : deriveStatus(stockQuantity: stockQuantity, isActive: isActive);
         return ProductItem(
           productId: (data['productId'] as num).toInt(),
           categoryId: (data['categoryId'] as num).toInt(),
           productName: (data['productName'] as String?) ?? '',
           price: (data['price'] as num).toDouble(),
-          stockQuantity: (data['stockQuantity'] as num?)?.toInt() ?? 0,
+          stockQuantity: stockQuantity,
           description: data['description'] as String?,
           imageUrl: data['imageUrl'] as String?,
-          isActive: data['isActive'] as bool? ?? true,
+          isActive: isActive,
+          subCategoryId: (data['subCategoryId'] as num?)?.toInt(),
           createdAt: DateTime.parse((data['createdAt'] as String)),
+          status: status,
         );
       }).toList();
     } catch (e) {
@@ -144,21 +171,36 @@ class ProductRepository {
           .get();
       if (!doc.exists) return null;
       final data = doc.data()!;
+      final isActive = data['isActive'] as bool? ?? true;
+      final stockQuantity = (data['stockQuantity'] as num?)?.toInt() ?? 0;
+      final rawStatus = (data['status'] as String?) ?? '';
+      final status = rawStatus.isNotEmpty
+          ? rawStatus
+          : deriveStatus(stockQuantity: stockQuantity, isActive: isActive);
       return ProductItem(
         productId: productId,
         categoryId: (data['categoryId'] as num).toInt(),
         productName: (data['productName'] as String?) ?? '',
         price: (data['price'] as num).toDouble(),
-        stockQuantity: (data['stockQuantity'] as num?)?.toInt() ?? 0,
+        stockQuantity: stockQuantity,
         description: data['description'] as String?,
         imageUrl: data['imageUrl'] as String?,
-        isActive: data['isActive'] as bool? ?? true,
+        isActive: isActive,
+        subCategoryId: (data['subCategoryId'] as num?)?.toInt(),
         createdAt: DateTime.parse((data['createdAt'] as String)),
+        status: status,
       );
     } catch (e) {
       print('ProductRepository.getProductById Firestore fallback error: $e');
       return null;
     }
+  }
+
+  /// Derive status from stock quantity and isActive
+  static String deriveStatus({required int stockQuantity, required bool isActive}) {
+    if (!isActive) return 'Ngưng bán';
+    if (stockQuantity < 5) return 'Hết hàng';
+    return 'Đang bán';
   }
 
   Future<int> addProduct({
@@ -170,9 +212,14 @@ class ProductRepository {
     String? imageUrl,
     bool isActive = true,
     int? subCategoryId,
+    String? status,
   }) async {
     final db = await AppDatabase.instance;
     final now = DateTime.now().toIso8601String();
+    final forcedStatus = deriveStatus(stockQuantity: stockQuantity, isActive: isActive);
+    final derivedStatus = (status ?? forcedStatus) == 'Đang bán' && forcedStatus == 'Hết hàng'
+      ? forcedStatus
+      : (status ?? forcedStatus);
     final id = await db.insert('Product', {
       'CategoryID': categoryId,
       'ProductName': productName,
@@ -182,6 +229,7 @@ class ProductRepository {
       'ImageURL': imageUrl,
       'IsActive': isActive ? 1 : 0,
       'SubCategoryID': subCategoryId,
+      'Status': derivedStatus,
       'CreatedAt': now,
       'UpdatedAt': null,
     });
@@ -195,6 +243,7 @@ class ProductRepository {
       imageUrl: imageUrl,
       isActive: isActive,
       subCategoryId: subCategoryId,
+      status: derivedStatus,
       createdAt: DateTime.parse(now),
     ));
     _notifyChanged();
@@ -211,23 +260,32 @@ class ProductRepository {
     String? imageUrl,
     bool? isActive,
     int? subCategoryId,
+    String? status,
   }) async {
     final db = await AppDatabase.instance;
     final current = await getProductById(productId);
     final nextIsActive = isActive ?? current?.isActive ?? true;
+    final forcedStatus = deriveStatus(stockQuantity: stockQuantity, isActive: nextIsActive);
+    final nextStatus = (status ?? forcedStatus) == 'Đang bán' && forcedStatus == 'Hết hàng'
+      ? forcedStatus
+      : (status ?? forcedStatus);
+
+    final updateValues = <String, Object?>{
+      'CategoryID': categoryId,
+      'ProductName': productName,
+      'Price': price,
+      'StockQuantity': stockQuantity,
+      'Description': description,
+      'ImageURL': imageUrl,
+      'IsActive': nextIsActive ? 1 : 0,
+      'SubCategoryID': subCategoryId,
+      'Status': nextStatus,
+      'UpdatedAt': DateTime.now().toIso8601String(),
+    };
+
     await db.update(
       'Product',
-      {
-        'CategoryID': categoryId,
-        'ProductName': productName,
-        'Price': price,
-        'StockQuantity': stockQuantity,
-        'Description': description,
-        'ImageURL': imageUrl,
-        'IsActive': nextIsActive ? 1 : 0,
-        'SubCategoryID': subCategoryId,
-        'UpdatedAt': DateTime.now().toIso8601String(),
-      },
+      updateValues,
       where: 'ProductID = ?',
       whereArgs: [productId],
     );
@@ -246,6 +304,30 @@ class ProductRepository {
     _syncProductToFirestore(product);
     _notifyChanged();
     return product;
+  }
+
+  /// Update only the status of a product (used for auto-status changes)
+  Future<void> updateProductStatus(int productId, String status) async {
+    final db = await AppDatabase.instance;
+    await db.update(
+      'Product',
+      {
+        'Status': status,
+        'UpdatedAt': DateTime.now().toIso8601String(),
+      },
+      where: 'ProductID = ?',
+      whereArgs: [productId],
+    );
+    // Sync to Firestore
+    try {
+      await FirebaseFirestore.instance
+          .collection('products')
+          .doc(productId.toString())
+          .update({'status': status, 'isActive': status != 'Ngưng bán'});
+    } catch (e) {
+      print('ProductRepository.updateProductStatus Firestore error: $e');
+    }
+    _notifyChanged();
   }
 
   Future<void> deleteProduct(int productId) async {
@@ -283,6 +365,7 @@ class ProductRepository {
         'description': product.description,
         'imageUrl': product.imageUrl,
         'isActive': product.isActive,
+        'status': product.status,
         'subCategoryId': product.subCategoryId,
         'createdAt': product.createdAt.toIso8601String(),
       });

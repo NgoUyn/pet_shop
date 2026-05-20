@@ -17,13 +17,20 @@ class ProductProvider extends ChangeNotifier {
   String? get error => _error;
 
   /// Load all active products from the repository (local + Firestore merged).
+  /// For customer-facing views, filters out products with status 'Hết hàng' or 'Ngưng bán'.
   Future<void> loadProducts({int limit = 200}) async {
     _isLoading = true;
     _error = null;
     notifyListeners();
 
     try {
-      _products = await ProductRepository.instance.listActiveProducts(limit: limit);
+      final allProducts = await ProductRepository.instance.listActiveProducts(limit: limit);
+      // Filter out products that are out of stock or discontinued for customer view
+        _products = allProducts.where((p) =>
+          p.status != 'Hết hàng' &&
+          p.status != 'Ngưng bán' &&
+          p.stockQuantity >= 5
+        ).toList();
       _error = null;
     } catch (e) {
       _error = 'Không thể tải danh sách sản phẩm';

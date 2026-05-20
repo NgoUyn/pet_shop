@@ -48,6 +48,19 @@ class _AdminPetDetailPageState extends State<AdminPetDetailPage> {
       setState(() {
         _currentPet = updated;
       });
+    } else {
+      // Pet not in active list — may have been sold, fetch directly
+      _refreshFromRepo();
+    }
+  }
+
+  Future<void> _refreshFromRepo() async {
+    final refreshed = await PetRepository.instance.getPetById(_currentPet.petId);
+    if (!mounted) return;
+    if (refreshed != null) {
+      setState(() {
+        _currentPet = refreshed;
+      });
     }
   }
 

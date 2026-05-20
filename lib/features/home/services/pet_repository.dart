@@ -20,6 +20,7 @@ class PetItem {
     this.isDewormed = false,
     this.isVaccinated = false,
     this.breed,
+    this.status = 'đang bán',
   });
 
   final int petId;
@@ -35,6 +36,7 @@ class PetItem {
   final bool isDewormed;
   final bool isVaccinated;
   final bool isActive;
+  final String status;
   final DateTime createdAt;
 
   static PetItem fromRow(Map<String, Object?> row) {
@@ -53,6 +55,7 @@ class PetItem {
       isDewormed: (row['IsDewormed'] as int?) == 1,
       isVaccinated: (row['IsVaccinated'] as int?) == 1,
       isActive: (row['IsActive'] as int?) == 1,
+      status: (row['Status'] as String?) ?? 'đang bán',
       createdAt: DateTime.parse(row['CreatedAt'] as String),
     );
   }
@@ -70,6 +73,7 @@ class PetRepository {
     PetProvider.instance.reload();
   }
 
+  /// List pets visible to customers (only active + đang bán).
   Future<List<PetItem>> listActivePets({int limit = 200}) async {
     final results = await Future.wait([
       _listLocalActivePets(limit),
@@ -97,11 +101,49 @@ class PetRepository {
     return merged;
   }
 
+  /// List ALL pets (for admin) — includes inactive and sold pets.
+  Future<List<PetItem>> listAllPets({int limit = 500}) async {
+    final results = await Future.wait([
+      _listLocalAllPets(limit),
+      _listFirestoreAllPets(limit),
+    ]);
+
+    final localItems = results[0] as List<PetItem>;
+    final firestoreItems = results[1] as List<PetItem>;
+
+    final map = <int, PetItem>{};
+    for (final item in localItems) {
+      map[item.petId] = item;
+    }
+    for (final item in firestoreItems) {
+      map[item.petId] = item;
+    }
+
+    var merged = map.values.toList();
+    merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+
+    if (limit < merged.length) {
+      return merged.sublist(0, limit);
+    }
+    return merged;
+  }
+
   Future<List<PetItem>> _listLocalActivePets(int limit) async {
     final db = await AppDatabase.instance;
     final rows = await db.query(
       'Pet',
-      where: 'IsActive = 1',
+      where: 'IsActive = 1 AND Status = ?',
+      whereArgs: ['đang bán'],
+      orderBy: 'CreatedAt DESC, PetID DESC',
+      limit: limit,
+    );
+    return rows.map(PetItem.fromRow).toList();
+  }
+
+  Future<List<PetItem>> _listLocalAllPets(int limit) async {
+    final db = await AppDatabase.instance;
+    final rows = await db.query(
+      'Pet',
       orderBy: 'CreatedAt DESC, PetID DESC',
       limit: limit,
     );
@@ -113,6 +155,7 @@ class PetRepository {
       final snapshot = await FirebaseFirestore.instance
           .collection('pets')
           .where('isActive', isEqualTo: true)
+          .where('status', isEqualTo: 'đang bán')
           .limit(limit)
           .get();
 
@@ -132,11 +175,45 @@ class PetRepository {
           isDewormed: data['isDewormed'] as bool? ?? false,
           isVaccinated: data['isVaccinated'] as bool? ?? false,
           isActive: data['isActive'] as bool? ?? true,
+          status: (data['status'] as String?) ?? 'đang bán',
           createdAt: DateTime.parse((data['createdAt'] as String)),
         );
       }).toList();
     } catch (e) {
       print('PetRepository._listFirestoreActivePets error: $e');
+      return [];
+    }
+  }
+
+  Future<List<PetItem>> _listFirestoreAllPets(int limit) async {
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('pets')
+          .limit(limit)
+          .get();
+
+      return snapshot.docs.map((doc) {
+        final data = doc.data();
+        return PetItem(
+          petId: (data['petId'] as num).toInt(),
+          petName: (data['petName'] as String?) ?? '',
+          species: (data['species'] as String?) ?? '',
+          breed: data['breed'] as String?,
+          gender: data['gender'] as String?,
+          description: data['description'] as String?,
+          price: (data['price'] as num?)?.toDouble(),
+          age: (data['age'] as num?)?.toInt(),
+          personality: data['personality'] as String?,
+          imageUrl: data['imageUrl'] as String?,
+          isDewormed: data['isDewormed'] as bool? ?? false,
+          isVaccinated: data['isVaccinated'] as bool? ?? false,
+          isActive: data['isActive'] as bool? ?? true,
+          status: (data['status'] as String?) ?? 'đang bán',
+          createdAt: DateTime.parse((data['createdAt'] as String)),
+        );
+      }).toList();
+    } catch (e) {
+      print('PetRepository._listFirestoreAllPets error: $e');
       return [];
     }
   }
@@ -176,6 +253,7 @@ class PetRepository {
         isDewormed: data['isDewormed'] as bool? ?? false,
         isVaccinated: data['isVaccinated'] as bool? ?? false,
         isActive: data['isActive'] as bool? ?? true,
+        status: (data['status'] as String?) ?? 'đang bán',
         createdAt: DateTime.parse((data['createdAt'] as String)),
       );
     } catch (e) {
@@ -214,6 +292,7 @@ class PetRepository {
       'IsVaccinated': isVaccinated ? 1 : 0,
       'ImageURL': imageUrl,
       'IsActive': 1,
+      'Status': 'đang bán',
       'CreatedAt': now,
       'UpdatedAt': null,
     });
@@ -231,6 +310,7 @@ class PetRepository {
       isDewormed: isDewormed,
       isVaccinated: isVaccinated,
       isActive: true,
+      status: 'đang bán',
       createdAt: DateTime.parse(now),
     ));
     _notifyChanged();
@@ -252,26 +332,31 @@ class PetRepository {
     String? imageUrl,
     bool? isActive,
     String? breed,
+    String? status,
   }) async {
     final db = await AppDatabase.instance;
+    final values = <String, Object?>{
+      'CustomerID': customerId,
+      'PetName': petName,
+      'Species': species,
+      'Breed': breed,
+      'Gender': gender,
+      'Description': description,
+      'Price': price,
+      'Age': age,
+      'Personality': personality,
+      'IsDewormed': isDewormed ? 1 : 0,
+      'IsVaccinated': isVaccinated ? 1 : 0,
+      'ImageURL': imageUrl,
+      'IsActive': (isActive ?? true) ? 1 : 0,
+      'UpdatedAt': DateTime.now().toIso8601String(),
+    };
+    if (status != null) {
+      values['Status'] = status;
+    }
     final affected = await db.update(
       'Pet',
-      {
-        'CustomerID': customerId,
-        'PetName': petName,
-        'Species': species,
-        'Breed': breed,
-        'Gender': gender,
-        'Description': description,
-        'Price': price,
-        'Age': age,
-        'Personality': personality,
-        'IsDewormed': isDewormed ? 1 : 0,
-        'IsVaccinated': isVaccinated ? 1 : 0,
-        'ImageURL': imageUrl,
-        'IsActive': (isActive ?? true) ? 1 : 0,
-        'UpdatedAt': DateTime.now().toIso8601String(),
-      },
+      values,
       where: 'PetID = ?',
       whereArgs: [petId],
     );
@@ -311,6 +396,49 @@ class PetRepository {
     _notifyChanged();
   }
 
+  // ── Status management ──────────────────────────────────────────────
+
+  Future<void> markPetAsSold(int petId) async {
+    final db = await AppDatabase.instance;
+    await db.update(
+      'Pet',
+      {
+        'Status': 'đã bán',
+        'UpdatedAt': DateTime.now().toIso8601String(),
+      },
+      where: 'PetID = ?',
+      whereArgs: [petId],
+    );
+    _syncPetStatusToFirestore(petId, 'đã bán');
+    _notifyChanged();
+  }
+
+  Future<void> restorePetStatus(int petId) async {
+    final db = await AppDatabase.instance;
+    await db.update(
+      'Pet',
+      {
+        'Status': 'đang bán',
+        'UpdatedAt': DateTime.now().toIso8601String(),
+      },
+      where: 'PetID = ?',
+      whereArgs: [petId],
+    );
+    _syncPetStatusToFirestore(petId, 'đang bán');
+    _notifyChanged();
+  }
+
+  Future<void> _syncPetStatusToFirestore(int petId, String status) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('pets')
+          .doc(petId.toString())
+          .update({'status': status});
+    } catch (e) {
+      print('PetRepository._syncPetStatusToFirestore error: $e');
+    }
+  }
+
   // ── Firestore sync ──────────────────────────────────────────────────
 
   void _syncPetToFirestore(PetItem pet) {
@@ -336,6 +464,7 @@ class PetRepository {
         'isDewormed': pet.isDewormed,
         'isVaccinated': pet.isVaccinated,
         'isActive': pet.isActive,
+        'status': pet.status,
         'createdAt': pet.createdAt.toIso8601String(),
       });
     } catch (e) {

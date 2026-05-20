@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../auth/services/auth_session.dart';
+import '../../home/services/pet_repository.dart';
 import '../../notifications/services/notification_repository.dart';
 import 'order_firestore_service.dart';
 
@@ -479,6 +480,9 @@ class OrderRepository {
     // 2. Try local SQLite (may not exist on admin device)
     await _tryUpdateLocalStatus(invoiceId, 'Completed', paymentStatus: 'Paid');
 
+    // 2b. Mark pets in this order as sold
+    await _tryMarkPetsAsSold(invoiceId);
+
     // 3. Notify customer via Firestore
     await _notifyCustomer(doc, invoiceId, 'order',
         'Đơn hàng đã hoàn thành',
@@ -505,6 +509,9 @@ class OrderRepository {
 
     // 2b. Restore stock locally
     await _tryRestoreStockLocal(invoiceId);
+
+    // 2c. Restore pet status (pets back to 'đang bán')
+    await _tryRestorePetStatus(invoiceId);
 
     // 3. Notify customer via Firestore
     await _notifyCustomer(doc, invoiceId, 'order',
@@ -591,6 +598,46 @@ class OrderRepository {
             'UPDATE Product SET StockQuantity = StockQuantity + ? WHERE ProductID = ?',
             [quantity, productId],
           );
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// Best-effort: mark all pets in a completed order as sold
+  Future<void> _tryMarkPetsAsSold(int invoiceId) async {
+    try {
+      final db = await AppDatabase.instance;
+      final details = await db.query(
+        'InvoiceDetail',
+        columns: ['PetID'],
+        where: 'InvoiceID = ? AND PetID IS NOT NULL',
+        whereArgs: [invoiceId],
+      );
+
+      for (final detail in details) {
+        final petId = detail['PetID'] as int?;
+        if (petId != null) {
+          await PetRepository.instance.markPetAsSold(petId);
+        }
+      }
+    } catch (_) {}
+  }
+
+  /// Best-effort: restore pet status to 'đang bán' when order is cancelled
+  Future<void> _tryRestorePetStatus(int invoiceId) async {
+    try {
+      final db = await AppDatabase.instance;
+      final details = await db.query(
+        'InvoiceDetail',
+        columns: ['PetID'],
+        where: 'InvoiceID = ? AND PetID IS NOT NULL',
+        whereArgs: [invoiceId],
+      );
+
+      for (final detail in details) {
+        final petId = detail['PetID'] as int?;
+        if (petId != null) {
+          await PetRepository.instance.restorePetStatus(petId);
         }
       }
     } catch (_) {}

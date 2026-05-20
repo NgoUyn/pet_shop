@@ -73,12 +73,19 @@ class _HomePageState extends State<HomePage> {
     _favoritePetIds = (results[3] as List<PetItem>)
         .map((item) => item.petId)
         .toSet();
+    // Filter out products that are out of stock or discontinued for customer view
+    final allProducts = results[0] as List<ProductItem>;
+    final availableProducts = allProducts.where((p) =>
+      p.status != 'Hết hàng' &&
+      p.status != 'Ngưng bán' &&
+      p.stockQuantity >= 5
+    ).toList();
     _suggestedItems = _buildSuggestedItems(
-      results[0] as List<ProductItem>,
+      availableProducts,
       results[1] as List<PetItem>,
     );
     return _HomeData(
-      products: results[0] as List<ProductItem>,
+      products: availableProducts,
       pets: results[1] as List<PetItem>,
     );
   }

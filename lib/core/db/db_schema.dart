@@ -46,6 +46,8 @@ Future<void> createBaseSchema(Database db) async {
       Description TEXT,
       ImageURL TEXT,
       IsActive INTEGER NOT NULL CHECK (IsActive IN (0, 1)),
+      Status TEXT NOT NULL DEFAULT 'Đang bán'
+        CHECK (Status IN ('Đang bán', 'Hết hàng', 'Ngưng bán')),
       CreatedAt TEXT NOT NULL,
       UpdatedAt TEXT,
       FOREIGN KEY (CategoryID) REFERENCES Category(CategoryID)
@@ -67,6 +69,8 @@ Future<void> createBaseSchema(Database db) async {
       IsVaccinated INTEGER NOT NULL DEFAULT 0,
       ImageURL TEXT,
       IsActive INTEGER NOT NULL CHECK (IsActive IN (0, 1)),
+      Status TEXT NOT NULL DEFAULT 'đang bán'
+        CHECK (Status IN ('đang bán', 'đã bán', 'ngưng bán')),
       CreatedAt TEXT NOT NULL,
       UpdatedAt TEXT,
       FOREIGN KEY (CustomerID) REFERENCES Customer(CustomerID) ON DELETE SET NULL

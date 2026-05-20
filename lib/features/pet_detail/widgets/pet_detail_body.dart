@@ -222,6 +222,29 @@ class _PetDetailBodyState extends State<PetDetailBody> {
               ),
               const SizedBox(height: 18),
 
+              // ── Status Badge ──────────────────────────────────────
+              if (pet.status != 'đang bán')
+                Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: pet.status == 'đã bán'
+                        ? Colors.red.shade50
+                        : Colors.orange.shade50,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    pet.status == 'đã bán' ? 'Đã bán' : 'Ngưng bán',
+                    style: TextStyle(
+                      color: pet.status == 'đã bán'
+                          ? Colors.red.shade700
+                          : Colors.orange.shade700,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+
               // ── Information Section ───────────────────────────────
               // Species + Breed (aligned far right)
               _buildInfoRow(
@@ -290,16 +313,7 @@ class _PetDetailBodyState extends State<PetDetailBody> {
                 background: pet.isDewormed ? const Color(0xFFD8EEE4) : const Color(0xFFF3F4F6),
                 foreground: pet.isDewormed ? const Color(0xFF3E7C63) : const Color(0xFF6B7280),
               ),
-              if (widget.showAdminActions) ...[
-                const SizedBox(height: 16),
-                _buildSectionLabel('Trạng thái'),
-                const SizedBox(height: 8),
-                _buildBadge(
-                  pet.isActive ? 'Đang bán' : 'Ngưng bán',
-                  background: pet.isActive ? const Color(0xFFD8EEE4) : const Color(0xFFFDECEC),
-                  foreground: pet.isActive ? const Color(0xFF3E7C63) : const Color(0xFFB42318),
-                ),
-              ],
+
             ],
           ),
         ),

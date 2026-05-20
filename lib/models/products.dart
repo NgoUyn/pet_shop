@@ -7,6 +7,7 @@ class Product {
   final String? description;
   final String? imageUrl;
   final bool isActive; // SQLite lưu int (0,1), nhưng Dart nên dùng bool
+  final String status;
   final DateTime createdAt;
   final DateTime? updatedAt;
 
@@ -19,6 +20,7 @@ class Product {
     this.description,
     this.imageUrl,
     this.isActive = true,
+    this.status = 'Đang bán',
     required this.createdAt,
     this.updatedAt,
   });
@@ -33,6 +35,7 @@ class Product {
     String? description,
     String? imageUrl,
     bool? isActive,
+    String? status,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -45,6 +48,7 @@ class Product {
       description: description ?? this.description,
       imageUrl: imageUrl ?? this.imageUrl,
       isActive: isActive ?? this.isActive,
+      status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -61,6 +65,7 @@ class Product {
       description: json['Description'] as String?,
       imageUrl: json['ImageURL'] as String?,
       isActive: (json['IsActive'] as int) == 1,
+      status: (json['Status'] as String?) ?? 'Đang bán',
       createdAt: DateTime.parse(json['CreatedAt'] as String),
       updatedAt: json['UpdatedAt'] != null
           ? DateTime.parse(json['UpdatedAt'] as String)
@@ -79,6 +84,7 @@ class Product {
       'Description': description,
       'ImageURL': imageUrl,
       'IsActive': isActive ? 1 : 0,
+      'Status': status,
       'CreatedAt': createdAt.toIso8601String(),
       'UpdatedAt': updatedAt?.toIso8601String(),
     };

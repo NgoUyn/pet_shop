@@ -180,6 +180,34 @@ class PetCard extends StatelessWidget {
                     fit: StackFit.expand,
                     children: [
                       _buildImage(item.imageUrl),
+                      // "Đã bán" overlay badge for sold pets
+                      if (item.status == 'đã bán')
+                        Positioned.fill(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.35),
+                              borderRadius: const BorderRadius.vertical(
+                                  top: Radius.circular(14)),
+                            ),
+                            alignment: Alignment.center,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 14, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: Colors.red.withValues(alpha: 0.85),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: const Text(
+                                'Đã bán',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
                       // Heart icon button in top-right corner
                       if (onFavoriteTap != null)
                         Positioned(
@@ -290,57 +318,59 @@ class PetCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 8),
                     // Bottom row: Shopping cart icon + Buy button
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Shopping cart icon button
-                        if (onCartTap != null)
-                          Material(
-                            color: AppColors.accentLight,
-                            borderRadius: BorderRadius.circular(999),
-                            child: InkWell(
+                    // Hidden for sold pets
+                    if (item.status != 'đã bán')
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Shopping cart icon button
+                          if (onCartTap != null)
+                            Material(
+                              color: AppColors.accentLight,
                               borderRadius: BorderRadius.circular(999),
-                              onTap: onCartTap,
-                              child: const Padding(
-                                padding: EdgeInsets.all(8),
-                                child: Icon(
-                                  Icons.shopping_cart_outlined,
-                                  size: 18,
-                                  color: AppColors.accent,
+                              child: InkWell(
+                                borderRadius: BorderRadius.circular(999),
+                                onTap: onCartTap,
+                                child: const Padding(
+                                  padding: EdgeInsets.all(8),
+                                  child: Icon(
+                                    Icons.shopping_cart_outlined,
+                                    size: 18,
+                                    color: AppColors.accent,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          const SizedBox(width: 8),
+                          // Buy button
+                          SizedBox(
+                            child: SizedBox(
+                              height: 32,
+                              width: 60,
+                              child: ElevatedButton(
+                                onPressed: onBuyTap ?? onCartTap,
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.accent,
+                                  foregroundColor: AppColors.white,
+                                  elevation: 0,
+                                  padding: EdgeInsets.zero,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                ),
+                                child: const Text(
+                                  'Mua',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        const SizedBox(width: 8),
-                        // Buy button
-                        SizedBox(
-                          child: SizedBox(
-                            height: 32,
-                            width: 60,
-                            child: ElevatedButton(
-                              onPressed: onBuyTap ?? onCartTap,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.accent,
-                                foregroundColor: AppColors.white,
-                                elevation: 0,
-                                padding: EdgeInsets.zero,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                              ),
-                              child: const Text(
-                                'Mua',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                        ],
+                      ),
                   ],
                 ),
               ),

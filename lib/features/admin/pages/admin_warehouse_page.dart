@@ -47,13 +47,6 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
       context: context,
       backgroundColor: AppColors.background,
       showDragHandle: true,
-      
-      
-      
-      
-      
-      
-      
       builder: (sheetContext) {
         var currentValue = _selectedFilter;
         return StatefulBuilder(
@@ -145,9 +138,14 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
   }
 
   Widget _buildListItem(_WarehouseItem item) {
+    // Determine if this is a low-stock non-pet product (inventory warning)
+    final bool isLowStockProduct = item.kind == _WarehouseKind.product &&
+        item.product != null &&
+        item.product!.stockQuantity < 5;
+
     return Card(
       elevation: 0,
-      color: AppColors.white,
+      color: isLowStockProduct ? const Color(0xFFFFF0F0) : AppColors.white,
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
       child: InkWell(
@@ -230,6 +228,24 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
                           ),
                         ),
                         const SizedBox(width: 8),
+                        // Status badge
+                        if (item.status != null)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: _statusColor(item.status!).withValues(alpha: 0.15),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              item.status!,
+                              style: TextStyle(
+                                color: _statusColor(item.status!),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        const SizedBox(width: 8),
                         Text(item.trailingText, style: const TextStyle(fontWeight: FontWeight.w700)),
                       ],
                     ),
@@ -241,6 +257,19 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
         ),
       ),
     );
+  }
+
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'Đang bán':
+        return const Color(0xFF3E7C63);
+      case 'Hết hàng':
+        return Colors.orange;
+      case 'Ngưng bán':
+        return Colors.red;
+      default:
+        return AppColors.textLight;
+    }
   }
 
   @override
@@ -271,6 +300,7 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
             child: ListView(
               padding: const EdgeInsets.all(16),
               children: [
+                // Inventory warning banner
                 if (data.lowStockCount > 0)
                   Container(
                     padding: const EdgeInsets.all(14),
@@ -292,27 +322,7 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
                     ),
                   ),
                 if (data.lowStockCount > 0) const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildStatCard(
-                        icon: Icons.pets_outlined,
-                        value: data.totalPets.toString(),
-                        label: 'Tổng thú cưng',
-                        color: const Color(0xFF2F80ED),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildStatCard(
-                        icon: Icons.shopping_bag_outlined,
-                        value: data.totalProducts.toString(),
-                        label: 'Tổng phụ kiện',
-                        color: const Color(0xFF3E7C63),
-                      ),
-                    ),
-                  ],
-                ),
+
                 const SizedBox(height: 12),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -423,20 +433,22 @@ class _WarehouseItem {
         product = null,
         kind = _WarehouseKind.pet,
         title = pet.petName,
-        subtitle = '${pet.species} • ${pet.isActive ? 'Đang bán' : 'Ngừng bán'}',
+        subtitle = '${pet.species} • ${pet.status == 'đã bán' ? 'Đã bán' : pet.isActive ? 'Đang bán' : 'Ngừng bán'}',
         trailingText = pet.price == null ? 'Chưa có giá' : formatPrice(pet.price!),
         imageUrl = pet.imageUrl,
-        searchText = '${pet.petName} ${pet.species} ${pet.description ?? ''} ${pet.gender ?? ''}'.toLowerCase();
+        searchText = '${pet.petName} ${pet.species} ${pet.description ?? ''} ${pet.gender ?? ''}'.toLowerCase(),
+        status = pet.status == 'đã bán' ? 'Đã bán' : (pet.isActive ? 'Đang bán' : 'Ngưng bán');
 
   _WarehouseItem.product({required ProductItem product})
       : pet = null,
         product = product,
         kind = _WarehouseKind.product,
         title = product.productName,
-        subtitle = 'Tồn kho: ${product.stockQuantity} • ${product.isActive ? 'Đang bán' : 'Ngừng bán'}',
+        subtitle = 'Tồn kho: ${product.stockQuantity} • ${product.status}',
         trailingText = formatPrice(product.price),
         imageUrl = product.imageUrl,
-        searchText = '${product.productName} ${product.description ?? ''}'.toLowerCase();
+        searchText = '${product.productName} ${product.description ?? ''}'.toLowerCase(),
+        status = product.status;
 
   final PetItem? pet;
   final ProductItem? product;
@@ -446,6 +458,7 @@ class _WarehouseItem {
   final String trailingText;
   final String? imageUrl;
   final String searchText;
+  final String? status;
 
 }
 
@@ -460,22 +473,44 @@ class _WarehouseData {
   static _WarehouseData empty() => _WarehouseData(totalPets: 0, totalProducts: 0, lowStockCount: 0, items: const []);
 
   static Future<_WarehouseData> load() async {
-    final pets = await PetRepository.instance.listActivePets(limit: 500);
+    final pets = await PetRepository.instance.listAllPets(limit: 500);
     final products = await ProductRepository.instance.listActiveProducts(limit: 500);
 
-    final lowStockCount = products.where((item) => item.stockQuantity <= 5).length;
+    // Auto-update status for non-pet products with stock < 5 to "Hết hàng"
+    for (final product in products) {
+      if (product.stockQuantity < 5 && product.status != 'Hết hàng' && product.status != 'Ngưng bán') {
+        await ProductRepository.instance.updateProductStatus(product.productId, 'Hết hàng');
+      }
+    }
+
+    // Reload products after status updates
+    final updatedProducts = await ProductRepository.instance.listActiveProducts(limit: 500);
+
+    final lowStockCount = updatedProducts.where((item) => item.stockQuantity < 5).length;
+
     final items = <_WarehouseItem>[
       ...pets.map((item) => _WarehouseItem.pet(pet: item)),
-      ...products.map((item) => _WarehouseItem.product(product: item)),
-    ]..sort((a, b) {
-        final aDate = a.pet?.createdAt ?? a.product!.createdAt;
-        final bDate = b.pet?.createdAt ?? b.product!.createdAt;
-        return bDate.compareTo(aDate);
-      });
+      ...updatedProducts.map((item) => _WarehouseItem.product(product: item)),
+    ];
+
+    // Sort: low-stock non-pet products first, then by date
+    items.sort((a, b) {
+      // Low-stock products (stock < 5) go to top
+      final aIsLowStock = a.kind == _WarehouseKind.product && a.product != null && a.product!.stockQuantity < 5;
+      final bIsLowStock = b.kind == _WarehouseKind.product && b.product != null && b.product!.stockQuantity < 5;
+
+      if (aIsLowStock && !bIsLowStock) return -1;
+      if (!aIsLowStock && bIsLowStock) return 1;
+
+      // Then sort by date descending
+      final aDate = a.pet?.createdAt ?? a.product!.createdAt;
+      final bDate = b.pet?.createdAt ?? b.product!.createdAt;
+      return bDate.compareTo(aDate);
+    });
 
     return _WarehouseData(
       totalPets: pets.length,
-      totalProducts: products.length,
+      totalProducts: updatedProducts.length,
       lowStockCount: lowStockCount,
       items: items,
     );

@@ -7,6 +7,8 @@ import 'db_seed.dart';
 import 'db_user_cleanup.dart';
 import 'migrations/migration_v13_favorites_and_notifications.dart';
 import 'migrations/migration_v21_category_types.dart';
+import 'migrations/migration_v22_pet_status.dart';
+import 'migrations/migration_v23_product_status.dart';
 
 class AppDatabase {
   static Database? _db;
@@ -33,7 +35,7 @@ class AppDatabase {
 
     return openDatabase(
       path,
-      version: 21,
+      version: 23,
       onConfigure: (db) async {
         await db.execute('PRAGMA foreign_keys = ON;');
       },
@@ -46,6 +48,8 @@ class AppDatabase {
 
         await MigrationV13FavoritesAndNotifications.up(db);
         await MigrationV21CategoryTypes.up(db);
+        await MigrationV22PetStatus.up(db);
+        await migrateV23ProductStatus(db);
         await seedInitialData(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
