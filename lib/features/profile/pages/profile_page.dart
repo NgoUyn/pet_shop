@@ -23,12 +23,21 @@ class _ProfilePageState extends State<ProfilePage> {
   Future<ProfileData?>? _profileFuture;
   int _unreadChatCount = 0;
   Timer? _refreshTimer;
+  StreamSubscription<int>? _unreadSubscription;
 
   @override
   void initState() {
     super.initState();
     _reloadProfile();
     _loadUnreadCount();
+    // Real-time sync: update badge whenever unread count changes
+    _unreadSubscription = ChatRepository.instance.watchUnreadCountForCurrentUser().listen((count) {
+      if (mounted) {
+        setState(() {
+          _unreadChatCount = count;
+        });
+      }
+    });
     // Tự động kiểm tra tin nhắn từ shop mỗi 30 giây
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _loadUnreadCount();
@@ -38,6 +47,7 @@ class _ProfilePageState extends State<ProfilePage> {
   @override
   void dispose() {
     _refreshTimer?.cancel();
+    _unreadSubscription?.cancel();
     super.dispose();
   }
 
