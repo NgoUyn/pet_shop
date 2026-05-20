@@ -58,6 +58,16 @@ class _OnlinePaymentPageState extends State<OnlinePaymentPage> with WidgetsBindi
     try {
       setState(() => _isLoading = true);
 
+      final allItems = await CartRepository.instance.listProductEntriesForCurrentUser();
+      final selected = widget.selectedCartItemIds;
+      final items = (selected != null && selected.isNotEmpty)
+          ? allItems.where((e) => selected.contains(e.cartItemId)).toList()
+          : allItems;
+
+      if (items.isEmpty) {
+        throw StateError('Giỏ hàng đang trống');
+      }
+
       // Bước 1: Tạo đơn hàng với trạng thái Unpaid ngay lập tức
       _invoiceId = await CartRepository.instance.createPendingOrder(
         shippingAddress: widget.shippingAddress,
@@ -66,12 +76,6 @@ class _OnlinePaymentPageState extends State<OnlinePaymentPage> with WidgetsBindi
       );
 
       _orderId = DateTime.now().millisecondsSinceEpoch;
-
-        final allItems = await CartRepository.instance.listProductEntriesForCurrentUser();
-        final selected = widget.selectedCartItemIds;
-        final items = (selected != null && selected.isNotEmpty)
-          ? allItems.where((e) => selected.contains(e.cartItemId)).toList()
-          : allItems;
 
       final orderItems = items
           .map((item) => OrderItem(

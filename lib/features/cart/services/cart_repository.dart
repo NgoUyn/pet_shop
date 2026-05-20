@@ -801,8 +801,9 @@ class CartRepository {
     var earnedPoints = 0;
     final firestoreItems = <Map<String, dynamic>>[];
 
+    final updatedProductIds = <int>{};
+
     try {
-      final updatedProductIds = <int>{};
       await db.transaction((txn) async {
         final cartId = await _ensureCartIdForCustomer(customerId, txnOrDb: txn);
 
@@ -960,8 +961,6 @@ class CartRepository {
           'PaidAt': isOnlinePayment ? now : null,
         });
 
-        await _updateLowStockStatuses(updatedProductIds);
-
         // Compute and award loyalty points (1 point per 10,000 units)
         try {
           earnedPoints = (totalAmount / 10000).floor();
@@ -1013,6 +1012,7 @@ class CartRepository {
       rethrow;
     }
 
+    await _updateLowStockStatuses(updatedProductIds);
     await refreshCountForCurrentUser();
 
     // Sync order to Firestore
