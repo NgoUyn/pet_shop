@@ -103,14 +103,21 @@ class _NotificationPageState extends State<NotificationPage> {
       if (!mounted) return;
       final isCompleted = item.title.contains('hoàn thành') ||
           item.title.contains('giao thành công');
-      final targetPage = isCompleted
-          ? ReviewPage(invoiceId: item.referenceId!)
-          : const OrderHistoryPage();
-      await Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => targetPage),
-      );
-      if (mounted) _load();
+      if (isCompleted) {
+        final submitted = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(builder: (_) => ReviewPage(invoiceId: item.referenceId!)),
+        );
+        if (mounted && submitted == true) {
+          _load();
+        }
+      } else {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const OrderHistoryPage()),
+        );
+        if (mounted) _load();
+      }
     }
   }
 

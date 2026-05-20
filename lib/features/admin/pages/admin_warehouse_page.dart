@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/price_helper.dart';
 import '../../pet_detail/pages/pet_detail_page.dart';
@@ -18,13 +20,17 @@ class AdminWarehousePage extends StatefulWidget {
 
 class _AdminWarehousePageState extends State<AdminWarehousePage> {
   late Future<_WarehouseData> _future;
+  late Future<List<_WarehouseItem>> _soldFuture;
   String _query = '';
   String _selectedFilter = 'Tất cả';
+  String _selectedTab = 'Kho';
+  String _soldFilter = 'Tất cả';
 
   @override
   void initState() {
     super.initState();
     _future = _WarehouseData.load();
+    _soldFuture = _loadSoldItems();
     PetRepository.instance.changeToken.addListener(_reload);
     ProductRepository.instance.changeToken.addListener(_reload);
   }
@@ -39,7 +45,60 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
   void _reload() {
     setState(() {
       _future = _WarehouseData.load();
+      _soldFuture = _loadSoldItems();
     });
+  }
+
+  Future<List<_WarehouseItem>> _loadSoldItems() async {
+    final items = <_WarehouseItem>[];
+    final seenKeys = <String>{};
+
+    try {
+      final snapshot = await FirebaseFirestore.instance
+          .collection('orders')
+          .where('orderStatus', isEqualTo: 'Completed')
+          .limit(500)
+          .get();
+
+      for (final doc in snapshot.docs) {
+        final data = doc.data();
+        final list = (data['items'] as List<dynamic>?) ?? [];
+
+        for (final raw in list) {
+          final item = Map<String, dynamic>.from(raw as Map);
+          final productId = (item['productId'] as num?)?.toInt();
+          final petId = (item['petId'] as num?)?.toInt();
+          final quantity = (item['quantity'] as num?)?.toInt() ?? 1;
+
+          if (productId != null) {
+            final key = 'prod_$productId';
+            if (seenKeys.contains(key)) continue;
+            seenKeys.add(key);
+            items.add(_WarehouseItem.soldProduct(
+              soldProductId: productId,
+              productName: (item['productName'] as String?) ?? 'Sản phẩm',
+              price: (item['unitPrice'] as num?)?.toDouble() ?? 0,
+              quantity: quantity,
+            ));
+          } else if (petId != null) {
+            final key = 'pet_$petId';
+            if (seenKeys.contains(key)) continue;
+            seenKeys.add(key);
+            items.add(_WarehouseItem.soldPet(
+              soldPetId: petId,
+              petName: (item['petName'] as String?) ?? 'Thú cưng',
+              price: (item['unitPrice'] as num?)?.toDouble() ?? 0,
+              quantity: quantity,
+            ));
+          }
+        }
+      }
+    } catch (e) {
+      print('_loadSoldItems Firestore error: $e');
+    }
+
+    items.sort((a, b) => b.title.compareTo(a.title));
+    return items;
   }
 
   Future<void> _openFilterSheet() async {
@@ -97,7 +156,11 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
 
     if (selected == null || !mounted) return;
     setState(() {
-      _selectedFilter = selected;
+      if (_selectedTab == 'Kho') {
+        _selectedFilter = selected;
+      } else {
+        _soldFilter = selected;
+      }
     });
   }
 
@@ -146,6 +209,34 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
         onTap: () async {
+          if (_selectedTab == 'Đã bán') {
+            // Read-only: fetch full item from repository and open detail without admin actions
+            try {
+              if (item.soldProductId != null) {
+                final prod = await ProductRepository.instance.getProductById(item.soldProductId!);
+                if (prod != null && mounted) {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => AdminProductDetailPage(product: prod, readOnly: true),
+                    ),
+                  );
+                }
+              } else if (item.soldPetId != null) {
+                final pet = await PetRepository.instance.getPetById(item.soldPetId!);
+                if (pet != null && mounted) {
+                  await Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => PetDetailPage(pet: pet, showAdminActions: false),
+                    ),
+                  );
+                }
+              }
+            } catch (_) {}
+            return;
+          }
+
           final changed = await Navigator.push<bool>(
             context,
             MaterialPageRoute(
@@ -238,6 +329,54 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
 
   @override
   Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: Column(
+        children: [
+          // ── Tab bar: Kho / Đã bán ──────────────────────────────────
+          Container(
+            color: AppColors.white,
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
+            child: Row(
+              children: [
+                _buildTabChip('Kho', Icons.inventory_2_outlined),
+                const SizedBox(width: 8),
+                _buildTabChip('Đã bán', Icons.sell_outlined),
+              ],
+            ),
+          ),
+          const Divider(height: 1),
+
+          Expanded(
+            child: _selectedTab == 'Kho' ? _buildWarehouseTab() : _buildSoldTab(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabChip(String label, IconData icon) {
+    final isSelected = _selectedTab == label;
+    return FilterChip(
+      selected: isSelected,
+      avatar: Icon(icon, size: 18, color: isSelected ? AppColors.primary : AppColors.textLight),
+      label: Text(label),
+      onSelected: (_) {
+        setState(() {
+          _selectedTab = label;
+          _query = '';
+        });
+      },
+      selectedColor: AppColors.primary.withOpacity(0.12),
+      checkmarkColor: AppColors.primary,
+      labelStyle: TextStyle(
+        color: isSelected ? AppColors.primary : AppColors.textDark,
+        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+      ),
+    );
+  }
+
+  Widget _buildWarehouseTab() {
     return FutureBuilder<_WarehouseData>(
       future: _future,
       builder: (context, snapshot) {
@@ -250,150 +389,233 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
           return matchesFilter && matchesSearch;
         }).toList();
 
-        return Scaffold(
-          backgroundColor: AppColors.background,
-          body: RefreshIndicator(
-            onRefresh: () async => _reload(),
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                if (data.lowStockCount > 0)
-                  Container(
-                    padding: const EdgeInsets.all(14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFF3E0),
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.warning_amber_rounded, color: Colors.orange),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'Cảnh báo tồn kho: ${data.lowStockCount} phụ kiện sắp hết hàng',
-                            style: const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                if (data.lowStockCount > 0) const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildStatCard(
-                        icon: Icons.pets_outlined,
-                        value: data.totalPets.toString(),
-                        label: 'Tổng thú cưng',
-                        color: const Color(0xFF2F80ED),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _buildStatCard(
-                        icon: Icons.shopping_bag_outlined,
-                        value: data.totalProducts.toString(),
-                        label: 'Tổng phụ kiện',
-                        color: const Color(0xFF3E7C63),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
+        return RefreshIndicator(
+          onRefresh: () async => _reload(),
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              if (data.lowStockCount > 0)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                    color: AppColors.white,
+                    color: const Color(0xFFFFF3E0),
                     borderRadius: BorderRadius.circular(18),
                   ),
-                  child: TextField(
-                    onChanged: (value) => setState(() => _query = value),
-                    decoration: const InputDecoration(
-                      hintText: 'Tìm kiếm sản phẩm...',
-                      prefixIcon: Icon(Icons.search),
-                      border: InputBorder.none,
-                    ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.warning_amber_rounded, color: Colors.orange),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Cảnh báo tồn kho: ${data.lowStockCount} mặt hàng sắp hết hàng',
+                          style: const TextStyle(fontWeight: FontWeight.w700),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: _openFilterSheet,
-                      icon: const Icon(Icons.tune),
-                      label: const Text('Bộ lọc'),
+              if (data.lowStockCount > 0) const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildStatCard(
+                      icon: Icons.pets_outlined,
+                      value: data.totalPets.toString(),
+                      label: 'Tổng thú cưng',
+                      color: const Color(0xFF2F80ED),
                     ),
-                    const Spacer(),
-                    PopupMenuButton<String>(
-                      onSelected: (value) async {
-                        if (!mounted) return;
-                        Widget page;
-                        if (value == 'pet') {
-                          page = const AdminPetFormPage();
-                        } else {
-                          page = const AdminProductFormPage();
-                        }
-                        final added = await Navigator.push<bool>(
-                          context,
-                          MaterialPageRoute(builder: (_) => page),
-                        );
-                        if (added == true && mounted) {
-                          _reload();
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                value == 'pet'
-                                    ? 'Đã thêm thú cưng mới'
-                                    : 'Đã thêm phụ kiện mới',
-                              ),
-                            ),
-                          );
-                        }
-                      },
-                      offset: const Offset(0, 48),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      itemBuilder: (context) => [
-                        const PopupMenuItem(
-                          value: 'pet',
-                          child: ListTile(
-                            leading: Icon(Icons.pets_outlined, color: Color(0xFF2F80ED)),
-                            title: Text('Thú cưng'),
-                            contentPadding: EdgeInsets.zero,
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        ),
-                        const PopupMenuItem(
-                          value: 'product',
-                          child: ListTile(
-                            leading: Icon(Icons.shopping_bag_outlined, color: Color(0xFF3E7C63)),
-                            title: Text('Phụ kiện'),
-                            contentPadding: EdgeInsets.zero,
-                            visualDensity: VisualDensity.compact,
-                          ),
-                        ),
-                      ],
-                      child: OutlinedButton.icon(
-                        onPressed: null,
-                        icon: const Icon(Icons.add),
-                        label: const Text('Thêm mới sản phẩm'),
-                      ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildStatCard(
+                      icon: Icons.shopping_bag_outlined,
+                      value: data.totalProducts.toString(),
+                      label: 'Tổng phụ kiện',
+                      color: const Color(0xFF3E7C63),
                     ),
-                  ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.circular(18),
                 ),
-                const SizedBox(height: 16),
-                const Text('Danh sách kho', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-                const SizedBox(height: 12),
-                if (filteredItems.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 32),
-                    child: Center(child: Text('Không có dữ liệu phù hợp.')),
-                  )
-                else
-                  ...filteredItems.map(_buildListItem),
-              ],
-            ),
+                child: TextField(
+                  onChanged: (value) => setState(() => _query = value),
+                  decoration: const InputDecoration(
+                    hintText: 'Tìm kiếm sản phẩm...',
+                    prefixIcon: Icon(Icons.search),
+                    border: InputBorder.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _openFilterSheet,
+                    icon: const Icon(Icons.tune),
+                    label: const Text('Bộ lọc'),
+                  ),
+                  const Spacer(),
+                  PopupMenuButton<String>(
+                    onSelected: (value) async {
+                      if (!mounted) return;
+                      Widget page;
+                      if (value == 'pet') {
+                        page = const AdminPetFormPage();
+                      } else {
+                        page = const AdminProductFormPage();
+                      }
+                      final added = await Navigator.push<bool>(
+                        context,
+                        MaterialPageRoute(builder: (_) => page),
+                      );
+                      if (added == true && mounted) {
+                        _reload();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              value == 'pet'
+                                  ? 'Đã thêm thú cưng mới'
+                                  : 'Đã thêm phụ kiện mới',
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                    offset: const Offset(0, 48),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    itemBuilder: (context) => [
+                      const PopupMenuItem(
+                        value: 'pet',
+                        child: ListTile(
+                          leading: Icon(Icons.pets_outlined, color: Color(0xFF2F80ED)),
+                          title: Text('Thú cưng'),
+                          contentPadding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                      const PopupMenuItem(
+                        value: 'product',
+                        child: ListTile(
+                          leading: Icon(Icons.shopping_bag_outlined, color: Color(0xFF3E7C63)),
+                          title: Text('Phụ kiện'),
+                          contentPadding: EdgeInsets.zero,
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ],
+                    child: OutlinedButton.icon(
+                      onPressed: null,
+                      icon: const Icon(Icons.add),
+                      label: const Text('Thêm mới sản phẩm'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Text('Danh sách kho', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 12),
+              if (filteredItems.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 32),
+                  child: Center(child: Text('Không có dữ liệu phù hợp.')),
+                )
+              else
+                ...filteredItems.map(_buildListItem),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildSoldTab() {
+    return FutureBuilder<List<_WarehouseItem>>(
+      future: _soldFuture,
+      builder: (context, snapshot) {
+        final items = snapshot.data ?? [];
+        final searchQuery = _query.trim().toLowerCase();
+
+        final filtered = items.where((item) {
+          final matchesFilter = _soldFilter == 'Tất cả' ||
+              (_soldFilter == 'Thú cưng' && item.kind == _WarehouseKind.pet) ||
+              (_soldFilter == 'Phụ kiện' && item.kind == _WarehouseKind.product);
+          final matchesSearch = searchQuery.isEmpty || item.searchText.contains(searchQuery);
+          return matchesFilter && matchesSearch;
+        }).toList();
+
+        return RefreshIndicator(
+          onRefresh: () async => _reload(),
+          child: ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildStatCard(
+                      icon: Icons.pets_outlined,
+                      value: items.where((i) => i.kind == _WarehouseKind.pet).length.toString(),
+                      label: 'Thú cưng đã bán',
+                      color: const Color(0xFF2F80ED),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildStatCard(
+                      icon: Icons.shopping_bag_outlined,
+                      value: items.where((i) => i.kind == _WarehouseKind.product).length.toString(),
+                      label: 'Phụ kiện đã bán',
+                      color: const Color(0xFF3E7C63),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.white,
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: TextField(
+                  onChanged: (value) => setState(() => _query = value),
+                  decoration: const InputDecoration(
+                    hintText: 'Tìm kiếm sản phẩm đã bán...',
+                    prefixIcon: Icon(Icons.search),
+                    border: InputBorder.none,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _openFilterSheet,
+                    icon: const Icon(Icons.tune),
+                    label: Text('Bộ lọc: $_soldFilter'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Text('Danh sách đã bán (${filtered.length})', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+              const SizedBox(height: 12),
+              if (snapshot.connectionState == ConnectionState.waiting)
+                const Center(child: Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator()))
+              else if (filtered.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 32),
+                  child: Center(child: Text('Chưa có mặt hàng nào được bán.')),
+                )
+              else
+                ...filtered.map(_buildListItem),
+            ],
           ),
         );
       },
@@ -412,7 +634,9 @@ class _WarehouseItem {
         subtitle = '${pet.species} • ${pet.isActive ? 'Đang bán' : 'Ngừng bán'}',
         trailingText = pet.price == null ? 'Chưa có giá' : formatPrice(pet.price!),
         imageUrl = pet.imageUrl,
-        searchText = '${pet.petName} ${pet.species} ${pet.description ?? ''} ${pet.gender ?? ''}'.toLowerCase();
+        searchText = '${pet.petName} ${pet.species} ${pet.description ?? ''} ${pet.gender ?? ''}'.toLowerCase(),
+        soldProductId = null,
+        soldPetId = null;
 
   _WarehouseItem.product({required ProductItem product})
       : pet = null,
@@ -422,7 +646,42 @@ class _WarehouseItem {
         subtitle = 'Tồn kho: ${product.stockQuantity} • ${product.isActive ? 'Đang bán' : 'Ngừng bán'}',
         trailingText = formatPrice(product.price),
         imageUrl = product.imageUrl,
-        searchText = '${product.productName} ${product.description ?? ''}'.toLowerCase();
+        searchText = '${product.productName} ${product.description ?? ''}'.toLowerCase(),
+        soldProductId = null,
+        soldPetId = null;
+
+  _WarehouseItem.soldProduct({
+    required this.soldProductId,
+    required String productName,
+    required double price,
+    String? imageUrl,
+    int quantity = 1,
+  })  : pet = null,
+        product = null,
+        kind = _WarehouseKind.product,
+        title = productName,
+        subtitle = 'Đã bán $quantity cái',
+        trailingText = formatPrice(price),
+        imageUrl = imageUrl,
+        searchText = productName.toLowerCase(),
+        soldPetId = null;
+
+  _WarehouseItem.soldPet({
+    required this.soldPetId,
+    required String petName,
+    String? species,
+    required double price,
+    String? imageUrl,
+    int quantity = 1,
+  })  : pet = null,
+        product = null,
+        kind = _WarehouseKind.pet,
+        title = petName,
+        subtitle = 'Đã bán $quantity ${species != null ? '• $species' : ''}',
+        trailingText = formatPrice(price),
+        imageUrl = imageUrl,
+        searchText = '$petName ${species ?? ''}'.toLowerCase(),
+        soldProductId = null;
 
   final PetItem? pet;
   final ProductItem? product;
@@ -432,6 +691,8 @@ class _WarehouseItem {
   final String trailingText;
   final String? imageUrl;
   final String searchText;
+  final int? soldProductId;
+  final int? soldPetId;
 
 }
 
@@ -449,7 +710,9 @@ class _WarehouseData {
     final pets = await PetRepository.instance.listActivePets(limit: 500);
     final products = await ProductRepository.instance.listActiveProducts(limit: 500);
 
-    final lowStockCount = products.where((item) => item.stockQuantity <= 5).length;
+    final lowStockCount =
+        products.where((item) => item.stockQuantity <= 5).length +
+        pets.where((item) => item.stockQuantity <= 5).length;
     final items = <_WarehouseItem>[
       ...pets.map((item) => _WarehouseItem.pet(pet: item)),
       ...products.map((item) => _WarehouseItem.product(product: item)),

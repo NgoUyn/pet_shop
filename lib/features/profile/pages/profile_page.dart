@@ -361,6 +361,18 @@ class _ProfilePageState extends State<ProfilePage> {
             : const Icon(Icons.arrow_forward_ios, size: 16),
         onTap: () async {
           if (destination != null) {
+            try {
+              await ChatRepository.instance.markAllCustomerThreadsAsRead();
+            } catch (_) {
+              // ignore and continue to open chat
+            }
+
+            if (_unreadChatCount > 0) {
+              setState(() {
+                _unreadChatCount = 0;
+              });
+            }
+
             await Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => destination),

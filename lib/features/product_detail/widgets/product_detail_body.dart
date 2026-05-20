@@ -4,6 +4,8 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../home/services/product_repository.dart';
 import '../../reviews/services/review_repository.dart';
+import '../../favorites/services/favorite_repository.dart';
+import '../../cart/services/cart_repository.dart';
 
 class ProductDetailBody extends StatefulWidget {
   const ProductDetailBody({
@@ -33,6 +35,9 @@ class _ProductDetailBodyState extends State<ProductDetailBody> {
   List<ReviewItem> _reviews = [];
   List<ProductItem> _relatedProducts = [];
   bool _isLoadingReviews = true;
+  bool _isFavorited = false;
+  bool _isProcessingFavorite = false;
+  bool _isAddingToCart = false;
 
   @override
   void initState() {
@@ -41,6 +46,7 @@ class _ProductDetailBodyState extends State<ProductDetailBody> {
     _loadCategoryName();
     _loadReviews();
     _loadRelatedProducts();
+    _loadFavoriteStatus();
   }
 
   @override
@@ -103,6 +109,49 @@ class _ProductDetailBodyState extends State<ProductDetailBody> {
         });
       }
     } catch (_) {}
+  }
+
+  Future<void> _loadFavoriteStatus() async {
+    try {
+      final fav = await FavoriteRepository.instance.isProductFavorited(_currentProduct.productId);
+      if (!mounted) return;
+      setState(() {
+        _isFavorited = fav;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_isProcessingFavorite) return;
+    setState(() { _isProcessingFavorite = true; });
+    try {
+      await FavoriteRepository.instance.toggleProductFavorite(_currentProduct.productId);
+      final fav = await FavoriteRepository.instance.isProductFavorited(_currentProduct.productId);
+      if (!mounted) return;
+      setState(() { _isFavorited = fav; });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))));
+    } finally {
+      if (!mounted) return;
+      setState(() { _isProcessingFavorite = false; });
+    }
+  }
+
+  Future<void> _addToCart() async {
+    if (_isAddingToCart) return;
+    setState(() { _isAddingToCart = true; });
+    try {
+      await CartRepository.instance.addProductToCart(productId: _currentProduct.productId, quantity: 1);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã thêm vào giỏ hàng')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))));
+    } finally {
+      if (!mounted) return;
+      setState(() { _isAddingToCart = false; });
+    }
   }
 
   /// Public method to refresh product data from the database
@@ -205,6 +254,26 @@ class _ProductDetailBodyState extends State<ProductDetailBody> {
                           background: const Color(0xFFFDECEC),
                           foreground: const Color(0xFFB42318),
                           onPressed: widget.onDeletePressed ?? () {},
+                        ),
+                      ],
+                    )
+                  else if (widget.onEditPressed != null || widget.onDeletePressed != null)
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          onPressed: _isProcessingFavorite ? null : _toggleFavorite,
+                          icon: Icon(
+                            _isFavorited ? Icons.favorite : Icons.favorite_border,
+                            color: _isFavorited ? const Color(0xFFFF2D55) : AppColors.textLight,
+                          ),
+                          tooltip: 'Yêu thích',
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: _isAddingToCart ? null : _addToCart,
+                          icon: const Icon(Icons.add_shopping_cart, color: Color(0xFF2F80ED)),
+                          tooltip: 'Thêm vào giỏ',
                         ),
                       ],
                     ),

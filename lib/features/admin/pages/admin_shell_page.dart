@@ -1860,13 +1860,34 @@ class _AdminDashboardSummary {
     final customers = await db.rawQuery("SELECT COUNT(*) AS Cnt FROM User WHERE lower(Role) = 'customer'");
     final pets = await db.rawQuery('SELECT COUNT(*) AS Cnt FROM Pet');
     final products = await db.rawQuery('SELECT COUNT(*) AS Cnt FROM Product');
-    final lowStockRows = await db.rawQuery('''
-      SELECT ProductName, StockQuantity, Price
+    final lowStockProductRows = await db.rawQuery('''
+      SELECT ProductName AS ItemName, StockQuantity, Price
       FROM Product
       WHERE StockQuantity <= 5
       ORDER BY StockQuantity ASC, ProductID DESC
       LIMIT 6
     ''');
+    final lowStockPetRows = await db.rawQuery('''
+      SELECT PetName AS ItemName, StockQuantity, Price
+      FROM Pet
+      WHERE StockQuantity > 0 AND StockQuantity <= 5 AND IsActive = 1
+      ORDER BY StockQuantity ASC, PetID DESC
+      LIMIT 6
+    ''');
+    final lowStockItems = <_LowStockItem>[
+      for (final row in lowStockProductRows)
+        _LowStockItem(
+          title: (row['ItemName'] as String?) ?? '',
+          stock: (row['StockQuantity'] as int?) ?? 0,
+          price: (row['Price'] as num?)?.toDouble() ?? 0,
+        ),
+      for (final row in lowStockPetRows)
+        _LowStockItem(
+          title: (row['ItemName'] as String?) ?? '',
+          stock: (row['StockQuantity'] as int?) ?? 0,
+          price: (row['Price'] as num?)?.toDouble() ?? 0,
+        ),
+    ];
     final unreadNotifications = await NotificationRepository.instance.unreadCountForCurrentUser();
 
     return _AdminDashboardSummary(
@@ -1874,17 +1895,9 @@ class _AdminDashboardSummary {
       totalCustomers: (customers.first['Cnt'] as int?) ?? 0,
       totalPets: (pets.first['Cnt'] as int?) ?? 0,
       totalProducts: (products.first['Cnt'] as int?) ?? 0,
-      lowStockCount: lowStockRows.length,
+      lowStockCount: lowStockItems.length,
       unreadNotifications: unreadNotifications,
-      lowStockItems: lowStockRows
-          .map(
-            (row) => _LowStockItem(
-              title: (row['ProductName'] as String?) ?? '',
-              stock: (row['StockQuantity'] as int?) ?? 0,
-              price: (row['Price'] as num?)?.toDouble() ?? 0,
-            ),
-          )
-          .toList(),
+      lowStockItems: lowStockItems,
     );
   }
 }

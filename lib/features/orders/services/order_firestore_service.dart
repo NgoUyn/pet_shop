@@ -91,14 +91,44 @@ class OrderFirestoreService {
   /// Admin: get all orders from Firestore, optionally filtered by status
   Future<List<OrderInfo>> getAllOrdersFromFirestore({String? statusFilter}) async {
     try {
-      Query query = _firestore.collection('orders');
+      final base = _firestore.collection('orders');
+      List<DocumentSnapshot> docs = [];
 
       if (statusFilter != null && statusFilter.isNotEmpty) {
-        query = query.where('orderStatus', isEqualTo: statusFilter);
+        if (statusFilter == 'Unpaid') {
+          // Query A: orderStatus == 'Unpaid'
+          final qA = base.where('orderStatus', isEqualTo: 'Unpaid').get();
+          // Query B: paymentStatus in ['Unpaid','Pending']
+          final qB = base.where('paymentStatus', whereIn: ['Unpaid', 'Pending']).get();
+          // Query C: shipping COD but not paid yet (orderStatus == 'Shipping' && paymentMethod == 'COD')
+          final qC = base.where('orderStatus', isEqualTo: 'Shipping').where('paymentMethod', isEqualTo: 'COD').get();
+
+          final results = await Future.wait([qA, qB, qC]);
+          for (final r in results) {
+            docs.addAll(r.docs);
+          }
+        } else {
+          final snapshot = await base.where('orderStatus', isEqualTo: statusFilter).get();
+          docs = snapshot.docs;
+        }
+      } else {
+        final snapshot = await base.get();
+        docs = snapshot.docs;
       }
 
-      final snapshot = await query.get();
-      final orders = snapshot.docs.map((doc) => OrderInfo.fromFirestore(doc)).toList();
+      // Deduplicate by invoiceId (doc id or field)
+      final seen = <String>{};
+      final orders = <OrderInfo>[];
+      for (final doc in docs) {
+        try {
+          final idKey = (doc.data() as Map<String, dynamic>?)?['invoiceId']?.toString() ?? doc.id;
+          if (seen.contains(idKey)) continue;
+          seen.add(idKey);
+          orders.add(OrderInfo.fromFirestore(doc));
+        } catch (_) {
+          // skip bad doc
+        }
+      }
 
       // Sort client-side to avoid requiring a composite index
       orders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -116,16 +146,39 @@ class OrderFirestoreService {
       final firebaseUser = FirebaseAuth.instance.currentUser;
       if (firebaseUser == null) return [];
 
-      Query query = _firestore
-          .collection('orders')
-          .where('customerFirebaseUid', isEqualTo: firebaseUser.uid);
+      final base = _firestore.collection('orders');
+      List<DocumentSnapshot> docs = [];
 
       if (statusFilter != null && statusFilter.isNotEmpty) {
-        query = query.where('orderStatus', isEqualTo: statusFilter);
+        if (statusFilter == 'Unpaid') {
+          // A: orderStatus == 'Unpaid' for this user
+          final qA = base.where('customerFirebaseUid', isEqualTo: firebaseUser.uid).where('orderStatus', isEqualTo: 'Unpaid').get();
+          // B: paymentStatus in ['Unpaid','Pending'] for this user
+          final qB = base.where('customerFirebaseUid', isEqualTo: firebaseUser.uid).where('paymentStatus', whereIn: ['Unpaid', 'Pending']).get();
+          // C: shipping & COD for this user
+          final qC = base.where('customerFirebaseUid', isEqualTo: firebaseUser.uid).where('orderStatus', isEqualTo: 'Shipping').where('paymentMethod', isEqualTo: 'COD').get();
+
+          final results = await Future.wait([qA, qB, qC]);
+          for (final r in results) docs.addAll(r.docs);
+        } else {
+          final snapshot = await base.where('customerFirebaseUid', isEqualTo: firebaseUser.uid).where('orderStatus', isEqualTo: statusFilter).get();
+          docs = snapshot.docs;
+        }
+      } else {
+        final snapshot = await base.where('customerFirebaseUid', isEqualTo: firebaseUser.uid).get();
+        docs = snapshot.docs;
       }
 
-      final snapshot = await query.get();
-      final orders = snapshot.docs.map((doc) => OrderInfo.fromFirestore(doc)).toList();
+      final seen = <String>{};
+      final orders = <OrderInfo>[];
+      for (final doc in docs) {
+        try {
+          final idKey = (doc.data() as Map<String, dynamic>?)?['invoiceId']?.toString() ?? doc.id;
+          if (seen.contains(idKey)) continue;
+          seen.add(idKey);
+          orders.add(OrderInfo.fromFirestore(doc));
+        } catch (_) {}
+      }
 
       // Sort client-side to avoid requiring a composite index
       orders.sort((a, b) => b.createdAt.compareTo(a.createdAt));

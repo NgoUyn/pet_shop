@@ -21,6 +21,7 @@ class ReviewManagementPage extends StatefulWidget {
 
 class _ReviewManagementPageState extends State<ReviewManagementPage> {
   String? _selectedFilter;
+  int? _starFilter;
   late Future<List<ReviewItem>> _future;
 
   @override
@@ -420,7 +421,7 @@ class _ReviewManagementPageState extends State<ReviewManagementPage> {
       ),
       body: Column(
         children: [
-          // Filter chips
+          // Filter chips — status
           Container(
             color: AppColors.white,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -449,6 +450,37 @@ class _ReviewManagementPageState extends State<ReviewManagementPage> {
             ),
           ),
 
+          // Star filter chips
+          Container(
+            color: AppColors.white,
+            padding: const EdgeInsets.only(left: 12, right: 12, bottom: 8),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  ...[5, 4, 3, 2, 1].map((star) {
+                    final isSelected = _starFilter == star;
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: FilterChip(
+                        selected: isSelected,
+                        avatar: Icon(isSelected ? Icons.star : Icons.star_border, size: 16, color: const Color(0xFFFFB300)),
+                        label: Text('$star sao'),
+                        onSelected: (_) {
+                          setState(() {
+                            _starFilter = isSelected ? null : star;
+                          });
+                        },
+                        selectedColor: const Color(0xFFFFF3E0),
+                        checkmarkColor: const Color(0xFFFFB300),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ),
+
           // Review list
           Expanded(
             child: FutureBuilder<List<ReviewItem>>(
@@ -463,8 +495,11 @@ class _ReviewManagementPageState extends State<ReviewManagementPage> {
                   );
                 }
 
-                final items = snapshot.data ?? [];
-                if (items.isEmpty) {
+                final items = (snapshot.data ?? []);
+                final filtered = _starFilter == null
+                    ? items
+                    : items.where((r) => r.rating == _starFilter).toList();
+                if (filtered.isEmpty) {
                   return const Center(
                     child: Text('Không có đánh giá nào', style: TextStyle(color: AppColors.textLight)),
                   );
@@ -474,8 +509,8 @@ class _ReviewManagementPageState extends State<ReviewManagementPage> {
                   onRefresh: () async => _loadReviews(),
                   child: ListView.builder(
                     padding: const EdgeInsets.all(12),
-                    itemCount: items.length,
-                    itemBuilder: (_, i) => _buildReviewCard(items[i]),
+                    itemCount: filtered.length,
+                    itemBuilder: (_, i) => _buildReviewCard(filtered[i]),
                   ),
                 );
               },

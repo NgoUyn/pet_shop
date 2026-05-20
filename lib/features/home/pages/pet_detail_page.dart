@@ -2,8 +2,11 @@ import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/pet_provider.dart';
-import '../../../core/utils/price_helper.dart';
 import '../../admin/pages/admin_pet_form_page.dart';
+import '../../reviews/services/review_repository.dart';
+import '../../profile/services/profile_repository.dart';
+import '../../favorites/services/favorite_repository.dart';
+import '../../cart/services/cart_repository.dart';
 import '../services/pet_repository.dart';
 
 class PetDetailPage extends StatefulWidget {
@@ -17,37 +20,154 @@ class PetDetailPage extends StatefulWidget {
 
 class _PetDetailPageState extends State<PetDetailPage> {
   late PetItem _currentPet;
+  List<ReviewItem> _reviews = [];
+  bool _isAdmin = false;
+  bool _isFavorited = false;
+  bool _isProcessingFavorite = false;
+  bool _isAddingToCart = false;
+  bool _isLoadingReviews = true;
 
   @override
   void initState() {
     super.initState();
     _currentPet = widget.pet;
-    // Listen for updates from PetProvider
-    PetProvider.instance.addListener(_onPetsChanged);
+    _loadReviews();
+    _checkAdmin();
+    _loadFavoriteStatus();
   }
 
-  @override
-  void dispose() {
-    PetProvider.instance.removeListener(_onPetsChanged);
-    super.dispose();
-  }
-
-  void _onPetsChanged() {
-    if (!mounted) return;
-    // Check if our pet was updated in the provider
-    final updated = PetProvider.instance.pets
-        .where((p) => p.petId == _currentPet.petId)
-        .firstOrNull;
-    if (updated != null) {
+  Future<void> _loadFavoriteStatus() async {
+    try {
+      final fav = await FavoriteRepository.instance.isPetFavorited(_currentPet.petId);
+      if (!mounted) return;
       setState(() {
-        _currentPet = updated;
+        _isFavorited = fav;
+      });
+    } catch (_) {
+      // ignore
+    }
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_isProcessingFavorite) return;
+    setState(() {
+      _isProcessingFavorite = true;
+    });
+
+    try {
+      await FavoriteRepository.instance.togglePetFavorite(_currentPet.petId);
+      final fav = await FavoriteRepository.instance.isPetFavorited(_currentPet.petId);
+      if (!mounted) return;
+      setState(() {
+        _isFavorited = fav;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))),
+      );
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _isProcessingFavorite = false;
       });
     }
   }
 
+  Future<void> _addToCart() async {
+    if (_isAddingToCart) return;
+    setState(() { _isAddingToCart = true; });
+    try {
+      await CartRepository.instance.addPetToCart(petId: _currentPet.petId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã thêm thú cưng vào giỏ hàng')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))),
+      );
+    } finally {
+      if (!mounted) return;
+      setState(() { _isAddingToCart = false; });
+    }
+  }
+
+  String _formatPrice(double value) {
+    final formatted = value.toStringAsFixed(0);
+    final buffer = StringBuffer();
+    for (var i = 0; i < formatted.length; i++) {
+      final fromEnd = formatted.length - i;
+      buffer.write(formatted[i]);
+      if (fromEnd > 1 && fromEnd % 3 == 1) {
+        buffer.write('.');
+      }
+    }
+    return '$bufferđ';
+  }
+
+  // Compatibility wrappers for existing calls
+  String genderLabel(String? gender) => _genderLabel(gender);
+  String formatAge(int? age) => _ageLabel(age);
+  String formatPrice(double value) => _formatPrice(value);
+
   String _formatDateTime(DateTime value) {
     String twoDigits(int input) => input.toString().padLeft(2, '0');
     return '${twoDigits(value.day)}/${twoDigits(value.month)}/${value.year} ${twoDigits(value.hour)}:${twoDigits(value.minute)}';
+  }
+
+  String _genderLabel(String? gender) {
+    final normalized = (gender ?? '').trim();
+    if (normalized.isEmpty) {
+      return 'Chưa cập nhật';
+    }
+    final lower = normalized.toLowerCase();
+    if (lower.contains('female') || lower.contains('cái')) {
+      return 'Cái';
+    }
+    if (lower.contains('male') || lower.contains('đực')) {
+      return 'Đực';
+    }
+    return normalized;
+  }
+
+  String _ageLabel(int? age) {
+    if (age == null) {
+      return 'Chưa cập nhật';
+    }
+    return '$age tháng tuổi';
+  }
+
+  Future<void> _loadReviews() async {
+    try {
+      final reviews = await ReviewRepository.instance.getByPetId(_currentPet.petId);
+      if (mounted) {
+        setState(() {
+          _reviews = reviews;
+          _isLoadingReviews = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingReviews = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _checkAdmin() async {
+    try {
+      final profile = await ProfileRepository.instance.getCurrentProfile();
+      if (!mounted) return;
+      setState(() {
+        _isAdmin = profile?.role.toLowerCase() == 'admin';
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _isAdmin = false;
+      });
+    }
   }
 
   Widget _buildHeroImage(PetItem pet) {

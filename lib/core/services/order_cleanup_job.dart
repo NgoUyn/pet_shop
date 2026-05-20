@@ -96,22 +96,29 @@ class OrderCleanupJob {
             whereArgs: [invoiceId],
           );
 
-          // Restore stock for each product in the invoice
+          // Restore stock for each product/pet in the invoice
           final details = await txn.query(
             'InvoiceDetail',
-            columns: ['ProductID', 'Quantity'],
+            columns: ['ProductID', 'PetID', 'Quantity'],
             where: 'InvoiceID = ?',
             whereArgs: [invoiceId],
           );
 
           for (final detail in details) {
             final productId = detail['ProductID'] as int?;
+            final petId = detail['PetID'] as int?;
             final quantity = (detail['Quantity'] as int?) ?? 0;
 
             if (productId != null && quantity > 0) {
               await txn.rawUpdate(
                 'UPDATE Product SET StockQuantity = StockQuantity + ? WHERE ProductID = ?',
                 [quantity, productId],
+              );
+            }
+            if (petId != null && quantity > 0) {
+              await txn.rawUpdate(
+                'UPDATE Pet SET StockQuantity = StockQuantity + ? WHERE PetID = ?',
+                [quantity, petId],
               );
             }
           }

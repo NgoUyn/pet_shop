@@ -20,6 +20,7 @@ class PetItem {
     this.isDewormed = false,
     this.isVaccinated = false,
     this.breed,
+    this.stockQuantity = 1,
   });
 
   final int petId;
@@ -36,6 +37,7 @@ class PetItem {
   final bool isVaccinated;
   final bool isActive;
   final DateTime createdAt;
+  final int stockQuantity;
 
   static PetItem fromRow(Map<String, Object?> row) {
     final rawPrice = row['Price'] as num?;
@@ -54,6 +56,7 @@ class PetItem {
       isVaccinated: (row['IsVaccinated'] as int?) == 1,
       isActive: (row['IsActive'] as int?) == 1,
       createdAt: DateTime.parse(row['CreatedAt'] as String),
+      stockQuantity: (row['StockQuantity'] as int?) ?? 1,
     );
   }
 }
@@ -133,6 +136,7 @@ class PetRepository {
           isVaccinated: data['isVaccinated'] as bool? ?? false,
           isActive: data['isActive'] as bool? ?? true,
           createdAt: DateTime.parse((data['createdAt'] as String)),
+          stockQuantity: (data['stockQuantity'] as num?)?.toInt() ?? 1,
         );
       }).toList();
     } catch (e) {
@@ -177,6 +181,7 @@ class PetRepository {
         isVaccinated: data['isVaccinated'] as bool? ?? false,
         isActive: data['isActive'] as bool? ?? true,
         createdAt: DateTime.parse((data['createdAt'] as String)),
+        stockQuantity: (data['stockQuantity'] as num?)?.toInt() ?? 1,
       );
     } catch (e) {
       print('PetRepository.getPetById Firestore fallback error: $e');
@@ -197,6 +202,7 @@ class PetRepository {
     required bool isVaccinated,
     String? imageUrl,
     String? breed,
+    int stockQuantity = 1,
   }) async {
     final db = await AppDatabase.instance;
     final now = DateTime.now().toIso8601String();
@@ -214,6 +220,7 @@ class PetRepository {
       'IsVaccinated': isVaccinated ? 1 : 0,
       'ImageURL': imageUrl,
       'IsActive': 1,
+      'StockQuantity': stockQuantity,
       'CreatedAt': now,
       'UpdatedAt': null,
     });
@@ -232,6 +239,7 @@ class PetRepository {
       isVaccinated: isVaccinated,
       isActive: true,
       createdAt: DateTime.parse(now),
+      stockQuantity: stockQuantity,
     ));
     _notifyChanged();
     return id;
@@ -252,6 +260,7 @@ class PetRepository {
     String? imageUrl,
     bool? isActive,
     String? breed,
+    int? stockQuantity,
   }) async {
     final db = await AppDatabase.instance;
     final affected = await db.update(
@@ -270,6 +279,7 @@ class PetRepository {
         'IsVaccinated': isVaccinated ? 1 : 0,
         'ImageURL': imageUrl,
         'IsActive': (isActive ?? true) ? 1 : 0,
+        if (stockQuantity != null) 'StockQuantity': stockQuantity,
         'UpdatedAt': DateTime.now().toIso8601String(),
       },
       where: 'PetID = ?',
@@ -336,6 +346,7 @@ class PetRepository {
         'isDewormed': pet.isDewormed,
         'isVaccinated': pet.isVaccinated,
         'isActive': pet.isActive,
+        'stockQuantity': pet.stockQuantity,
         'createdAt': pet.createdAt.toIso8601String(),
       });
     } catch (e) {

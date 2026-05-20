@@ -6,14 +6,17 @@ import '../../home/services/product_repository.dart';
 import '../widgets/product_detail_body.dart';
 
 /// Admin product detail page with edit/delete actions.
+/// When [readOnly] is true, hides edit/delete buttons for read-only view.
 /// Uses the shared [ProductDetailBody] for common display content.
 class AdminProductDetailPage extends StatefulWidget {
   const AdminProductDetailPage({
     super.key,
     required this.product,
+    this.readOnly = false,
   });
 
   final ProductItem product;
+  final bool readOnly;
 
   @override
   State<AdminProductDetailPage> createState() => _AdminProductDetailPageState();
@@ -84,7 +87,7 @@ class _AdminProductDetailPageState extends State<AdminProductDetailPage> {
     Navigator.pushReplacement(
       context,
       MaterialPageRoute(
-        builder: (_) => AdminProductDetailPage(product: product),
+        builder: (_) => AdminProductDetailPage(product: product, readOnly: widget.readOnly),
       ),
     );
   }
@@ -103,9 +106,9 @@ class _AdminProductDetailPageState extends State<AdminProductDetailPage> {
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
         child: ProductDetailBody(
           product: _currentProduct,
-          showAdminActions: true,
-          onEditPressed: _editProduct,
-          onDeletePressed: _deleteProduct,
+          showAdminActions: !widget.readOnly,
+          onEditPressed: widget.readOnly ? null : _editProduct,
+          onDeletePressed: widget.readOnly ? null : _deleteProduct,
           onRelatedProductTap: _onRelatedProductTap,
           onProductChanged: (updated) {
             setState(() {

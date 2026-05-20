@@ -653,6 +653,7 @@ class CartRepository {
 
       for (final detail in detailRows) {
         final productId = detail['ProductID'] as int?;
+        final petId = detail['PetID'] as int?;
         final quantity = (detail['Quantity'] as int?) ?? 1;
 
         if (productId != null) {
@@ -663,6 +664,17 @@ class CartRepository {
 
           if (affected == 0) {
             throw StateError('Không thể cập nhật tồn kho, vui lòng thử lại');
+          }
+        }
+
+        if (petId != null) {
+          final affected = await txn.rawUpdate(
+            'UPDATE Pet SET StockQuantity = StockQuantity - ? WHERE PetID = ? AND StockQuantity >= ?',
+            [quantity, petId, quantity],
+          );
+
+          if (affected == 0) {
+            throw StateError('Thú cưng không đủ hàng hoặc đã hết');
           }
         }
       }
@@ -910,6 +922,21 @@ class CartRepository {
 
             if (affected == 0) {
               throw StateError('Không thể cập nhật tồn kho, vui lòng thử lại');
+            }
+          }
+
+          if (petId != null) {
+            final affected = await txn.rawUpdate(
+              '''
+              UPDATE Pet
+              SET StockQuantity = StockQuantity - ?
+              WHERE PetID = ? AND StockQuantity >= ?
+              ''',
+              [quantity, petId, quantity],
+            );
+
+            if (affected == 0) {
+              throw StateError('Thú cưng không đủ hàng hoặc đã hết');
             }
           }
 

@@ -346,8 +346,64 @@ class OrderRepository {
       paymentStatus: 'Cancelled',
     );
 
-    // 2. Try local SQLite (may not exist on admin device)
-    await _tryUpdateLocalStatus(invoiceId, 'Cancelled');
+    // 2. Try local SQLite: mark invoice/payment cancelled and restore product stock
+    try {
+      final db = await AppDatabase.instance;
+      await db.transaction((txn) async {
+        final now = DateTime.now().toIso8601String();
+
+        await txn.update(
+          'Invoice',
+          {
+            'PaymentStatus': 'Cancelled',
+            'OrderStatus': 'Cancelled',
+            'UpdatedAt': now,
+          },
+          where: 'InvoiceID = ?',
+          whereArgs: [invoiceId],
+        );
+
+        // Update payment record status if exists
+        try {
+          await txn.update(
+            'Payment',
+            {'Status': 'Cancelled'},
+            where: 'InvoiceID = ?',
+            whereArgs: [invoiceId],
+          );
+        } catch (_) {}
+
+        // Restore stock for each product/pet in the invoice
+        final details = await txn.query(
+          'InvoiceDetail',
+          columns: ['ProductID', 'PetID', 'Quantity'],
+          where: 'InvoiceID = ?',
+          whereArgs: [invoiceId],
+        );
+
+        for (final detail in details) {
+          final productId = detail['ProductID'] as int?;
+          final petId = detail['PetID'] as int?;
+          final quantity = (detail['Quantity'] as int?) ?? 0;
+          if (productId != null && quantity > 0) {
+            await txn.rawUpdate(
+              'UPDATE Product SET StockQuantity = StockQuantity + ? WHERE ProductID = ?',
+              [quantity, productId],
+            );
+          }
+          if (petId != null && quantity > 0) {
+            await txn.rawUpdate(
+              'UPDATE Pet SET StockQuantity = StockQuantity + ? WHERE PetID = ?',
+              [quantity, petId],
+            );
+          }
+        }
+      });
+    } catch (e) {
+      print('cancelOrder local restore error: $e');
+      // Fallback: best-effort local status update
+      await _tryUpdateLocalStatus(invoiceId, 'Cancelled');
+    }
 
     // 3. Notify customer via Firestore
     await _notifyCustomer(doc, invoiceId, 'order',
