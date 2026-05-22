@@ -4,6 +4,8 @@ import 'package:sqflite/sqflite.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../auth/services/auth_session.dart';
+import '../../home/services/pet_repository.dart';
+import '../../home/services/product_repository.dart';
 import '../../profile/services/profile_repository.dart';
 import '../../notifications/services/notification_repository.dart';
 import '../../orders/services/order_firestore_service.dart';
@@ -665,6 +667,19 @@ class CartRepository {
           if (affected == 0) {
             throw StateError('Không thể cập nhật tồn kho, vui lòng thử lại');
           }
+
+          // Sync updated stock to Firestore
+          final updatedRows = await txn.query(
+            'Product',
+            columns: ['StockQuantity'],
+            where: 'ProductID = ?',
+            whereArgs: [productId],
+            limit: 1,
+          );
+          if (updatedRows.isNotEmpty) {
+            final newStock = (updatedRows.first['StockQuantity'] as int?) ?? 0;
+            ProductRepository.instance.syncStockToFirestore(productId, newStock);
+          }
         }
 
         if (petId != null) {
@@ -675,6 +690,19 @@ class CartRepository {
 
           if (affected == 0) {
             throw StateError('Thú cưng không đủ hàng hoặc đã hết');
+          }
+
+          // Sync updated stock to Firestore
+          final updatedRows = await txn.query(
+            'Pet',
+            columns: ['StockQuantity'],
+            where: 'PetID = ?',
+            whereArgs: [petId],
+            limit: 1,
+          );
+          if (updatedRows.isNotEmpty) {
+            final newStock = (updatedRows.first['StockQuantity'] as int?) ?? 0;
+            PetRepository.instance.syncStockToFirestore(petId, newStock);
           }
         }
       }
@@ -923,6 +951,19 @@ class CartRepository {
             if (affected == 0) {
               throw StateError('Không thể cập nhật tồn kho, vui lòng thử lại');
             }
+
+            // Sync updated stock to Firestore
+            final updatedRows = await txn.query(
+              'Product',
+              columns: ['StockQuantity'],
+              where: 'ProductID = ?',
+              whereArgs: [productId],
+              limit: 1,
+            );
+            if (updatedRows.isNotEmpty) {
+              final newStock = (updatedRows.first['StockQuantity'] as int?) ?? 0;
+              ProductRepository.instance.syncStockToFirestore(productId, newStock);
+            }
           }
 
           if (petId != null) {
@@ -937,6 +978,19 @@ class CartRepository {
 
             if (affected == 0) {
               throw StateError('Thú cưng không đủ hàng hoặc đã hết');
+            }
+
+            // Sync updated stock to Firestore
+            final updatedRows = await txn.query(
+              'Pet',
+              columns: ['StockQuantity'],
+              where: 'PetID = ?',
+              whereArgs: [petId],
+              limit: 1,
+            );
+            if (updatedRows.isNotEmpty) {
+              final newStock = (updatedRows.first['StockQuantity'] as int?) ?? 0;
+              PetRepository.instance.syncStockToFirestore(petId, newStock);
             }
           }
 

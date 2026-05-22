@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/pet_provider.dart';
+import '../../cart/services/cart_repository.dart';
 import '../../home/services/pet_repository.dart';
 import '../../product_detail/widgets/customer_bottom_action.dart';
 import '../widgets/pet_detail_body.dart';
@@ -23,6 +24,7 @@ class CustomerPetDetailPage extends StatefulWidget {
 
 class _CustomerPetDetailPageState extends State<CustomerPetDetailPage> {
   late PetItem _currentPet;
+  bool _isAddingToCart = false;
 
   @override
   void initState() {
@@ -57,18 +59,42 @@ class _CustomerPetDetailPageState extends State<CustomerPetDetailPage> {
     );
   }
 
-  void _onOrderPressed() {
-    // TODO: Implement order functionality
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Tính năng đặt hàng đang được phát triển')),
-    );
+  Future<void> _onOrderPressed() async {
+    if (_isAddingToCart) return;
+    setState(() => _isAddingToCart = true);
+    try {
+      await CartRepository.instance.addPetToCart(petId: _currentPet.petId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã thêm vào giỏ hàng')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _isAddingToCart = false);
+    }
   }
 
-  void _onBuyPressed() {
-    // TODO: Implement buy functionality
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Tính năng mua hàng đang được phát triển')),
-    );
+  Future<void> _onBuyPressed() async {
+    if (_isAddingToCart) return;
+    setState(() => _isAddingToCart = true);
+    try {
+      await CartRepository.instance.addPetToCart(petId: _currentPet.petId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã thêm vào giỏ hàng')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _isAddingToCart = false);
+    }
   }
 
   void _onRelatedPetTap(PetItem pet) {

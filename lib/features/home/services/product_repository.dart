@@ -293,6 +293,18 @@ class ProductRepository {
     }
   }
 
+  /// Sync only the stock quantity to Firestore after a purchase deduction.
+  Future<void> syncStockToFirestore(int productId, int newStockQuantity) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('products')
+          .doc(productId.toString())
+          .update({'stockQuantity': newStockQuantity});
+    } catch (e) {
+      print('ProductRepository.syncStockToFirestore error: $e');
+    }
+  }
+
   Future<String?> getCategoryName(int categoryId) async {
     final db = await AppDatabase.instance;
     final rows = await db.query(

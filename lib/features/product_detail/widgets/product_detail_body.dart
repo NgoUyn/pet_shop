@@ -257,7 +257,7 @@ class _ProductDetailBodyState extends State<ProductDetailBody> {
                         ),
                       ],
                     )
-                  else if (widget.onEditPressed != null || widget.onDeletePressed != null)
+                  else
                     Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [

@@ -364,4 +364,16 @@ class PetRepository {
       print('PetRepository._syncPetDeletionToFirestore error: $e');
     }
   }
+
+  /// Sync only the stock quantity to Firestore after a purchase deduction.
+  Future<void> syncStockToFirestore(int petId, int newStockQuantity) async {
+    try {
+      await FirebaseFirestore.instance
+          .collection('pets')
+          .doc(petId.toString())
+          .update({'stockQuantity': newStockQuantity});
+    } catch (e) {
+      print('PetRepository.syncStockToFirestore error: $e');
+    }
+  }
 }

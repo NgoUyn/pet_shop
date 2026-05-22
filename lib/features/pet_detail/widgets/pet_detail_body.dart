@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/services/pet_provider.dart';
 import '../../../core/utils/price_helper.dart';
+import '../../cart/services/cart_repository.dart';
+import '../../favorites/services/favorite_repository.dart';
 import '../../home/services/pet_repository.dart';
 import '../../reviews/services/review_repository.dart';
 
@@ -43,6 +45,11 @@ class _PetDetailBodyState extends State<PetDetailBody> {
   bool _isActive = true;
   bool _isSavingMedical = false;
 
+  // Customer-only state
+  bool _isFavorited = false;
+  bool _isProcessingFavorite = false;
+  bool _isAddingToCart = false;
+
   @override
   void initState() {
     super.initState();
@@ -50,6 +57,7 @@ class _PetDetailBodyState extends State<PetDetailBody> {
     _syncMedicalState();
     _loadReviews();
     _loadRelatedPets();
+    _loadFavoriteStatus();
     // Listen for updates from PetProvider for real-time sync
     PetProvider.instance.addListener(_onPetsChanged);
   }
@@ -152,6 +160,51 @@ class _PetDetailBodyState extends State<PetDetailBody> {
   String _formatDateTime(DateTime value) {
     String twoDigits(int input) => input.toString().padLeft(2, '0');
     return '${twoDigits(value.day)}/${twoDigits(value.month)}/${value.year} ${twoDigits(value.hour)}:${twoDigits(value.minute)}';
+  }
+
+  // ── Customer: Favorite & Cart ─────────────────────────────────────────
+
+  Future<void> _loadFavoriteStatus() async {
+    try {
+      final fav = await FavoriteRepository.instance.isPetFavorited(_currentPet.petId);
+      if (!mounted) return;
+      setState(() {
+        _isFavorited = fav;
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _toggleFavorite() async {
+    if (_isProcessingFavorite) return;
+    setState(() { _isProcessingFavorite = true; });
+    try {
+      await FavoriteRepository.instance.togglePetFavorite(_currentPet.petId);
+      final fav = await FavoriteRepository.instance.isPetFavorited(_currentPet.petId);
+      if (!mounted) return;
+      setState(() { _isFavorited = fav; });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))));
+    } finally {
+      if (!mounted) return;
+      setState(() { _isProcessingFavorite = false; });
+    }
+  }
+
+  Future<void> _addToCart() async {
+    if (_isAddingToCart) return;
+    setState(() { _isAddingToCart = true; });
+    try {
+      await CartRepository.instance.addPetToCart(petId: _currentPet.petId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Đã thêm vào giỏ hàng')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))));
+    } finally {
+      if (!mounted) return;
+      setState(() { _isAddingToCart = false; });
+    }
   }
 
   // ── Admin: Save medical condition toggle ──────────────────────────────
@@ -280,6 +333,29 @@ class _PetDetailBodyState extends State<PetDetailBody> {
                   ),
                 ],
               ),
+              const SizedBox(height: 12),
+
+              // ── Customer: Favorite & Cart icons ───────────────────
+              if (!widget.showAdminActions)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      onPressed: _isProcessingFavorite ? null : _toggleFavorite,
+                      icon: Icon(
+                        _isFavorited ? Icons.favorite : Icons.favorite_border,
+                        color: _isFavorited ? const Color(0xFFFF2D55) : AppColors.textLight,
+                      ),
+                      tooltip: 'Yêu thích',
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      onPressed: _isAddingToCart ? null : _addToCart,
+                      icon: const Icon(Icons.add_shopping_cart, color: Color(0xFF2F80ED)),
+                      tooltip: 'Thêm vào giỏ',
+                    ),
+                  ],
+                ),
               const SizedBox(height: 18),
 
               // ── Information Section ───────────────────────────────

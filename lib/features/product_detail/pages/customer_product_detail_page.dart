@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../cart/services/cart_repository.dart';
 import '../../home/services/product_repository.dart';
 import '../widgets/customer_bottom_action.dart';
 import '../widgets/product_detail_body.dart';
@@ -22,6 +23,7 @@ class CustomerProductDetailPage extends StatefulWidget {
 
 class _CustomerProductDetailPageState extends State<CustomerProductDetailPage> {
   late ProductItem _currentProduct;
+  bool _isAddingToCart = false;
 
   @override
   void initState() {
@@ -36,18 +38,42 @@ class _CustomerProductDetailPageState extends State<CustomerProductDetailPage> {
     );
   }
 
-  void _onOrderPressed() {
-    // TODO: Implement order functionality
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Tính năng đặt hàng đang được phát triển')),
-    );
+  Future<void> _onOrderPressed() async {
+    if (_isAddingToCart) return;
+    setState(() => _isAddingToCart = true);
+    try {
+      await CartRepository.instance.addProductToCart(productId: _currentProduct.productId, quantity: 1);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã thêm vào giỏ hàng')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _isAddingToCart = false);
+    }
   }
 
-  void _onBuyPressed() {
-    // TODO: Implement buy functionality
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Tính năng mua hàng đang được phát triển')),
-    );
+  Future<void> _onBuyPressed() async {
+    if (_isAddingToCart) return;
+    setState(() => _isAddingToCart = true);
+    try {
+      await CartRepository.instance.addProductToCart(productId: _currentProduct.productId, quantity: 1);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã thêm vào giỏ hàng')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _isAddingToCart = false);
+    }
   }
 
   void _onRelatedProductTap(ProductItem product) {
