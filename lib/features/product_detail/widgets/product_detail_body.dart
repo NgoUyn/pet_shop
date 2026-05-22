@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../chat/pages/chat_page.dart';
+import '../../chat/services/chat_repository.dart';
 import '../../home/services/product_repository.dart';
 import '../../reviews/services/review_repository.dart';
 import '../../favorites/services/favorite_repository.dart';
@@ -38,6 +40,7 @@ class _ProductDetailBodyState extends State<ProductDetailBody> {
   bool _isFavorited = false;
   bool _isProcessingFavorite = false;
   bool _isAddingToCart = false;
+  bool _isSendingToChat = false;
 
   @override
   void initState() {
@@ -151,6 +154,44 @@ class _ProductDetailBodyState extends State<ProductDetailBody> {
     } finally {
       if (!mounted) return;
       setState(() { _isAddingToCart = false; });
+    }
+  }
+
+  Future<void> _sendToChat() async {
+    if (_isSendingToChat) return;
+    setState(() => _isSendingToChat = true);
+    try {
+      final chatRepo = ChatRepository.instance;
+      final thread = await chatRepo.resolveThreadContext();
+      final product = _currentProduct;
+      final priceText = _formatPrice(product.price);
+
+      // Gửi text message chứa thông tin sản phẩm
+      final textMessage = '📦 ${product.productName}\n💰 Giá: $priceText';
+      await chatRepo.sendMessage(thread: thread, content: textMessage);
+
+      // Gửi image message nếu có ảnh
+      if (product.imageUrl != null && product.imageUrl!.trim().isNotEmpty) {
+        await chatRepo.sendImageMessage(
+          thread: thread,
+          imageUrl: product.imageUrl!,
+          content: product.productName,
+        );
+      }
+
+      if (!mounted) return;
+      // Mở trang chat với admin
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ChatPage()),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _isSendingToChat = false);
     }
   }
 
@@ -274,6 +315,18 @@ class _ProductDetailBodyState extends State<ProductDetailBody> {
                           onPressed: _isAddingToCart ? null : _addToCart,
                           icon: const Icon(Icons.add_shopping_cart, color: Color(0xFF2F80ED)),
                           tooltip: 'Thêm vào giỏ',
+                        ),
+                        const SizedBox(width: 8),
+                        IconButton(
+                          onPressed: _isSendingToChat ? null : _sendToChat,
+                          icon: _isSendingToChat
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.send, color: Color(0xFF3E7C63)),
+                          tooltip: 'Gửi thông tin cho admin',
                         ),
                       ],
                     ),

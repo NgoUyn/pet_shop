@@ -4,6 +4,8 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/services/pet_provider.dart';
 import '../../../core/utils/price_helper.dart';
 import '../../cart/services/cart_repository.dart';
+import '../../chat/pages/chat_page.dart';
+import '../../chat/services/chat_repository.dart';
 import '../../favorites/services/favorite_repository.dart';
 import '../../home/services/pet_repository.dart';
 import '../../reviews/services/review_repository.dart';
@@ -49,6 +51,7 @@ class _PetDetailBodyState extends State<PetDetailBody> {
   bool _isFavorited = false;
   bool _isProcessingFavorite = false;
   bool _isAddingToCart = false;
+  bool _isSendingToChat = false;
 
   @override
   void initState() {
@@ -207,6 +210,44 @@ class _PetDetailBodyState extends State<PetDetailBody> {
     }
   }
 
+  Future<void> _sendToChat() async {
+    if (_isSendingToChat) return;
+    setState(() => _isSendingToChat = true);
+    try {
+      final chatRepo = ChatRepository.instance;
+      final thread = await chatRepo.resolveThreadContext();
+      final pet = _currentPet;
+      final priceText = pet.price == null ? 'Chưa có giá' : formatPrice(pet.price!);
+
+      // Gửi text message chứa thông tin thú cưng
+      final textMessage = '🐾 ${pet.petName}\n💰 Giá: $priceText';
+      await chatRepo.sendMessage(thread: thread, content: textMessage);
+
+      // Gửi image message nếu có ảnh
+      if (pet.imageUrl != null && pet.imageUrl!.trim().isNotEmpty) {
+        await chatRepo.sendImageMessage(
+          thread: thread,
+          imageUrl: pet.imageUrl!,
+          content: pet.petName,
+        );
+      }
+
+      if (!mounted) return;
+      // Mở trang chat với admin
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const ChatPage()),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))),
+      );
+    } finally {
+      if (mounted) setState(() => _isSendingToChat = false);
+    }
+  }
+
   // ── Admin: Save medical condition toggle ──────────────────────────────
 
   Future<void> _saveMedicalCondition() async {
@@ -335,7 +376,7 @@ class _PetDetailBodyState extends State<PetDetailBody> {
               ),
               const SizedBox(height: 12),
 
-              // ── Customer: Favorite & Cart icons ───────────────────
+              // ── Customer: Favorite, Cart & Send icons ────────────
               if (!widget.showAdminActions)
                 Row(
                   mainAxisSize: MainAxisSize.min,
@@ -353,6 +394,18 @@ class _PetDetailBodyState extends State<PetDetailBody> {
                       onPressed: _isAddingToCart ? null : _addToCart,
                       icon: const Icon(Icons.add_shopping_cart, color: Color(0xFF2F80ED)),
                       tooltip: 'Thêm vào giỏ',
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      onPressed: _isSendingToChat ? null : _sendToChat,
+                      icon: _isSendingToChat
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.send, color: Color(0xFF3E7C63)),
+                      tooltip: 'Gửi thông tin cho admin',
                     ),
                   ],
                 ),
