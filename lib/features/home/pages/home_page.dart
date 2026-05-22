@@ -13,12 +13,15 @@ import '../../cart/pages/checkout_page.dart';
 import '../../favorites/services/favorite_repository.dart';
 import '../services/pet_repository.dart';
 import '../services/product_repository.dart';
+import '../services/recommendation_service.dart';
+import '../models/recommended_item.dart';
 import '../widgets/pet_card.dart';
 import '../widgets/product_card.dart';
 import 'pet_list_page.dart';
 import '../../pet_detail/pages/pet_detail_page.dart';
 import '../../product_detail/pages/product_detail_page.dart';
 import 'shop_list_page.dart';
+import 'recommended_list_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -33,7 +36,9 @@ class _HomePageState extends State<HomePage> {
   String _selectedProductFilter = 'Thức ăn';
   Set<int> _favoriteProductIds = {};
   Set<int> _favoritePetIds = {};
-  List<_RecommendedItem> _suggestedItems = [];
+  List<RecommendedItem> _suggestedItems = [];
+  List<int> _recommendedProductIds = [];
+  List<int> _recommendedPetIds = [];
 
   @override
   void initState() {
@@ -65,6 +70,11 @@ class _HomePageState extends State<HomePage> {
       Future.value(PetProvider.instance.pets),
       FavoriteRepository.instance.listFavoriteProducts(),
       FavoriteRepository.instance.listFavoritePets(),
+      // Gọi API recommendation server
+      RecommendationService.instance.getRecommendations(
+        userId: AuthSession.instance.currentUserId.value,
+        limit: 50,
+      ),
     ]);
     _favoriteProductIds = (results[2] as List<ProductItem>)
         .map((item) => item.productId)
@@ -72,6 +82,9 @@ class _HomePageState extends State<HomePage> {
     _favoritePetIds = (results[3] as List<PetItem>)
         .map((item) => item.petId)
         .toSet();
+    final recResult = results[4] as RecommendationResult;
+    _recommendedProductIds = recResult.productIds;
+    _recommendedPetIds = recResult.petIds;
     _suggestedItems = _buildSuggestedItems(
       results[0] as List<ProductItem>,
       results[1] as List<PetItem>,
@@ -276,7 +289,7 @@ class _HomePageState extends State<HomePage> {
                     _buildSectionHeader(
                       'Gợi ý cho bạn',
                       onAction: () => Navigator.push(context,
-                          MaterialPageRoute(builder: (_) => const ShopListPage())),
+                          MaterialPageRoute(builder: (_) => RecommendedListPage(items: _suggestedItems))),
                     ),
                     SizedBox(
                       height: 220,
@@ -507,8 +520,8 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ── Suggestion Card (horizontal scroll) ───────────────────────────────
-  Widget _buildSuggestionCard(_RecommendedItem item) {
-    final bool isPet = item.kind == _RecommendedKind.pet;
+  Widget _buildSuggestionCard(RecommendedItem item) {
+    final bool isPet = item.kind == RecommendedKind.pet;
 
     if (isPet) {
       return PetCard(
@@ -542,13 +555,41 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────
-  List<_RecommendedItem> _buildSuggestedItems(
+  List<RecommendedItem> _buildSuggestedItems(
       List<ProductItem> products, List<PetItem> pets) {
-    final items = <_RecommendedItem>[
-      ...products.map(_RecommendedItem.product),
-      ...pets.map(_RecommendedItem.pet),
+    final productMap = {for (final p in products) p.productId: p};
+    final petMap = {for (final p in pets) p.petId: p};
+
+    // Lấy sản phẩm từ server recommend trước (tối đa 30)
+    final result = <RecommendedItem>[];
+    for (final id in _recommendedProductIds) {
+      final product = productMap[id];
+      if (product != null && result.length < 30) {
+        result.add(RecommendedItem.product(product));
+      }
+    }
+
+    // Nếu chưa đủ 30, thêm thú cưng cho đủ
+    if (result.length < 30) {
+      for (final id in _recommendedPetIds) {
+        final pet = petMap[id];
+        if (pet != null && result.length < 30) {
+          result.add(RecommendedItem.pet(pet));
+        }
+      }
+    }
+
+    // Nếu có recommend từ server, dùng nó
+    if (result.isNotEmpty) {
+      return result;
+    }
+
+    // Fallback: shuffle ngẫu nhiên, lấy tối đa 30
+    final items = <RecommendedItem>[
+      ...products.map(RecommendedItem.product),
+      ...pets.map(RecommendedItem.pet),
     ]..shuffle();
-    return items.take(min(5, items.length)).toList();
+    return items.take(min(30, items.length)).toList();
   }
 
   List<PetItem> _filterPets(List<PetItem> items, String filter) {
@@ -598,19 +639,4 @@ class _HomeData {
   final List<ProductItem> products;
   final List<PetItem> pets;
   const _HomeData({required this.products, required this.pets});
-}
-
-enum _RecommendedKind { product, pet }
-
-class _RecommendedItem {
-  final _RecommendedKind kind;
-  final ProductItem? product;
-  final PetItem? pet;
-
-  _RecommendedItem.product(this.product)
-      : kind = _RecommendedKind.product,
-        pet = null;
-  _RecommendedItem.pet(this.pet)
-      : kind = _RecommendedKind.pet,
-        product = null;
 }
