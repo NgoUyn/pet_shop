@@ -26,9 +26,10 @@ class OrderFirestoreService {
     required String createdAt,
     String? updatedAt,
     required List<Map<String, dynamic>> items,
+    String? payOSOrderId,
   }) async {
     try {
-      await _firestore.collection('orders').doc(invoiceId.toString()).set({
+      final data = <String, dynamic>{
         'invoiceId': invoiceId,
         'customerId': customerId,
         'customerName': customerName,
@@ -42,7 +43,14 @@ class OrderFirestoreService {
         'createdAt': createdAt,
         'updatedAt': updatedAt,
         'items': items,
-      }, SetOptions(merge: true));
+      };
+      if (payOSOrderId != null) {
+        data['payOSOrderId'] = payOSOrderId;
+      }
+      await _firestore.collection('orders').doc(invoiceId.toString()).set(
+        data,
+        SetOptions(merge: true),
+      );
     } catch (e) {
       print('OrderFirestoreService.syncOrderToFirestore error: $e');
     }
@@ -96,17 +104,9 @@ class OrderFirestoreService {
 
       if (statusFilter != null && statusFilter.isNotEmpty) {
         if (statusFilter == 'Unpaid') {
-          // Query A: orderStatus == 'Unpaid'
-          final qA = base.where('orderStatus', isEqualTo: 'Unpaid').get();
-          // Query B: paymentStatus in ['Unpaid','Pending']
-          final qB = base.where('paymentStatus', whereIn: ['Unpaid', 'Pending']).get();
-          // Query C: shipping COD but not paid yet (orderStatus == 'Shipping' && paymentMethod == 'COD')
-          final qC = base.where('orderStatus', isEqualTo: 'Shipping').where('paymentMethod', isEqualTo: 'COD').get();
-
-          final results = await Future.wait([qA, qB, qC]);
-          for (final r in results) {
-            docs.addAll(r.docs);
-          }
+          // Only get orders with orderStatus == 'Unpaid'
+          final snapshot = await base.where('orderStatus', isEqualTo: 'Unpaid').get();
+          docs = snapshot.docs;
         } else {
           final snapshot = await base.where('orderStatus', isEqualTo: statusFilter).get();
           docs = snapshot.docs;
@@ -151,15 +151,12 @@ class OrderFirestoreService {
 
       if (statusFilter != null && statusFilter.isNotEmpty) {
         if (statusFilter == 'Unpaid') {
-          // A: orderStatus == 'Unpaid' for this user
-          final qA = base.where('customerFirebaseUid', isEqualTo: firebaseUser.uid).where('orderStatus', isEqualTo: 'Unpaid').get();
-          // B: paymentStatus in ['Unpaid','Pending'] for this user
-          final qB = base.where('customerFirebaseUid', isEqualTo: firebaseUser.uid).where('paymentStatus', whereIn: ['Unpaid', 'Pending']).get();
-          // C: shipping & COD for this user
-          final qC = base.where('customerFirebaseUid', isEqualTo: firebaseUser.uid).where('orderStatus', isEqualTo: 'Shipping').where('paymentMethod', isEqualTo: 'COD').get();
-
-          final results = await Future.wait([qA, qB, qC]);
-          for (final r in results) docs.addAll(r.docs);
+          // Only get orders with orderStatus == 'Unpaid'
+          final snapshot = await base
+              .where('customerFirebaseUid', isEqualTo: firebaseUser.uid)
+              .where('orderStatus', isEqualTo: 'Unpaid')
+              .get();
+          docs = snapshot.docs;
         } else {
           final snapshot = await base.where('customerFirebaseUid', isEqualTo: firebaseUser.uid).where('orderStatus', isEqualTo: statusFilter).get();
           docs = snapshot.docs;

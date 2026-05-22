@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'dart:async';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import '../../../core/constants/app_colors.dart';
 import '../services/payment_service.dart';
@@ -13,6 +14,10 @@ class OnlinePaymentPage extends StatefulWidget {
   final bool useLoyaltyPoints;
   final List<int>? selectedCartItemIds;
 
+  /// If provided, skip creating a new pending order and use this existing invoice.
+  /// Used for "Thanh toán lại" (retry payment) from order history.
+  final int? existingInvoiceId;
+
   const OnlinePaymentPage({
     super.key,
     required this.subtotalAmount,
@@ -21,6 +26,7 @@ class OnlinePaymentPage extends StatefulWidget {
     this.shippingAddress,
     required this.useLoyaltyPoints,
     this.selectedCartItemIds,
+    this.existingInvoiceId,
   });
 
   @override
@@ -38,7 +44,6 @@ class _OnlinePaymentPageState extends State<OnlinePaymentPage> with WidgetsBindi
   int? _invoiceId;
   bool _paymentCompleted = false;
   WebViewController? _webViewController;
-  bool _webViewLoaded = false;
 
   @override
   void initState() {
@@ -58,35 +63,66 @@ class _OnlinePaymentPageState extends State<OnlinePaymentPage> with WidgetsBindi
     try {
       setState(() => _isLoading = true);
 
-      // Bước 1: Tạo đơn hàng với trạng thái Unpaid ngay lập tức
-      _invoiceId = await CartRepository.instance.createPendingOrder(
-        shippingAddress: widget.shippingAddress,
-        useLoyaltyPoints: widget.useLoyaltyPoints,
-        selectedCartItemIds: widget.selectedCartItemIds,
-      );
+      // If existingInvoiceId is provided, use it (retry payment for existing unpaid order)
+      if (widget.existingInvoiceId != null) {
+        _invoiceId = widget.existingInvoiceId;
+        // Use a new unique orderId for PayOS (invoiceId may have been used before)
+        _orderId = '${_invoiceId}_${DateTime.now().millisecondsSinceEpoch}';
+      } else {
+        // Bước 1: Tạo đơn hàng với trạng thái Unpaid ngay lập tức
+        _invoiceId = await CartRepository.instance.createPendingOrder(
+          shippingAddress: widget.shippingAddress,
+          useLoyaltyPoints: widget.useLoyaltyPoints,
+          selectedCartItemIds: widget.selectedCartItemIds,
+        );
+        _orderId = DateTime.now().millisecondsSinceEpoch;
+      }
 
-      _orderId = DateTime.now().millisecondsSinceEpoch;
-
+      List<OrderItem> orderItems;
+      if (widget.existingInvoiceId != null) {
+        // For retry payment, get items from the existing invoice
+        final items = await CartRepository.instance.getUnpaidOrderItems(widget.existingInvoiceId!);
+        orderItems = items
+            .map((item) => OrderItem(
+                  name: item.productName ?? item.petName ?? 'Sản phẩm',
+                  quantity: item.quantity,
+                  price: item.unitPrice,
+                ))
+            .toList();
+      } else {
         final allItems = await CartRepository.instance.listProductEntriesForCurrentUser();
         final selected = widget.selectedCartItemIds;
         final items = (selected != null && selected.isNotEmpty)
           ? allItems.where((e) => selected.contains(e.cartItemId)).toList()
           : allItems;
 
-      final orderItems = items
-          .map((item) => OrderItem(
-                name: item.productName,
-                quantity: item.quantity,
-                price: item.unitPrice,
-              ))
-          .toList();
+        orderItems = items
+            .map((item) => OrderItem(
+                  name: item.productName,
+                  quantity: item.quantity,
+                  price: item.unitPrice,
+                ))
+            .toList();
+      }
 
       _paymentLink = await PaymentService.createPaymentLink(
         amount: widget.payableAmount,
         orderId: _orderId.toString(),
-        description: 'Pet Shop Order',
+        description: 'Pet Shop Order - #$_invoiceId',
         items: orderItems,
       );
+
+      // Save payOSOrderId to Firestore for refund purposes
+      if (_invoiceId != null && _paymentLink?.orderCode != null) {
+        try {
+          await FirebaseFirestore.instance
+              .collection('orders')
+              .doc(_invoiceId.toString())
+              .set({
+            'payOSOrderId': _paymentLink!.orderCode.toString(),
+          }, SetOptions(merge: true));
+        } catch (_) {}
+      }
 
       if (mounted) {
         setState(() => _isLoading = false);
@@ -120,9 +156,6 @@ class _OnlinePaymentPageState extends State<OnlinePaymentPage> with WidgetsBindi
           },
           onPageFinished: (String url) {
             print('WebView loaded: $url');
-            if (mounted) {
-              setState(() => _webViewLoaded = true);
-            }
           },
           onNavigationRequest: (NavigationRequest request) {
             final url = request.url.toLowerCase();

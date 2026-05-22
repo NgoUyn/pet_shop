@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../cart/pages/online_payment_page.dart';
 import '../services/order_repository.dart';
 
 class OrderHistoryPage extends StatefulWidget {
@@ -416,6 +417,46 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
                       ),
                     ],
                   ),
+
+                  // Action buttons for unpaid or preparing orders
+                  if (order.orderStatus == 'Unpaid' || order.orderStatus == 'Preparing') ...[
+                    const SizedBox(height: 20),
+                    const Divider(),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        // Cancel button
+                        Expanded(
+                          child: OutlinedButton.icon(
+                            onPressed: () => _cancelOrderByCustomer(order),
+                            icon: const Icon(Icons.cancel_outlined, size: 18),
+                            label: const Text('Huỷ đơn'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: Colors.red,
+                              side: const BorderSide(color: Colors.red),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                            ),
+                          ),
+                        ),
+                        if (order.orderStatus == 'Unpaid') ...[
+                          const SizedBox(width: 12),
+                          // Retry payment button (only for unpaid)
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () => _retryPayment(order),
+                              icon: const Icon(Icons.payment, size: 18),
+                              label: const Text('Thanh toán lại'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primary,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
                 ],
               ),
             );
@@ -423,6 +464,88 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
         );
       },
     );
+  }
+
+  Future<void> _cancelOrderByCustomer(OrderInfo order) async {
+    final isPreparing = order.orderStatus == 'Preparing';
+    final message = isPreparing
+        ? 'Đơn hàng #${order.invoiceId} đã được thanh toán. Nếu huỷ, shop sẽ liên hệ hướng dẫn hoàn tiền. Bạn có chắc muốn huỷ?'
+        : 'Bạn có chắc muốn huỷ đơn hàng #${order.invoiceId}?';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Huỷ đơn hàng'),
+        content: Text(message),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Không')),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Huỷ đơn'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await _orderRepo.cancelOrderByCustomer(order.invoiceId);
+      if (!mounted) return;
+      // Close bottom sheet first
+      Navigator.pop(context);
+      if (!mounted) return;
+      // Then reload and show success
+      _loadOrders();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isPreparing ? 'Đã huỷ đơn hàng! Vui lòng xem tin nhắn từ shop để được hướng dẫn hoàn tiền.' : 'Đã huỷ đơn hàng!'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      print('CancelOrder error: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(e.toString().replaceAll('StateError: ', '').replaceAll('Exception: ', '')),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 5),
+        ),
+      );
+    }
+  }
+
+  Future<void> _retryPayment(OrderInfo order) async {
+    try {
+      final result = await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => OnlinePaymentPage(
+            subtotalAmount: order.totalAmount,
+            discountAmount: 0,
+            payableAmount: order.totalAmount,
+            shippingAddress: order.shippingAddress,
+            useLoyaltyPoints: false,
+            existingInvoiceId: order.invoiceId,
+          ),
+        ),
+      );
+
+      if (!mounted) return;
+      _loadOrders();
+      // Close bottom sheet if payment was processed
+      if (result != null) {
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Lỗi: ${e.toString().replaceAll('Exception: ', '')}'), backgroundColor: Colors.red),
+      );
+    }
   }
 
   Widget _buildInfoRow(String label, String value) {

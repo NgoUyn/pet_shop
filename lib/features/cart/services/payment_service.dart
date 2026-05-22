@@ -87,6 +87,29 @@ class PaymentService {
       throw Exception("Lỗi hủy thanh toán: $e");
     }
   }
+
+  /// Hoàn tiền (refund) qua PayOS
+  /// Gọi API refund để huỷ link thanh toán và tự động hoàn tiền cho khách
+  static Future<void> refundPayment(dynamic orderId) async {
+    try {
+      final response = await http.post(
+        Uri.parse("$_baseUrl/refund"),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: jsonEncode({
+          "orderId": orderId.toString(),
+        }),
+      );
+
+      if (response.statusCode != 200) {
+        final data = jsonDecode(response.body);
+        throw Exception(data['desc'] ?? 'Lỗi hoàn tiền: ${response.body}');
+      }
+    } catch (e) {
+      throw Exception("Lỗi hoàn tiền: $e");
+    }
+  }
 }
 
 class OrderItem {

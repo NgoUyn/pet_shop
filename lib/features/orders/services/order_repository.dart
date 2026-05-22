@@ -1,10 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-
-
-
+import 'package:firebase_auth/firebase_auth.dart';
 
 import '../../../core/db/app_database.dart';
 import '../../auth/services/auth_session.dart';
+import '../../chat/services/chat_repository.dart';
+import '../../home/services/pet_repository.dart';
+import '../../home/services/product_repository.dart';
 import '../../notifications/services/notification_repository.dart';
 import 'order_firestore_service.dart';
 
@@ -334,22 +335,23 @@ class OrderRepository {
         'Đơn hàng #$invoiceId đã được giao thành công. Cảm ơn bạn đã mua hàng!');
   }
 
-  /// Admin: Cancel order
+  /// Admin: Cancel order (with refund if paid)
   Future<void> cancelOrder(int invoiceId) async {
-    // 1. Validate and update via Firestore (shared source of truth)
+    // 1. Validate via Firestore (shared source of truth)
     final doc = await _getOrderDoc(invoiceId);
     final currentStatus = (doc['orderStatus'] as String?) ?? '';
     if (currentStatus == 'Completed' || currentStatus == 'Cancelled') {
       throw StateError('Không thể hủy đơn hàng ở trạng thái "$currentStatus".');
     }
 
+    // 2. Update Firestore
     await OrderFirestoreService.instance.updateOrderStatusInFirestore(
       invoiceId: invoiceId,
       orderStatus: 'Cancelled',
       paymentStatus: 'Cancelled',
     );
 
-    // 2. Try local SQLite: mark invoice/payment cancelled and restore product stock
+    // 4. Try local SQLite: mark invoice/payment cancelled and restore product stock
     try {
       final db = await AppDatabase.instance;
       await db.transaction((txn) async {
@@ -393,25 +395,297 @@ class OrderRepository {
               'UPDATE Product SET StockQuantity = StockQuantity + ? WHERE ProductID = ?',
               [quantity, productId],
             );
+            // Sync stock to Firestore
+            final updatedRows = await txn.query(
+              'Product',
+              columns: ['StockQuantity'],
+              where: 'ProductID = ?',
+              whereArgs: [productId],
+            );
+            if (updatedRows.isNotEmpty) {
+              final newStock = (updatedRows.first['StockQuantity'] as int?) ?? 0;
+              ProductRepository.instance.syncStockToFirestore(productId, newStock);
+            }
           }
           if (petId != null && quantity > 0) {
             await txn.rawUpdate(
               'UPDATE Pet SET StockQuantity = StockQuantity + ? WHERE PetID = ?',
               [quantity, petId],
             );
+            // Sync stock to Firestore
+            final updatedRows = await txn.query(
+              'Pet',
+              columns: ['StockQuantity'],
+              where: 'PetID = ?',
+              whereArgs: [petId],
+            );
+            if (updatedRows.isNotEmpty) {
+              final newStock = (updatedRows.first['StockQuantity'] as int?) ?? 0;
+              PetRepository.instance.syncStockToFirestore(petId, newStock);
+            }
           }
         }
       });
     } catch (e) {
       print('cancelOrder local restore error: $e');
-      // Fallback: best-effort local status update
       await _tryUpdateLocalStatus(invoiceId, 'Cancelled');
     }
 
-    // 3. Notify customer via Firestore
+    // 5. Notify customer via Firestore
     await _notifyCustomer(doc, invoiceId, 'order',
         'Đơn hàng đã bị hủy',
         'Đơn hàng #$invoiceId đã bị hủy.');
+  }
+
+  /// Customer: Cancel their own order (Unpaid or Preparing)
+  /// - Unpaid: just update status, no stock to restore
+  /// - Preparing: restore stock + auto-send chat message from admin asking for refund info
+  Future<void> cancelOrderByCustomer(int invoiceId) async {
+    final userId = AuthSession.instance.currentUserId.value;
+    if (userId == null) {
+      throw StateError('Vui lòng đăng nhập để thực hiện thao tác này.');
+    }
+
+    // 1. Verify ownership via local SQLite first
+    String currentStatus = 'Unpaid';
+    String paymentStatus = '';
+    Map<String, dynamic>? doc;
+
+    try {
+      final db = await AppDatabase.instance;
+      final customerRows = await db.query(
+        'Customer',
+        columns: ['CustomerID'],
+        where: 'UserID = ?',
+        whereArgs: [userId],
+        limit: 1,
+      );
+      if (customerRows.isEmpty) {
+        throw StateError('Không tìm thấy thông tin khách hàng.');
+      }
+      final customerId = customerRows.first['CustomerID'] as int;
+      final invoiceRows = await db.query(
+        'Invoice',
+        columns: ['InvoiceID', 'OrderStatus', 'PaymentStatus'],
+        where: 'InvoiceID = ? AND CustomerID = ?',
+        whereArgs: [invoiceId, customerId],
+        limit: 1,
+      );
+      if (invoiceRows.isEmpty) {
+        throw StateError('Bạn không có quyền hủy đơn hàng này.');
+      }
+      currentStatus = (invoiceRows.first['OrderStatus'] as String?) ?? 'Unpaid';
+      paymentStatus = (invoiceRows.first['PaymentStatus'] as String?) ?? '';
+    } catch (e) {
+      if (e is StateError) rethrow;
+      throw StateError('Không thể xác thực đơn hàng.');
+    }
+
+    if (currentStatus != 'Unpaid' && currentStatus != 'Preparing') {
+      throw StateError('Chỉ có thể hủy đơn hàng chưa thanh toán hoặc đang chuẩn bị.');
+    }
+
+    // 2. Try to get Firestore doc for ownership verification
+    try {
+      doc = await _getOrderDoc(invoiceId);
+      final firestoreStatus = (doc['orderStatus'] as String?) ?? '';
+      final firestorePaymentStatus = (doc['paymentStatus'] as String?) ?? '';
+
+      // Verify ownership via Firestore
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      final docOwnerUid = (doc['customerFirebaseUid'] as String?) ?? '';
+      if (firebaseUser != null && docOwnerUid.isNotEmpty && docOwnerUid != firebaseUser.uid) {
+        throw StateError('Bạn không có quyền hủy đơn hàng này.');
+      }
+
+      // Use Firestore status if available
+      if (firestoreStatus.isNotEmpty) currentStatus = firestoreStatus;
+      if (firestorePaymentStatus.isNotEmpty) paymentStatus = firestorePaymentStatus;
+    } catch (e) {
+      if (e is StateError) rethrow;
+      // Firestore doc not found, proceed with local data only
+      print('cancelOrderByCustomer: Firestore doc not found, using local data only');
+    }
+
+    // 3. Update Firestore (best-effort)
+    try {
+      await OrderFirestoreService.instance.updateOrderStatusInFirestore(
+        invoiceId: invoiceId,
+        orderStatus: 'Cancelled',
+        paymentStatus: 'Cancelled',
+      );
+    } catch (_) {}
+
+    // 4. Update local SQLite
+    try {
+      final db = await AppDatabase.instance;
+      final now = DateTime.now().toIso8601String();
+
+      if (currentStatus == 'Preparing') {
+        // Preparing: restore stock in transaction
+        await db.transaction((txn) async {
+          await txn.update(
+            'Invoice',
+            {
+              'PaymentStatus': 'Cancelled',
+              'OrderStatus': 'Cancelled',
+              'UpdatedAt': now,
+            },
+            where: 'InvoiceID = ?',
+            whereArgs: [invoiceId],
+          );
+          try {
+            await txn.update(
+              'Payment',
+              {'Status': 'Cancelled'},
+              where: 'InvoiceID = ?',
+              whereArgs: [invoiceId],
+            );
+          } catch (_) {}
+
+          final details = await txn.query(
+            'InvoiceDetail',
+            columns: ['ProductID', 'PetID', 'Quantity'],
+            where: 'InvoiceID = ?',
+            whereArgs: [invoiceId],
+          );
+          for (final detail in details) {
+            final productId = detail['ProductID'] as int?;
+            final petId = detail['PetID'] as int?;
+            final quantity = (detail['Quantity'] as int?) ?? 0;
+            if (productId != null && quantity > 0) {
+              await txn.rawUpdate(
+                'UPDATE Product SET StockQuantity = StockQuantity + ? WHERE ProductID = ?',
+                [quantity, productId],
+              );
+              // Sync stock to Firestore
+              final updatedRows = await txn.query(
+                'Product',
+                columns: ['StockQuantity'],
+                where: 'ProductID = ?',
+                whereArgs: [productId],
+              );
+              if (updatedRows.isNotEmpty) {
+                final newStock = (updatedRows.first['StockQuantity'] as int?) ?? 0;
+                ProductRepository.instance.syncStockToFirestore(productId, newStock);
+              }
+            }
+            if (petId != null && quantity > 0) {
+              await txn.rawUpdate(
+                'UPDATE Pet SET StockQuantity = StockQuantity + ? WHERE PetID = ?',
+                [quantity, petId],
+              );
+              // Sync stock to Firestore
+              final updatedRows = await txn.query(
+                'Pet',
+                columns: ['StockQuantity'],
+                where: 'PetID = ?',
+                whereArgs: [petId],
+              );
+              if (updatedRows.isNotEmpty) {
+                final newStock = (updatedRows.first['StockQuantity'] as int?) ?? 0;
+                PetRepository.instance.syncStockToFirestore(petId, newStock);
+              }
+            }
+          }
+        });
+      } else {
+        // Unpaid: simple update, no stock to restore
+        await db.update(
+          'Invoice',
+          {
+            'PaymentStatus': 'Cancelled',
+            'OrderStatus': 'Cancelled',
+            'UpdatedAt': now,
+          },
+          where: 'InvoiceID = ?',
+          whereArgs: [invoiceId],
+        );
+        try {
+          await db.update(
+            'Payment',
+            {'Status': 'Cancelled'},
+            where: 'InvoiceID = ?',
+            whereArgs: [invoiceId],
+          );
+        } catch (_) {}
+      }
+    } catch (e) {
+      print('cancelOrderByCustomer local update error: $e');
+      await _tryUpdateLocalStatus(invoiceId, 'Cancelled');
+    }
+
+    // 5. Auto-send chat messages to notify both admin and customer
+    try {
+      final chatRepo = ChatRepository.instance;
+      final adminUser = await chatRepo.getAdminUser();
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      if (adminUser != null && firebaseUser != null) {
+        final threadId = 'support_${firebaseUser.uid}_${adminUser.uid}';
+        final threadRef = FirebaseFirestore.instance.collection('chats').doc(threadId);
+        final now = Timestamp.now();
+
+        // Message 1: Customer -> Admin (thông báo huỷ đơn)
+        final msg1Ref = threadRef.collection('messages').doc();
+        final msg1Content = 'Đơn hàng #$invoiceId đã được hủy bởi khách hàng.';
+
+        // Message 2: Admin -> Customer (yêu cầu thông tin hoàn tiền)
+        final msg2Ref = threadRef.collection('messages').doc();
+        final msg2Content = currentStatus == 'Preparing'
+            ? 'Đơn hàng #$invoiceId đã được hủy. Vui lòng gửi thông tin tài khoản ngân hàng (STK, tên ngân hàng, chủ tài khoản) để shop hoàn tiền cho bạn.'
+            : 'Đơn hàng #$invoiceId đã được hủy theo yêu cầu của bạn.';
+
+        // Ensure thread document exists and update lastMessage
+        await threadRef.set({
+          'threadId': threadId,
+          'customerUid': firebaseUser.uid,
+          'customerName': firebaseUser.displayName ?? 'Khách hàng',
+          'customerEmail': firebaseUser.email ?? '',
+          'adminUid': adminUser.uid,
+          'adminName': adminUser.fullName,
+          'adminEmail': adminUser.email,
+          'lastMessage': msg2Content,
+          'lastMessageAt': now,
+          'customerUnreadCount': 1,
+          'adminUnreadCount': 1,
+          'createdAt': now,
+          'updatedAt': now,
+        }, SetOptions(merge: true));
+
+        // Send message from customer to admin
+        await msg1Ref.set({
+          'messageId': msg1Ref.id,
+          'senderUid': firebaseUser.uid,
+          'receiverUid': adminUser.uid,
+          'content': msg1Content,
+          'createdAt': now,
+        });
+
+        // Send message from admin to customer
+        await msg2Ref.set({
+          'messageId': msg2Ref.id,
+          'senderUid': adminUser.uid,
+          'receiverUid': firebaseUser.uid,
+          'content': msg2Content,
+          'createdAt': now,
+        });
+      }
+    } catch (e) {
+      print('cancelOrderByCustomer: auto-send chat message failed (non-fatal): $e');
+    }
+
+    // 6. Notify (best-effort)
+    if (doc != null) {
+      try {
+        final notifyTitle = currentStatus == 'Preparing'
+            ? 'Đã hủy đơn hàng - Vui lòng xem tin nhắn'
+            : 'Đơn hàng đã hủy';
+        final notifyContent = currentStatus == 'Preparing'
+            ? 'Đơn hàng #$invoiceId đã được hủy. Vui lòng kiểm tra tin nhắn từ shop để được hướng dẫn hoàn tiền.'
+            : 'Đơn hàng #$invoiceId đã được hủy theo yêu cầu của bạn.';
+        await _notifyCustomer(doc, invoiceId, 'order', notifyTitle, notifyContent);
+      } catch (_) {}
+    }
   }
 
   /// Read a single order doc from Firestore, throw if not found

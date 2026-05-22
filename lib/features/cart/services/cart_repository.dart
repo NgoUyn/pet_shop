@@ -6,9 +6,9 @@ import '../../../core/db/app_database.dart';
 import '../../auth/services/auth_session.dart';
 import '../../home/services/pet_repository.dart';
 import '../../home/services/product_repository.dart';
-import '../../profile/services/profile_repository.dart';
 import '../../notifications/services/notification_repository.dart';
 import '../../orders/services/order_firestore_service.dart';
+import '../../orders/services/order_repository.dart';
 import '../../profile/services/profile_repository.dart';
 
 class CartProductEntry {
@@ -376,6 +376,22 @@ class CartRepository {
     );
 
     return rows.map(CartProductEntry.fromRow).toList();
+  }
+
+  /// Get items from an existing unpaid invoice (for retry payment)
+  Future<List<OrderItemInfo>> getUnpaidOrderItems(int invoiceId) async {
+    final db = await AppDatabase.instance;
+    final rows = await db.rawQuery(
+      '''
+      SELECT id.*, p.ProductName, pet.PetName
+      FROM InvoiceDetail id
+      LEFT JOIN Product p ON id.ProductID = p.ProductID
+      LEFT JOIN Pet pet ON id.PetID = pet.PetID
+      WHERE id.InvoiceID = ?
+      ''',
+      [invoiceId],
+    );
+    return rows.map(OrderItemInfo.fromRow).toList();
   }
 
   /// Creates a pending order (Unpaid) for online payment without deducting stock.
