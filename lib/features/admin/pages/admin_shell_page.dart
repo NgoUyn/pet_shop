@@ -349,7 +349,7 @@ class _AdminDashboardPage extends StatelessWidget {
                               icon: Icons.warning_amber_outlined,
                               iconColor: const Color(0xFF57A773),
                               value: summary.lowStockCount.toString(),
-                              label: 'Cảnh báo tồn kho',
+                              label: 'Cảnh báo ',
                               trend: summary.lowStockCount == 0 ? '0%' : '+1%',
                               onTap: () => onQuickNavigate(AdminWarehousePage()),
                             ),
@@ -1846,55 +1846,87 @@ class _AdminDashboardSummary {
   static Future<_AdminDashboardSummary> load() async {
     final db = await AppDatabase.instance;
 
-    // Đếm orders từ Firestore
+    // ── Đếm đơn hàng ──────────────────────────────────────────────────
+    // Ưu tiên Firestore (nguồn chính xác cho admin), fallback về SQLite
     int totalOrders = 0;
     try {
       final snapshot = await FirebaseFirestore.instance.collection('orders').get();
       totalOrders = snapshot.docs.length;
     } catch (_) {
-      // Fallback về SQLite nếu Firestore lỗi
-      final orders = await db.rawQuery('SELECT COUNT(*) AS Cnt FROM Invoice');
-      totalOrders = (orders.first['Cnt'] as int?) ?? 0;
+      try {
+        final localOrders = await db.rawQuery('SELECT COUNT(*) AS Cnt FROM Invoice');
+        totalOrders = (localOrders.first['Cnt'] as int?) ?? 0;
+      } catch (_) {}
     }
 
-    final customers = await db.rawQuery("SELECT COUNT(*) AS Cnt FROM User WHERE lower(Role) = 'customer'");
-    final pets = await db.rawQuery('SELECT COUNT(*) AS Cnt FROM Pet');
-    final products = await db.rawQuery('SELECT COUNT(*) AS Cnt FROM Product');
-    final lowStockProductRows = await db.rawQuery('''
-      SELECT ProductName AS ItemName, StockQuantity, Price
-      FROM Product
-      WHERE StockQuantity <= 5
-      ORDER BY StockQuantity ASC, ProductID DESC
-      LIMIT 6
-    ''');
-    final lowStockPetRows = await db.rawQuery('''
-      SELECT PetName AS ItemName, StockQuantity, Price
-      FROM Pet
-      WHERE StockQuantity > 0 AND StockQuantity <= 5 AND IsActive = 1
-      ORDER BY StockQuantity ASC, PetID DESC
-      LIMIT 6
-    ''');
-    final lowStockItems = <_LowStockItem>[
-      for (final row in lowStockProductRows)
-        _LowStockItem(
+    // ── Đếm khách hàng ────────────────────────────────────────────────
+    // Ưu tiên Firestore (nguồn chính xác cho admin), fallback về SQLite
+    int totalCustomers = 0;
+    try {
+      final snapshot = await FirebaseFirestore.instance.collection('users').get();
+      totalCustomers = snapshot.docs.length;
+    } catch (_) {
+      try {
+        final customers = await db.rawQuery("SELECT COUNT(*) AS Cnt FROM User WHERE lower(Role) = 'customer'");
+        totalCustomers = (customers.first['Cnt'] as int?) ?? 0;
+      } catch (_) {}
+    }
+
+    // ── Thú cưng & Phụ kiện (SQLite là nguồn chính) ──────────────────
+    int totalPets = 0;
+    int totalProducts = 0;
+    try {
+      final pets = await db.rawQuery('SELECT COUNT(*) AS Cnt FROM Pet');
+      totalPets = (pets.first['Cnt'] as int?) ?? 0;
+    } catch (_) {}
+    try {
+      final products = await db.rawQuery('SELECT COUNT(*) AS Cnt FROM Product');
+      totalProducts = (products.first['Cnt'] as int?) ?? 0;
+    } catch (_) {}
+
+    // ── Cảnh báo tồn kho ──────────────────────────────────────────────
+    final lowStockItems = <_LowStockItem>[];
+    try {
+      final lowStockProductRows = await db.rawQuery('''
+        SELECT ProductName AS ItemName, StockQuantity, Price
+        FROM Product
+        WHERE StockQuantity <= 5
+        ORDER BY StockQuantity ASC, ProductID DESC
+        LIMIT 6
+      ''');
+      final lowStockPetRows = await db.rawQuery('''
+        SELECT PetName AS ItemName, StockQuantity, Price
+        FROM Pet
+        WHERE StockQuantity > 0 AND StockQuantity <= 5 AND IsActive = 1
+        ORDER BY StockQuantity ASC, PetID DESC
+        LIMIT 6
+      ''');
+      for (final row in lowStockProductRows) {
+        lowStockItems.add(_LowStockItem(
           title: (row['ItemName'] as String?) ?? '',
           stock: (row['StockQuantity'] as int?) ?? 0,
           price: (row['Price'] as num?)?.toDouble() ?? 0,
-        ),
-      for (final row in lowStockPetRows)
-        _LowStockItem(
+        ));
+      }
+      for (final row in lowStockPetRows) {
+        lowStockItems.add(_LowStockItem(
           title: (row['ItemName'] as String?) ?? '',
           stock: (row['StockQuantity'] as int?) ?? 0,
           price: (row['Price'] as num?)?.toDouble() ?? 0,
-        ),
-    ];
-    final unreadNotifications = await NotificationRepository.instance.unreadCountForCurrentUser();
+        ));
+      }
+    } catch (_) {}
+
+    int unreadNotifications = 0;
+    try {
+      unreadNotifications = await NotificationRepository.instance.unreadCountForCurrentUser();
+    } catch (_) {}
 
     return _AdminDashboardSummary(
       totalOrders: totalOrders,
-      totalCustomers: (customers.first['Cnt'] as int?) ?? 0,
-      totalPets: (pets.first['Cnt'] as int?) ?? 0,
-      totalProducts: (products.first['Cnt'] as int?) ?? 0,
+      totalCustomers: totalCustomers,
+      totalPets: totalPets,
+      totalProducts: totalProducts,
       lowStockCount: lowStockItems.length,
       unreadNotifications: unreadNotifications,
       lowStockItems: lowStockItems,
