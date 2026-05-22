@@ -419,10 +419,12 @@ class ReviewRepository {
     }
     var merged = map.values.toList();
 
-    // Filter out rejected and deleted reviews
+    // Chỉ hiện review đã được admin duyệt (approved) hoặc review cũ chưa có moderation
     merged.removeWhere((item) =>
         item.isDeleted ||
-        (item.isFlagged && item.moderationStatus == 'rejected'));
+        item.moderationStatus == 'flagged' ||
+        item.moderationStatus == 'pending' ||
+        item.moderationStatus == 'rejected');
 
     merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return merged;
@@ -458,9 +460,12 @@ class ReviewRepository {
     }
 
     final merged = map.values.toList();
+    // Chỉ hiện review đã được admin duyệt (approved) hoặc review cũ chưa có moderation
     merged.removeWhere((item) =>
         item.isDeleted ||
-        (item.isFlagged && item.moderationStatus == 'rejected'));
+        item.moderationStatus == 'flagged' ||
+        item.moderationStatus == 'pending' ||
+        item.moderationStatus == 'rejected');
     merged.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return merged;
   }
@@ -661,6 +666,95 @@ class ReviewRepository {
         print('ReviewRepository.deleteFirestoreReview local update: $e');
       }
     }
+  }
+
+  /// Get all reviews by the current user (local + Firestore)
+  Future<List<ReviewItem>> getReviewsByCurrentUser() async {
+    final userId = AuthSession.instance.currentUserId.value;
+    if (userId == null) return [];
+
+    final db = await AppDatabase.instance;
+
+    // Local reviews
+    final localRows = await db.rawQuery('''
+      SELECT r.*, u.FullName as CustomerName
+      FROM Review r
+      LEFT JOIN User u ON r.UserID = u.UserID
+      WHERE r.UserID = ?
+      ORDER BY r.CreatedAt DESC
+    ''', [userId]);
+
+    final localMap = <int, ReviewItem>{};
+    for (final row in localRows) {
+      final reviewId = row['ReviewID'] as int;
+      final images = await _loadImages(db, reviewId);
+      final item = ReviewItem.fromRow(row, imageUrls: images);
+      if (!item.isDeleted) {
+        localMap[reviewId] = item;
+      }
+    }
+
+    // Firestore reviews for this user
+    try {
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      if (firebaseUser != null) {
+        final snapshot = await FirebaseFirestore.instance
+            .collection('reviews')
+            .where('firebaseUid', isEqualTo: firebaseUser.uid)
+            .get();
+
+        for (final doc in snapshot.docs) {
+          final item = ReviewItem.fromFirestore(doc);
+          if (item.isDeleted) continue;
+          // Firestore takes precedence (has moderation data)
+          localMap[item.reviewId] = item;
+        }
+      }
+    } catch (e) {
+      print('ReviewRepository.getReviewsByCurrentUser firestore: $e');
+    }
+
+    var result = localMap.values.toList();
+    result.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return result;
+  }
+
+  /// Get all invoice IDs that the current user has reviewed
+  Future<List<int>> getReviewedInvoiceIdsByCurrentUser() async {
+    final userId = AuthSession.instance.currentUserId.value;
+    if (userId == null) return [];
+
+    final db = await AppDatabase.instance;
+    final rows = await db.query(
+      'Review',
+      columns: ['InvoiceID'],
+      where: 'UserID = ? AND (IsDeleted IS NULL OR IsDeleted = 0)',
+      whereArgs: [userId],
+    );
+    final localIds = rows.map((r) => r['InvoiceID'] as int).toSet();
+
+    // Also check Firestore for cross-device reviews
+    try {
+      final firebaseUser = FirebaseAuth.instance.currentUser;
+      if (firebaseUser != null) {
+        final snapshot = await FirebaseFirestore.instance
+            .collection('reviews')
+            .where('firebaseUid', isEqualTo: firebaseUser.uid)
+            .get();
+        for (final doc in snapshot.docs) {
+          final data = doc.data();
+          if (data['isDeleted'] == true) continue;
+          final invoiceId = (data['invoiceId'] as num?)?.toInt();
+          if (invoiceId != null) {
+            localIds.add(invoiceId);
+          }
+        }
+      }
+    } catch (e) {
+      print('ReviewRepository.getReviewedInvoiceIdsByCurrentUser firestore: $e');
+    }
+
+    return localIds.toList();
   }
 
   Future<List<String>> _loadImages(Database db, int reviewId) async {

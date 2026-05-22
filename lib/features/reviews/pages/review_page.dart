@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
@@ -10,6 +11,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/db/app_database.dart';
 import '../../../core/utils/cloudinary_helper.dart';
 import '../services/review_repository.dart';
+import '../services/toxic_moderation_service.dart';
 
 const _apiBaseUrl = 'http://10.0.2.2:3000';
 
@@ -174,13 +176,49 @@ class _ReviewPageState extends State<ReviewPage> {
         }
       }
 
+      // Check content for toxic language
+      final content = _contentController.text.trim();
+      if (content.isNotEmpty && moderationStatus != 'flagged') {
+        final toxicResult = await ToxicModerationService.instance.checkText(content);
+        if (toxicResult.isToxic) {
+          moderationStatus = 'flagged';
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Cảnh báo: Nội dung đánh giá có thể vi phạm tiêu chuẩn cộng đồng và đang được xem xét.'),
+                duration: Duration(seconds: 4),
+              ),
+            );
+          }
+        }
+      }
+
       await ReviewRepository.instance.create(
         invoiceId: widget.invoiceId,
         rating: _rating,
-        content: _contentController.text,
+        content: content.isNotEmpty ? content : null,
         imageUrls: imageUrls.isNotEmpty ? imageUrls : null,
         moderationStatus: moderationStatus,
       );
+
+      // Nếu review bị gắn cờ, gửi thông báo cho user biết đang chờ duyệt
+      if (moderationStatus == 'flagged') {
+        try {
+          final firebaseUser = FirebaseAuth.instance.currentUser;
+          if (firebaseUser != null) {
+            await FirebaseFirestore.instance.collection('notifications').add({
+              'firebaseUid': firebaseUser.uid,
+              'type': 'review',
+              'title': 'Đánh giá đang chờ duyệt',
+              'content': 'Đánh giá của bạn đã được gửi và đang chờ quản trị viên xem xét.',
+              'referenceType': 'review',
+              'createdAt': DateTime.now().toIso8601String(),
+              'isRead': false,
+            });
+          }
+        } catch (_) {}
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Gửi đánh giá thành công')),
