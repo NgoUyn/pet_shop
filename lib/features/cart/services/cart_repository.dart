@@ -499,6 +499,11 @@ class CartRepository {
         totalAmount = totalAmount - discountAmount;
       }
 
+      // Subtract promotion discount from total amount
+      if (promotionDiscount > 0) {
+        totalAmount = totalAmount - promotionDiscount;
+      }
+
       final now = DateTime.now().toIso8601String();
 
       // Insert invoice with 'Unpaid' status (no stock deduction yet)
@@ -966,6 +971,11 @@ class CartRepository {
           usedPoints = blocksToUse * 50;
           discountAmount = blocksToUse * 5000.0;
           totalAmount = totalAmount - discountAmount;
+        }
+
+        // Subtract promotion discount from total amount
+        if (promotionDiscount > 0) {
+          totalAmount = totalAmount - promotionDiscount;
         }
 
         final now = DateTime.now().toIso8601String();

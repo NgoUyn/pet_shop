@@ -6,6 +6,8 @@ import '../../auth/pages/login_page.dart';
 import '../../auth/services/auth_session.dart';
 import '../../cart/services/cart_repository.dart';
 import '../../favorites/services/favorite_repository.dart';
+import '../../pet_detail/pages/customer_pet_detail_page.dart';
+import '../../product_detail/pages/product_detail_page.dart';
 import '../services/pet_repository.dart';
 import '../services/product_repository.dart';
 
@@ -219,171 +221,191 @@ class ProductSearchDelegate extends SearchDelegate<ProductItem?> {
 
   Widget _buildProductCard(BuildContext context, ProductItem product) {
     final isFavorited = _favoriteProductIds.contains(product.productId);
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-              child: Stack(
-                fit: StackFit.expand,
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => ProductDetailPage(product: product),
+          ),
+        );
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _buildImage(product.imageUrl),
+                    Positioned(
+                      right: 6,
+                      top: 6,
+                      child: Column(
+                        children: [
+                          Material(
+                            color: AppColors.white,
+                            borderRadius: BorderRadius.circular(999),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(999),
+                              onTap: () => _toggleProductFavorite(context, product),
+                              child: Padding(
+                                padding: const EdgeInsets.all(8),
+                                child: Icon(
+                                  isFavorited ? Icons.favorite : Icons.favorite_border,
+                                  color: isFavorited ? Colors.red : AppColors.textDark,
+                                  size: 20,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Material(
+                            color: AppColors.white,
+                            borderRadius: BorderRadius.circular(999),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(999),
+                              onTap: () => _addProductToCart(context, product),
+                              child: const Padding(
+                                padding: EdgeInsets.all(8),
+                                child: Icon(
+                                  Icons.add_shopping_cart_outlined,
+                                  color: AppColors.textDark,
+                                  size: 20,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildImage(product.imageUrl),
-                  Positioned(
-                    right: 6,
-                    top: 6,
-                    child: Column(
-                      children: [
-                        Material(
-                          color: AppColors.white,
-                          borderRadius: BorderRadius.circular(999),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(999),
-                            onTap: () => _toggleProductFavorite(context, product),
-                            child: Padding(
-                              padding: const EdgeInsets.all(8),
-                              child: Icon(
-                                isFavorited ? Icons.favorite : Icons.favorite_border,
-                                color: isFavorited ? Colors.red : AppColors.textDark,
-                                size: 20,
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Material(
-                          color: AppColors.white,
-                          borderRadius: BorderRadius.circular(999),
-                          child: InkWell(
-                            borderRadius: BorderRadius.circular(999),
-                            onTap: () => _addProductToCart(context, product),
-                            child: const Padding(
-                              padding: EdgeInsets.all(8),
-                              child: Icon(
-                                Icons.add_shopping_cart_outlined,
-                                color: AppColors.textDark,
-                                size: 20,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
+                  Text(
+                    product.productName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppColors.textDark),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    _formatPrice(product.price),
+                    style: const TextStyle(
+                      color: AppColors.secondary,
+                      fontWeight: FontWeight.bold,
                     ),
                   ),
                 ],
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  product.productName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.textDark),
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  _formatPrice(product.price),
-                  style: const TextStyle(
-                    color: AppColors.secondary,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildPetCard(BuildContext context, PetItem pet) {
     final isFavorited = _favoritePetIds.contains(pet.petId);
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-              child: Container(
-                color: const Color(0xFFF9FAFB),
-                alignment: Alignment.center,
-                child: Text(
-                  pet.species.contains('Chó') || pet.species.contains('chó')
-                      ? '🐕'
-                      : pet.species.contains('Mèo') || pet.species.contains('mèo')
-                          ? '🐱'
-                          : '🐾',
-                  style: const TextStyle(fontSize: 48),
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => CustomerPetDetailPage(petId: pet.petId),
+          ),
+        );
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
+                child: Container(
+                  color: const Color(0xFFF9FAFB),
+                  alignment: Alignment.center,
+                  child: Text(
+                    pet.species.contains('Chó') || pet.species.contains('chó')
+                        ? '🐕'
+                        : pet.species.contains('Mèo') || pet.species.contains('mèo')
+                            ? '🐱'
+                            : '🐾',
+                    style: const TextStyle(fontSize: 48),
+                  ),
                 ),
               ),
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.all(10),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  pet.petName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.textDark),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  pet.species,
-                  style: const TextStyle(color: AppColors.textLight, fontSize: 12),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        pet.price != null ? _formatPrice(pet.price!) : 'Liên hệ',
-                        style: const TextStyle(
-                          color: AppColors.secondary,
-                          fontWeight: FontWeight.bold,
+            Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    pet.petName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppColors.textDark),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    pet.species,
+                    style: const TextStyle(color: AppColors.textLight, fontSize: 12),
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          pet.price != null ? _formatPrice(pet.price!) : 'Liên hệ',
+                          style: const TextStyle(
+                            color: AppColors.secondary,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
-                    ),
-                    InkWell(
-                      onTap: () => _togglePetFavorite(context, pet),
-                      child: Icon(
-                        isFavorited ? Icons.favorite : Icons.favorite_border,
-                        color: isFavorited ? Colors.red : AppColors.textDark,
-                        size: 20,
+                      InkWell(
+                        onTap: () => _togglePetFavorite(context, pet),
+                        child: Icon(
+                          isFavorited ? Icons.favorite : Icons.favorite_border,
+                          color: isFavorited ? Colors.red : AppColors.textDark,
+                          size: 20,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    InkWell(
-                      onTap: () => _addPetToCart(context, pet),
-                      child: const Icon(
-                        Icons.add_shopping_cart_outlined,
-                        color: AppColors.textDark,
-                        size: 20,
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: () => _addPetToCart(context, pet),
+                        child: const Icon(
+                          Icons.add_shopping_cart_outlined,
+                          color: AppColors.textDark,
+                          size: 20,
+                        ),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
