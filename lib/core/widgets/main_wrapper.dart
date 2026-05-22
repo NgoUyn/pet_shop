@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import '../../features/admin/pages/admin_page.dart';
 import '../../features/home/pages/home_page.dart';
+import '../../features/home/pages/image_search_page.dart';
 import '../../features/favorites/pages/favorites_page.dart';
 import '../../features/home/pages/pet_list_page.dart';
 import '../../features/home/pages/shop_list_page.dart';
@@ -132,32 +133,9 @@ class _MainWrapperState extends State<MainWrapper> {
         child: AppHeader(
             onSearchText: (q) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Tìm: "$q"'))),
             onImageSearch: () {
-              showModalBottomSheet<void>(
-                context: context,
-                builder: (ctx) => SafeArea(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ListTile(
-                        leading: const Icon(Icons.camera_alt),
-                        title: const Text('Chụp ảnh'),
-                        onTap: () {
-                          Navigator.of(ctx).pop();
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chụp ảnh (chưa triển khai)')));
-                        },
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.photo_library),
-                        title: const Text('Chọn từ thư viện'),
-                        onTap: () {
-                          Navigator.of(ctx).pop();
-                          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Chọn ảnh (chưa triển khai)')));
-                        },
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                  ),
-                ),
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const ImageSearchPage()),
               );
             },
             onNotificationsPressed: () async {

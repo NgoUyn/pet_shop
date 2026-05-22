@@ -22,6 +22,7 @@ import '../../pet_detail/pages/pet_detail_page.dart';
 import '../../product_detail/pages/product_detail_page.dart';
 import 'shop_list_page.dart';
 import 'recommended_list_page.dart';
+import 'image_search_page.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -248,19 +249,26 @@ class _HomePageState extends State<HomePage> {
                 borderRadius: BorderRadius.circular(20),
                 color: AppColors.accentLight,
               ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(20),
-                child: CachedNetworkImage(
-                  imageUrl: CloudinaryHelper.getBannerImage('banner1'),
-                  fit: BoxFit.cover,
-                  placeholder: (context, url) =>
-                      const Center(child: CircularProgressIndicator(color: AppColors.accent)),
-                  errorWidget: (context, url, error) => Container(
-                    color: AppColors.accentLight,
-                    child: const Center(
-                        child: Icon(Icons.pets, size: 50, color: AppColors.accent)),
+              child: Stack(
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: CachedNetworkImage(
+                      imageUrl: CloudinaryHelper.getBannerImage('banner1'),
+                      fit: BoxFit.cover,
+                      width: double.infinity,
+                      height: double.infinity,
+                      placeholder: (context, url) =>
+                          const Center(child: CircularProgressIndicator(color: AppColors.accent)),
+                      errorWidget: (context, url, error) => Container(
+                        color: AppColors.accentLight,
+                        child: const Center(
+                            child: Icon(Icons.pets, size: 50, color: AppColors.accent)),
+                      ),
+                    ),
                   ),
-                ),
+                  // (Image search moved to header camera icon)
+                ],
               ),
             ),
 

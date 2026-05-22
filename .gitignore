@@ -57,3 +57,21 @@ windows/flutter/generated_plugins.cmake
 .lh
 /.lh/z
 .md
+# Secrets
+backend/firebase-key.json
+.env
+
+# AI cache
+backend/cache/
+*.npy
+*.pkl
+
+# Python
+__pycache__/
+*.pyc
+venv/
+backend/firebase-key.json
+backend/cache/
+*.npy
+*.pkl
+.env
