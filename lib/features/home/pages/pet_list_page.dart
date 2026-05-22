@@ -5,6 +5,7 @@ import '../../../core/utils/price_helper.dart';
 import '../../auth/pages/login_page.dart';
 import '../../auth/services/auth_session.dart';
 import '../../cart/services/cart_repository.dart';
+import '../../cart/pages/checkout_page.dart';
 import '../../favorites/services/favorite_repository.dart';
 import '../services/pet_repository.dart';
 import '../widgets/pet_card.dart';
@@ -97,6 +98,30 @@ class _PetListPageState extends State<PetListPage> {
     }
   }
 
+  void _buyPet(PetItem item) {
+    _ensureLoggedIn().then((_) {
+      if (!mounted || AuthSession.instance.currentUserId.value == null) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CheckoutPage(
+            directItem: CartProductEntry(
+              cartItemId: 0,
+              productId: null,
+              petId: item.petId,
+              productName: item.petName,
+              imageUrl: item.imageUrl,
+              unitPrice: item.price ?? 0,
+              quantity: 1,
+              addedAt: DateTime.now(),
+              stockQuantity: 1,
+            ),
+          ),
+        ),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -163,6 +188,7 @@ class _PetListPageState extends State<PetListPage> {
           },
           onFavoriteTap: () => _addPetToFavorites(item),
           onCartTap: () => _addPetToCart(item),
+          onBuyTap: () => _buyPet(item),
         );
       },
     );

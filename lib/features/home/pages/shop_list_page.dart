@@ -4,6 +4,7 @@ import '../../../core/services/product_provider.dart';
 import '../../auth/pages/login_page.dart';
 import '../../auth/services/auth_session.dart';
 import '../../cart/services/cart_repository.dart';
+import '../../cart/pages/checkout_page.dart';
 import '../../favorites/services/favorite_repository.dart';
 import '../widgets/product_card.dart';
 import '../../product_detail/pages/product_detail_page.dart';
@@ -101,6 +102,38 @@ class _ShopListPageState extends State<ShopListPage> {
         SnackBar(content: Text(e.toString())),
       );
     }
+  }
+
+  void _buyProduct(ProductItem item) {
+    _ensureLoggedIn().then((_) {
+      if (!mounted || AuthSession.instance.currentUserId.value == null) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CheckoutPage(
+            directItem: CartProductEntry(
+              cartItemId: 0,
+              productId: item.productId,
+              petId: null,
+              productName: item.productName,
+              imageUrl: item.imageUrl,
+              unitPrice: item.price,
+              quantity: 1,
+              addedAt: DateTime.now(),
+              stockQuantity: item.stockQuantity,
+            ),
+          ),
+        ),
+      );
+    });
+  }
+
+  Future<void> _ensureLoggedIn() async {
+    if (AuthSession.instance.currentUserId.value != null) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+    );
   }
 
   Future<void> _toggleFavorite(ProductItem item) async {
@@ -213,6 +246,7 @@ class _ShopListPageState extends State<ShopListPage> {
           isFavorited: isFavorited,
           onFavoriteTap: () => _toggleFavorite(item),
           onCartTap: () => _addToCart(item),
+          onBuyTap: () => _buyProduct(item),
           onTap: () {
             Navigator.push(
               context,
