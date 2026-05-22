@@ -3,6 +3,7 @@ import '../constants/app_colors.dart';
 import '../../features/product_detail/pages/product_detail_page.dart';
 import '../../features/home/pages/product_search_delegate.dart';
 import '../../features/home/services/product_repository.dart';
+import 'navigation_menu_sheet.dart';
 
 class AppHeader extends StatelessWidget implements PreferredSizeWidget {
   final String? title;
@@ -121,7 +122,14 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
           if (!profileMode) ...[
             IconButton(
               icon: const Icon(Icons.menu, color: AppColors.textDark),
-              onPressed: () {},
+              onPressed: () {
+                showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => const NavigationMenuSheet(),
+                );
+              },
             ),
             const SizedBox(width: 4),
           ],
