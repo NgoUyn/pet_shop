@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -8,6 +9,7 @@ import '../../pet_detail/pages/pet_detail_page.dart';
 import '../../product_detail/pages/admin_product_detail.dart';
 import '../../home/services/pet_repository.dart';
 import '../../home/services/product_repository.dart';
+import '../services/promotion_repository.dart';
 import 'admin_pet_form_page.dart';
 import 'admin_product_form_page.dart';
 
@@ -333,7 +335,7 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
       backgroundColor: AppColors.background,
       body: Column(
         children: [
-          // ── Tab bar: Kho / Đã bán ──────────────────────────────────
+          // ── Tab bar: Kho / Đã bán / Ưu đãi ─────────────────────────
           Container(
             color: AppColors.white,
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 12),
@@ -342,13 +344,19 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
                 _buildTabChip('Kho', Icons.inventory_2_outlined),
                 const SizedBox(width: 8),
                 _buildTabChip('Đã bán', Icons.sell_outlined),
+                const SizedBox(width: 8),
+                _buildTabChip('Ưu đãi', Icons.local_offer_outlined),
               ],
             ),
           ),
           const Divider(height: 1),
 
           Expanded(
-            child: _selectedTab == 'Kho' ? _buildWarehouseTab() : _buildSoldTab(),
+            child: _selectedTab == 'Kho'
+                ? _buildWarehouseTab()
+                : _selectedTab == 'Đã bán'
+                    ? _buildSoldTab()
+                    : _buildPromotionsTab(),
           ),
         ],
       ),
@@ -620,6 +628,325 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
         );
       },
     );
+  }
+  // ── Promotions Tab ──────────────────────────────────────────────────
+
+  Widget _buildPromotionsTab() {
+    return FutureBuilder<List<PromotionItemV2>>(
+      future: PromotionRepository.instance.listAll(),
+      builder: (context, snapshot) {
+        final promotions = snapshot.data ?? [];
+
+        return Scaffold(
+          backgroundColor: AppColors.background,
+          floatingActionButton: FloatingActionButton.extended(
+            onPressed: _showAddPromotionDialog,
+            icon: const Icon(Icons.add),
+            label: const Text('Thêm ưu đãi'),
+            backgroundColor: AppColors.primary,
+            foregroundColor: Colors.white,
+          ),
+          body: RefreshIndicator(
+            onRefresh: () async {
+              setState(() {});
+            },
+            child: ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildStatCard(
+                        icon: Icons.local_offer_outlined,
+                        value: promotions.length.toString(),
+                        label: 'Tổng ưu đãi',
+                        color: const Color(0xFFE67E22),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildStatCard(
+                        icon: Icons.check_circle_outline,
+                        value: promotions.where((p) => p.isActive).length.toString(),
+                        label: 'Đang hoạt động',
+                        color: const Color(0xFF27AE60),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                const Text('Danh sách ưu đãi', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                const SizedBox(height: 12),
+                if (promotions.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 32),
+                    child: Center(child: Text('Chưa có ưu đãi nào. Nhấn nút + để tạo mới.')),
+                  )
+                else
+                  ...promotions.map((promo) => _buildPromotionCard(promo)),
+                const SizedBox(height: 80), // Space for FAB
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildPromotionCard(PromotionItemV2 promo) {
+    final dateFormat = DateFormat('dd/MM/yyyy');
+    final isActive = promo.isActive;
+
+    return Card(
+      elevation: 0,
+      color: AppColors.white,
+      margin: const EdgeInsets.only(bottom: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: isActive ? const Color(0xFFE8F5E9) : const Color(0xFFF5F5F5),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.local_offer_outlined,
+                    color: isActive ? const Color(0xFF27AE60) : AppColors.textLight,
+                    size: 24,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        promo.code,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: isActive ? AppColors.textDark : AppColors.textLight,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        promo.description,
+                        style: TextStyle(
+                          color: isActive ? AppColors.textDark : AppColors.textLight,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // Toggle switch for active/inactive
+                if (!promo.isExpired)
+                  Switch(
+                    value: promo.status == 'Active',
+                    activeTrackColor: const Color(0xFF27AE60),
+                    onChanged: (_) async {
+                      await PromotionRepository.instance.toggleStatus(promo.promotionId);
+                      if (mounted) setState(() {});
+                    },
+                  )
+                else
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFEBEE),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Text(
+                      'Hết hạn',
+                      style: TextStyle(
+                        color: Colors.red,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            const Divider(height: 1),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                _promoInfoChip('Giảm', '${promo.discountPercent.toStringAsFixed(0)}%'),
+                const SizedBox(width: 8),
+                _promoInfoChip('Giảm tối đa', formatPrice(promo.maxDiscount)),
+                const SizedBox(width: 8),
+                _promoInfoChip('Đơn tối thiểu', formatPrice(promo.minOrderValue)),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Icon(Icons.calendar_today, size: 14, color: promo.isExpired ? Colors.red : AppColors.textLight),
+                const SizedBox(width: 6),
+                Text(
+                  'HSD: ${dateFormat.format(promo.expiryDate)}',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: promo.isExpired ? Colors.red : AppColors.textLight,
+                    fontWeight: promo.isExpired ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _promoInfoChip(String label, String value) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F8FA),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: [
+          Text(label, style: const TextStyle(fontSize: 10, color: AppColors.textLight)),
+          Text(value, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showAddPromotionDialog() async {
+    final codeCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    final percentCtrl = TextEditingController();
+    final maxDiscountCtrl = TextEditingController();
+    final minOrderCtrl = TextEditingController();
+    DateTime selectedDate = DateTime.now().add(const Duration(days: 30));
+    final formKey = GlobalKey<FormState>();
+
+    final added = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Thêm ưu đãi mới'),
+            content: Form(
+              key: formKey,
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      controller: codeCtrl,
+                      decoration: const InputDecoration(labelText: 'Mã ưu đãi (VD: PET20)'),
+                      validator: (v) => v?.trim().isEmpty == true ? 'Vui lòng nhập mã' : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: descCtrl,
+                      decoration: const InputDecoration(labelText: 'Nội dung (VD: Giảm 20%)'),
+                      maxLines: 2,
+                      validator: (v) => v?.trim().isEmpty == true ? 'Vui lòng nhập nội dung' : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: percentCtrl,
+                      decoration: const InputDecoration(labelText: '% giảm (VD: 20)', suffixText: '%'),
+                      keyboardType: TextInputType.number,
+                      validator: (v) {
+                        if (v?.trim().isEmpty == true) return 'Vui lòng nhập % giảm';
+                        final val = double.tryParse(v!);
+                        if (val == null || val <= 0 || val > 100) return 'Từ 1-100';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: maxDiscountCtrl,
+                      decoration: const InputDecoration(labelText: 'Giảm tối đa (VNĐ)', hintText: '0 = không giới hạn'),
+                      keyboardType: TextInputType.number,
+                      validator: (v) {
+                        if (v?.trim().isEmpty == true) return 'Vui lòng nhập';
+                        if (double.tryParse(v!) == null) return 'Số không hợp lệ';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: minOrderCtrl,
+                      decoration: const InputDecoration(labelText: 'Giá trị đơn tối thiểu (VNĐ)'),
+                      keyboardType: TextInputType.number,
+                      validator: (v) {
+                        if (v?.trim().isEmpty == true) return 'Vui lòng nhập';
+                        if (double.tryParse(v!) == null) return 'Số không hợp lệ';
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    InkWell(
+                      onTap: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: selectedDate,
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime.now().add(const Duration(days: 365 * 5)),
+                        );
+                        if (picked != null) {
+                          setDialogState(() => selectedDate = picked);
+                        }
+                      },
+                      child: InputDecorator(
+                        decoration: const InputDecoration(labelText: 'Ngày hết hạn'),
+                        child: Text(DateFormat('dd/MM/yyyy').format(selectedDate)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Hủy')),
+              FilledButton(
+                onPressed: () async {
+                  if (formKey.currentState!.validate()) {
+                    try {
+                      await PromotionRepository.instance.create(
+                        code: codeCtrl.text.trim().toUpperCase(),
+                        description: descCtrl.text.trim(),
+                        discountPercent: double.parse(percentCtrl.text.trim()),
+                        maxDiscount: double.parse(maxDiscountCtrl.text.trim()),
+                        minOrderValue: double.parse(minOrderCtrl.text.trim()),
+                        expiryDate: selectedDate,
+                      );
+                      if (context.mounted) Navigator.pop(context, true);
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
+                      }
+                    }
+                  }
+                },
+                child: const Text('Thêm & Thông báo'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+
+    if (added == true && mounted) {
+      setState(() {});
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã thêm ưu đãi mới')),
+      );
+    }
   }
 }
 

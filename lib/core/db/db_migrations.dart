@@ -16,6 +16,8 @@ import 'migrations/migration_v19_promotions.dart';
 import 'migrations/migration_v20_pet_breed.dart';
 import 'migrations/migration_v21_banner.dart';
 import 'migrations/migration_v22_pet_stock.dart';
+import 'migrations/migration_v23_promotion_v2.dart';
+import 'migrations/migration_v24_promotion_usage.dart';
 
 Future<void> runMigrations(Database db, int oldVersion, int newVersion) async {
   if (oldVersion < 2) {
@@ -335,5 +337,13 @@ Future<void> runMigrations(Database db, int oldVersion, int newVersion) async {
 
   if (oldVersion < 20) {
     await MigrationV20PetBreed.up(db);
+  }
+
+  if (oldVersion < 23) {
+    await MigrationV23PromotionV2.up(db);
+  }
+
+  if (oldVersion < 24) {
+    await MigrationV24PromotionUsage.up(db);
   }
 }

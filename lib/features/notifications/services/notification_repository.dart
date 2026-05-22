@@ -66,8 +66,6 @@ class NotificationRepository {
     String? referenceType,
     DatabaseExecutor? txn,
   }) async {
-    final db = txn ?? await AppDatabase.instance;
-
     final normalizedTitle = title.trim();
     final normalizedContent = content.trim();
     if (normalizedTitle.isEmpty) {
@@ -84,6 +82,7 @@ class NotificationRepository {
     }
     final createdAtIso = (createdAt ?? DateTime.now()).toIso8601String();
 
+    final db = txn ?? await AppDatabase.instance;
     final id = await db.insert('AppNotification', {
       'UserID': resolvedUserId,
       'Type': normalizedType,
@@ -158,29 +157,47 @@ class NotificationRepository {
       final firebaseUser = FirebaseAuth.instance.currentUser;
       if (firebaseUser == null) return [];
 
-      final snapshot = await FirebaseFirestore.instance
-          .collection('notifications')
-          .where('firebaseUid', isEqualTo: firebaseUser.uid)
-          .limit(50)
-          .get();
+      final currentUserId = AuthSession.instance.currentUserId.value;
+      if (currentUserId == null) return [];
 
-      final items = snapshot.docs.map((doc) {
-        final data = doc.data();
-        final createdAtStr = (data['createdAt'] as String?) ?? DateTime.now().toIso8601String();
-        final createdAt = DateTime.tryParse(createdAtStr) ?? DateTime.now();
-        return AppNotificationItem(
-          notificationId: 0, // Firestore origin
-          userId: 0,
-          type: (data['type'] as String?) ?? 'general',
-          title: (data['title'] as String?) ?? '',
-          content: (data['content'] as String?) ?? '',
-          createdAt: createdAt,
-          isRead: (data['isRead'] as bool?) ?? false,
-          referenceId: (data['referenceId'] as num?)?.toInt(),
-          referenceType: data['referenceType'] as String?,
-          firestoreDocId: doc.id,
-        );
-      }).toList();
+      // Query both by localUserId (new notifications) and firebaseUid (legacy notifications)
+      final results = await Future.wait([
+        FirebaseFirestore.instance
+            .collection('notifications')
+            .where('localUserId', isEqualTo: currentUserId)
+            .limit(50)
+            .get(),
+        FirebaseFirestore.instance
+            .collection('notifications')
+            .where('firebaseUid', isEqualTo: firebaseUser.uid)
+            .limit(50)
+            .get(),
+      ]);
+
+      final seenDocIds = <String>{};
+      final items = <AppNotificationItem>[];
+
+      for (final snapshot in results) {
+        for (final doc in snapshot.docs) {
+          if (!seenDocIds.add(doc.id)) continue; // dedup by doc ID
+
+          final data = doc.data();
+          final createdAtStr = (data['createdAt'] as String?) ?? DateTime.now().toIso8601String();
+          final createdAt = DateTime.tryParse(createdAtStr) ?? DateTime.now();
+          items.add(AppNotificationItem(
+            notificationId: 0, // Firestore origin
+            userId: (data['localUserId'] as num?)?.toInt() ?? 0,
+            type: (data['type'] as String?) ?? 'general',
+            title: (data['title'] as String?) ?? '',
+            content: (data['content'] as String?) ?? '',
+            createdAt: createdAt,
+            isRead: (data['isRead'] as bool?) ?? false,
+            referenceId: (data['referenceId'] as num?)?.toInt(),
+            referenceType: data['referenceType'] as String?,
+            firestoreDocId: doc.id,
+          ));
+        }
+      }
 
       // Sort client-side to avoid composite index requirement
       items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -225,15 +242,35 @@ class NotificationRepository {
   Future<int> _unreadCountFromFirestore() async {
     try {
       final firebaseUser = FirebaseAuth.instance.currentUser;
-      if (firebaseUser == null) return 0;
+      final currentUserId = AuthSession.instance.currentUserId.value;
+      if (currentUserId == null) return 0;
 
-      final snapshot = await FirebaseFirestore.instance
-          .collection('notifications')
-          .where('firebaseUid', isEqualTo: firebaseUser.uid)
-          .get();
+      // Query both by localUserId (new) and firebaseUid (legacy)
+      final results = await Future.wait([
+        FirebaseFirestore.instance
+            .collection('notifications')
+            .where('localUserId', isEqualTo: currentUserId)
+            .get(),
+        if (firebaseUser != null)
+          FirebaseFirestore.instance
+              .collection('notifications')
+              .where('firebaseUid', isEqualTo: firebaseUser.uid)
+              .get(),
+      ]);
 
-      // Count unread client-side to avoid composite index requirement
-      return snapshot.docs.where((doc) => doc.data()['isRead'] == false).length;
+      final seenDocIds = <String>{};
+      int count = 0;
+
+      for (final snapshot in results) {
+        for (final doc in snapshot.docs) {
+          if (!seenDocIds.add(doc.id)) continue; // dedup by doc ID
+          if (doc.data()['isRead'] == false) {
+            count++;
+          }
+        }
+      }
+
+      return count;
     } catch (e) {
       print('NotificationRepository._unreadCountFromFirestore error: $e');
       return 0;
@@ -296,12 +333,12 @@ class NotificationRepository {
 
   Future<void> _markAllFirestoreRead() async {
     try {
-      final firebaseUser = FirebaseAuth.instance.currentUser;
-      if (firebaseUser == null) return;
+      final currentUserId = AuthSession.instance.currentUserId.value;
+      if (currentUserId == null) return;
 
       final snapshot = await FirebaseFirestore.instance
           .collection('notifications')
-          .where('firebaseUid', isEqualTo: firebaseUser.uid)
+          .where('localUserId', isEqualTo: currentUserId)
           .get();
 
       // Filter unread client-side to avoid composite index requirement
@@ -336,11 +373,11 @@ class NotificationRepository {
       await db.delete('AppNotification', where: 'UserID = ?', whereArgs: [currentUserId]);
     }
     try {
-      final firebaseUser = FirebaseAuth.instance.currentUser;
-      if (firebaseUser != null) {
+      final currentUserId = AuthSession.instance.currentUserId.value;
+      if (currentUserId != null) {
         final snapshot = await FirebaseFirestore.instance
             .collection('notifications')
-            .where('firebaseUid', isEqualTo: firebaseUser.uid)
+            .where('localUserId', isEqualTo: currentUserId)
             .get();
         for (final doc in snapshot.docs) {
           await doc.reference.delete();
@@ -380,24 +417,22 @@ class NotificationRepository {
   }) async {
     try {
       final firebaseUser = FirebaseAuth.instance.currentUser;
-      if (firebaseUser == null) return;
-      String? targetUid;
-      if (resolvedUserId == AuthSession.instance.currentUserId.value) {
-        targetUid = firebaseUser.uid;
-      } else {
-        final db = await AppDatabase.instance;
-        final rows = await db.query('User',
-          columns: ['FirebaseUID'],
-          where: 'UserID = ?', whereArgs: [resolvedUserId], limit: 1);
-        targetUid = rows.isNotEmpty ? (rows.first['FirebaseUID'] as String?) : null;
+      if (firebaseUser == null) {
+        print('NotificationRepository._doSyncCreateToFirestore: no firebase user');
+        return;
       }
+
+      // Always sync to Firestore with the current user's Firebase UID
+      // and include localUserId so the target user can find it when reading
       await FirebaseFirestore.instance.collection('notifications').add({
         'notificationId': notificationId,
-        'firebaseUid': targetUid ?? firebaseUser.uid,
+        'firebaseUid': firebaseUser.uid,
+        'localUserId': resolvedUserId,
         'type': type, 'title': title, 'content': content,
         'createdAt': createdAt, 'isRead': false,
         'referenceId': referenceId, 'referenceType': referenceType,
       });
+      print('NotificationRepository._doSyncCreateToFirestore: synced to Firestore for uid=$firebaseUser.uid, localUserId=$resolvedUserId');
     } catch (e) {
       print('NotificationRepository._doSyncCreateToFirestore error: $e');
     }

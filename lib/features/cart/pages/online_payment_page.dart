@@ -18,6 +18,10 @@ class OnlinePaymentPage extends StatefulWidget {
   /// Used for "Thanh toán lại" (retry payment) from order history.
   final int? existingInvoiceId;
 
+  /// Promotion code applied
+  final String? promotionCode;
+  final double promotionDiscount;
+
   const OnlinePaymentPage({
     super.key,
     required this.subtotalAmount,
@@ -27,6 +31,8 @@ class OnlinePaymentPage extends StatefulWidget {
     required this.useLoyaltyPoints,
     this.selectedCartItemIds,
     this.existingInvoiceId,
+    this.promotionCode,
+    this.promotionDiscount = 0,
   });
 
   @override

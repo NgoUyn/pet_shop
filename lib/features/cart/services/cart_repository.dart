@@ -10,6 +10,7 @@ import '../../notifications/services/notification_repository.dart';
 import '../../orders/services/order_firestore_service.dart';
 import '../../orders/services/order_repository.dart';
 import '../../profile/services/profile_repository.dart';
+import '../../admin/services/promotion_repository.dart';
 
 class CartProductEntry {
   CartProductEntry({
@@ -398,8 +399,10 @@ class CartRepository {
   /// Returns the invoice ID.
   Future<int> createPendingOrder({
     required String? shippingAddress,
-    required bool useLoyaltyPoints,
+    bool useLoyaltyPoints = false,
     List<int>? selectedCartItemIds,
+    String? promotionCode,
+    double promotionDiscount = 0,
   }) async {
     final userId = AuthSession.instance.currentUserId.value;
     if (userId == null) {
@@ -603,20 +606,51 @@ class CartRepository {
         paymentMethod: 'Bank Transfer',
         createdAt: DateTime.now().toIso8601String(),
         items: firestoreItems,
+        promotionCode: promotionCode,
+        promotionDiscount: promotionDiscount,
       );
     } catch (e) {
       print('createPendingOrder: Firestore sync error (non-fatal): $e');
     }
 
     try {
+      // Determine if order contains pet(s) or product(s)
+      final hasPet = firestoreItems.any((item) => item['petId'] != null);
+      final hasProduct = firestoreItems.any((item) => item['productId'] != null);
+      String refType;
+      if (hasPet && !hasProduct) {
+        refType = 'pet';
+      } else if (hasProduct && !hasPet) {
+        refType = 'product';
+      } else {
+        refType = 'mixed';
+      }
+
       await NotificationRepository.instance.create(
         type: 'order',
         title: 'Đơn hàng chờ thanh toán',
         content: 'Đơn hàng #$invoiceId đã được tạo, vui lòng hoàn tất thanh toán.',
         referenceId: invoiceId,
-        referenceType: 'order',
+        referenceType: refType,
       );
     } catch (_) {}
+
+    // Record promotion usage if a promo was applied
+    if (promotionCode != null && promotionCode.isNotEmpty) {
+      try {
+        final promotions = await PromotionRepository.instance.listAll();
+        final matched = promotions.where((p) => p.code.toUpperCase() == promotionCode!.toUpperCase()).toList();
+        if (matched.isNotEmpty) {
+          await PromotionRepository.instance.recordUsage(
+            promotionId: matched.first.promotionId,
+            customerId: customerId,
+            invoiceId: invoiceId,
+          );
+        }
+      } catch (e) {
+        print('createPendingOrder: recordUsage error (non-fatal): $e');
+      }
+    }
 
     return invoiceId;
   }
@@ -766,13 +800,31 @@ class CartRepository {
 
     if (customerUserId != null) {
       try {
+        // Determine reference type from invoice details
+        final db = await AppDatabase.instance;
+        final detailRows = await db.query(
+          'InvoiceDetail',
+          where: 'InvoiceID = ?',
+          whereArgs: [invoiceId],
+        );
+        final hasPet = detailRows.any((d) => d['PetID'] != null);
+        final hasProduct = detailRows.any((d) => d['ProductID'] != null);
+        String refType;
+        if (hasPet && !hasProduct) {
+          refType = 'pet';
+        } else if (hasProduct && !hasPet) {
+          refType = 'product';
+        } else {
+          refType = 'mixed';
+        }
+
         await NotificationRepository.instance.create(
           userId: customerUserId,
           type: 'order',
           title: 'Đơn hàng đang chuẩn bị',
           content: 'Đơn hàng #$invoiceId đã thanh toán thành công và đang được chuẩn bị.',
           referenceId: invoiceId,
-          referenceType: 'order',
+          referenceType: refType,
         );
       } catch (_) {}
     }
@@ -785,6 +837,8 @@ class CartRepository {
     bool useLoyaltyPoints = false,
     String? transactionCode,
     List<int>? selectedCartItemIds,
+    String? promotionCode,
+    double promotionDiscount = 0,
   }) async {
     final userId = AuthSession.instance.currentUserId.value;
     if (userId == null) {
@@ -1100,6 +1154,8 @@ class CartRepository {
         paymentMethod: paymentMethod,
         createdAt: DateTime.now().toIso8601String(),
         items: firestoreItems,
+        promotionCode: promotionCode,
+        promotionDiscount: promotionDiscount,
       );
     } catch (e) {
       print('checkoutCurrentUser: Firestore sync error (non-fatal): $e');
@@ -1109,14 +1165,41 @@ class CartRepository {
     try {
       final isOnlinePayment = paymentMethod == 'Bank Transfer';
       final statusText = isOnlinePayment ? 'đang được chuẩn bị' : 'đã được tiếp nhận và đang chuẩn bị';
+      final hasPet = firestoreItems.any((item) => item['petId'] != null);
+      final hasProduct = firestoreItems.any((item) => item['productId'] != null);
+      String refType;
+      if (hasPet && !hasProduct) {
+        refType = 'pet';
+      } else if (hasProduct && !hasPet) {
+        refType = 'product';
+      } else {
+        refType = 'mixed';
+      }
       await NotificationRepository.instance.create(
         type: 'order',
         title: 'Đơn hàng đang chuẩn bị',
         content: 'Đơn hàng #$invoiceId $statusText.',
         referenceId: invoiceId,
-        referenceType: 'order',
+        referenceType: refType,
       );
     } catch (_) {}
+
+    // Record promotion usage if a promo was applied
+    if (promotionCode != null && promotionCode.isNotEmpty) {
+      try {
+        final promotions = await PromotionRepository.instance.listAll();
+        final matched = promotions.where((p) => p.code.toUpperCase() == promotionCode!.toUpperCase()).toList();
+        if (matched.isNotEmpty) {
+          await PromotionRepository.instance.recordUsage(
+            promotionId: matched.first.promotionId,
+            customerId: customerId,
+            invoiceId: invoiceId,
+          );
+        }
+      } catch (e) {
+        print('checkoutCurrentUser: recordUsage error (non-fatal): $e');
+      }
+    }
 
     return CheckoutResult(
       invoiceId: invoiceId,

@@ -11,6 +11,9 @@ Future<void> runOpenRepairs(Database db) async {
   await _repairInvoiceDetail(db);
   await _repairPayment(db);
   await _removeSeedNotifications(db);
+  await _repairPromotionV2(db);
+  await _repairPromotionUsage(db);
+  await _syncPromotionsFromFirestore(db);
 }
 
 Future<void> _repairPetTable(Database db) async {
@@ -237,6 +240,105 @@ Future<void> _repairPayment(Database db) async {
     print('onOpen: recreated Payment successfully');
   } catch (e) {
     print('onOpen: failed to recreate Payment: $e');
+  }
+}
+
+Future<void> _repairPromotionV2(Database db) async {
+  try {
+    final rows = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='PromotionV2' LIMIT 1;",
+    );
+    if (rows.isEmpty) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS PromotionV2 (
+          PromotionID INTEGER PRIMARY KEY AUTOINCREMENT,
+          Code TEXT NOT NULL UNIQUE,
+          Description TEXT NOT NULL,
+          DiscountPercent REAL NOT NULL DEFAULT 0,
+          MaxDiscount REAL NOT NULL DEFAULT 0,
+          MinOrderValue REAL NOT NULL DEFAULT 0,
+          ExpiryDate TEXT NOT NULL,
+          Status TEXT NOT NULL DEFAULT 'Active',
+          CreatedAt TEXT NOT NULL
+        )
+      ''');
+      print('onOpen: created PromotionV2 table');
+    }
+  } catch (e) {
+    print('onOpen: failed to repair PromotionV2 table: $e');
+  }
+}
+
+Future<void> _repairPromotionUsage(Database db) async {
+  try {
+    final rows = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='PromotionUsage' LIMIT 1;",
+    );
+    if (rows.isEmpty) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS PromotionUsage (
+          UsageID INTEGER PRIMARY KEY AUTOINCREMENT,
+          PromotionID INTEGER NOT NULL,
+          CustomerID INTEGER NOT NULL,
+          UsedAt TEXT NOT NULL,
+          InvoiceID INTEGER NOT NULL,
+          FOREIGN KEY (PromotionID) REFERENCES PromotionV2(PromotionID),
+          FOREIGN KEY (CustomerID) REFERENCES Customer(CustomerID),
+          FOREIGN KEY (InvoiceID) REFERENCES Invoice(InvoiceID),
+          UNIQUE(PromotionID, CustomerID)
+        )
+      ''');
+      print('onOpen: created PromotionUsage table');
+    }
+  } catch (e) {
+    print('onOpen: failed to repair PromotionUsage table: $e');
+  }
+}
+
+Future<void> _syncPromotionsFromFirestore(Database db) async {
+  try {
+    final snapshot = await FirebaseFirestore.instance
+        .collection('promotions_v2')
+        .get();
+
+    if (snapshot.docs.isEmpty) {
+      print('onOpen: _syncPromotionsFromFirestore: no promotions in Firestore');
+      return;
+    }
+
+    print('onOpen: _syncPromotionsFromFirestore: found ${snapshot.docs.length} promotions in Firestore');
+
+    for (final doc in snapshot.docs) {
+      final data = doc.data();
+      final promotionId = (data['promotionId'] as num).toInt();
+
+      // Check if already exists in local
+      final existing = await db.query(
+        'PromotionV2',
+        columns: ['PromotionID'],
+        where: 'PromotionID = ?',
+        whereArgs: [promotionId],
+        limit: 1,
+      );
+
+      if (existing.isNotEmpty) continue; // already synced
+
+      await db.insert('PromotionV2', {
+        'PromotionID': promotionId,
+        'Code': data['code'] as String? ?? '',
+        'Description': data['description'] as String? ?? '',
+        'DiscountPercent': (data['discountPercent'] as num?)?.toDouble() ?? 0,
+        'MaxDiscount': (data['maxDiscount'] as num?)?.toDouble() ?? 0,
+        'MinOrderValue': (data['minOrderValue'] as num?)?.toDouble() ?? 0,
+        'ExpiryDate': data['expiryDate'] as String? ?? DateTime.now().toIso8601String(),
+        'Status': data['status'] as String? ?? 'Active',
+        'CreatedAt': data['createdAt'] as String? ?? DateTime.now().toIso8601String(),
+      });
+
+      print('onOpen: _syncPromotionsFromFirestore: synced promotion $promotionId (${data['code']})');
+    }
+  } catch (e) {
+    print('onOpen: _syncPromotionsFromFirestore error: $e');
   }
 }
 

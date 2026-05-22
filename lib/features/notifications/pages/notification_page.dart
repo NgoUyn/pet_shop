@@ -15,7 +15,7 @@ class _NotificationPageState extends State<NotificationPage> {
   List<AppNotificationItem> _notifications = [];
   bool _isLoading = true;
   String _searchQuery = '';
-  String? _typeFilter; // null = all, 'order', 'promotion', 'general'
+  String? _typeFilter; // null = all, 'order', 'promotion', 'pet', 'product'
   bool? _readFilter; // null = all, true = read, false = unread
 
   final _searchController = TextEditingController();
@@ -42,7 +42,9 @@ class _NotificationPageState extends State<NotificationPage> {
       ).toList();
     }
     if (_typeFilter != null) {
-      items = items.where((n) => n.type == _typeFilter).toList();
+      items = items.where((n) =>
+        n.type == _typeFilter || n.referenceType == _typeFilter
+      ).toList();
     }
     if (_readFilter != null) {
       items = items.where((n) => n.isRead == _readFilter).toList();
@@ -195,16 +197,16 @@ class _NotificationPageState extends State<NotificationPage> {
               ),
               const SizedBox(width: 6),
               _buildChip(
-                label: 'Thú cưng',
-                icon: Icons.pets,
+                label: 'Đơn hàng',
+                icon: Icons.receipt_long,
                 color: AppColors.primary,
                 selected: _typeFilter == 'order',
                 onTap: () => setState(() => _typeFilter = _typeFilter == 'order' ? null : 'order'),
               ),
               const SizedBox(width: 6),
               _buildChip(
-                label: 'Vật phẩm',
-                icon: Icons.shopping_bag,
+                label: 'Ưu đãi',
+                icon: Icons.local_offer,
                 color: Colors.orange,
                 selected: _typeFilter == 'promotion',
                 onTap: () => setState(() => _typeFilter = _typeFilter == 'promotion' ? null : 'promotion'),

@@ -27,6 +27,8 @@ class OrderFirestoreService {
     String? updatedAt,
     required List<Map<String, dynamic>> items,
     String? payOSOrderId,
+    String? promotionCode,
+    double promotionDiscount = 0,
   }) async {
     try {
       final data = <String, dynamic>{
@@ -46,6 +48,10 @@ class OrderFirestoreService {
       };
       if (payOSOrderId != null) {
         data['payOSOrderId'] = payOSOrderId;
+      }
+      if (promotionCode != null) {
+        data['promotionCode'] = promotionCode;
+        data['promotionDiscount'] = promotionDiscount;
       }
       await _firestore.collection('orders').doc(invoiceId.toString()).set(
         data,

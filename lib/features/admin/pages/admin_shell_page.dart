@@ -22,7 +22,6 @@ import '../../admin/pages/review_statistics_page.dart';
 import '../../admin/pages/revenue_statistics_page.dart';
 import '../../admin/pages/admin_product_form_page.dart';
 import '../../admin/pages/admin_pet_form_page.dart';
-import '../../admin/services/promotion_repository.dart';
 import '../../notifications/services/notification_repository.dart';
 import '../../profile/pages/profile_detail_page.dart';
 import '../../profile/services/profile_repository.dart';
@@ -677,163 +676,20 @@ class _AdminInventoryPage extends StatelessWidget {
   }
 }
 
-class _AdminPromotionsPage extends StatefulWidget {
-  const _AdminPromotionsPage();
-
-  @override
-  State<_AdminPromotionsPage> createState() => _AdminPromotionsPageState();
-}
-
-class _AdminPromotionsPageState extends State<_AdminPromotionsPage> {
-  late Future<List<PromotionItem>> _future;
-
-  @override
-  void initState() {
-    super.initState();
-    _future = PromotionRepository.instance.listAll();
-  }
-
-  void _reload() {
-    setState(() {
-      _future = PromotionRepository.instance.listAll();
-    });
-  }
-
-  Future<void> _showAddPromotionDialog() async {
-    final codeCtrl = TextEditingController();
-    final descCtrl = TextEditingController();
-    final formKey = GlobalKey<FormState>();
-
-    final added = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Thêm ưu đãi mới'),
-        content: Form(
-          key: formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextFormField(
-                controller: codeCtrl,
-                decoration: const InputDecoration(labelText: 'Mã ưu đãi (VD: PET20)'),
-                validator: (v) => v?.trim().isEmpty == true ? 'Vui lòng nhập mã' : null,
-              ),
-              const SizedBox(height: 12),
-              TextFormField(
-                controller: descCtrl,
-                decoration: const InputDecoration(labelText: 'Mô tả (VD: Giảm 20% đơn từ 200k)'),
-                maxLines: 2,
-                validator: (v) => v?.trim().isEmpty == true ? 'Vui lòng nhập mô tả' : null,
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Hủy')),
-          FilledButton(
-            onPressed: () async {
-              if (formKey.currentState!.validate()) {
-                try {
-                  await PromotionRepository.instance.create(
-                    code: codeCtrl.text.trim().toUpperCase(),
-                    description: descCtrl.text.trim(),
-                  );
-                  if (context.mounted) Navigator.pop(context, true);
-                } catch (e) {
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(e.toString())));
-                  }
-                }
-              }
-            },
-            child: const Text('Thêm & Thông báo'),
-          ),
-        ],
-      ),
-    );
-
-    if (added == true) {
-      _reload();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.background,
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showAddPromotionDialog,
-        icon: const Icon(Icons.add),
-        label: const Text('Thêm ưu đãi'),
-        backgroundColor: AppColors.primary,
-        foregroundColor: Colors.white,
-      ),
-      body: FutureBuilder<List<PromotionItem>>(
-        future: _future,
-        builder: (context, snapshot) {
-          final promotions = snapshot.data ?? [];
-
-          return ListView(
-            padding: const EdgeInsets.all(16),
-            children: [
-              _SectionCard(
-                title: 'Ưu đãi hiện có',
-                child: promotions.isEmpty
-                    ? const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 20),
-                        child: Center(child: Text('Chưa có ưu đãi nào.', style: TextStyle(color: AppColors.textLight))),
-                      )
-                    : Column(
-                        children: promotions.map((promotion) {
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 10),
-                            child: _InfoTile(
-                              title: promotion.code,
-                              subtitle: '${promotion.description} • ${promotion.status}',
-                              icon: Icons.local_offer_outlined,
-                              color: AppColors.secondary,
-                            ),
-                          );
-                        }).toList(),
-                      ),
-              ),
-              const SizedBox(height: 80), // Space for FAB
-            ],
-          );
-        },
-      ),
-    );
-  }
-}
-
 class _AdminServicesPage extends StatelessWidget {
   const _AdminServicesPage();
 
   @override
   Widget build(BuildContext context) {
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        backgroundColor: AppColors.background,
-        appBar: AppBar(
-          title: const Text('Quản lí dịch vụ'),
-          backgroundColor: AppColors.white,
-          foregroundColor: AppColors.textDark,
-          elevation: 0,
-          bottom: const TabBar(
-            tabs: [
-              Tab(text: 'Ưu đãi', icon: Icon(Icons.local_offer_outlined)),
-              Tab(text: 'Điểm', icon: Icon(Icons.stars_outlined)),
-            ],
-          ),
-        ),
-        body: const TabBarView(
-          children: [
-            _AdminPromotionsPage(),
-            _AdminPointsPage(),
-          ],
-        ),
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        title: const Text('Quản lí dịch vụ'),
+        backgroundColor: AppColors.white,
+        foregroundColor: AppColors.textDark,
+        elevation: 0,
       ),
+      body: const _AdminPointsPage(),
     );
   }
 }
