@@ -20,7 +20,7 @@ class SensitiveImageDetector {
   SensitiveImageDetector._();
   static final SensitiveImageDetector instance = SensitiveImageDetector._();
 
-  static const String _apiBaseUrl = 'http://10.0.2.2:3000';
+  static const String _apiBaseUrl = 'http://10.0.2.2:8888';
 
   /// Check if an image URL contains sensitive content via the backend API.
   /// The image must already be uploaded to Cloudinary before calling this.

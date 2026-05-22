@@ -13,7 +13,7 @@ import '../../../core/utils/cloudinary_helper.dart';
 import '../services/review_repository.dart';
 import '../services/toxic_moderation_service.dart';
 
-const _apiBaseUrl = 'http://10.0.2.2:3000';
+const _apiBaseUrl = 'http://10.0.2.2:8888';
 
 class ReviewPage extends StatefulWidget {
   final int invoiceId;
