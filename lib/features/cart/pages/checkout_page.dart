@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../auth/services/auth_session.dart';
@@ -561,7 +562,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   Text('Danh sách sản phẩm', style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
                   ..._items.map((e) => ListTile(
-                        leading: SizedBox(width: 48, child: e.imageUrl == null || e.imageUrl!.isEmpty ? const Icon(Icons.image) : Image.network(e.imageUrl!, fit: BoxFit.cover)),
+                        leading: SizedBox(width: 48, child: e.imageUrl == null || e.imageUrl!.isEmpty ? const Icon(Icons.image) : CachedNetworkImage(imageUrl: e.imageUrl!, fit: BoxFit.cover)),
                         title: Text(e.productName),
                         subtitle: Text('${e.quantity} x ${_formatPrice(e.unitPrice)}'),
                         trailing: Text(_formatPrice(e.lineTotal)),

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -464,28 +465,22 @@ class _ChatMessagesList extends StatelessWidget {
       borderRadius: BorderRadius.circular(12),
       child: GestureDetector(
         onTap: () => _showImagePreview(context, message.imageUrl!),
-        child: Image.network(
-          message.imageUrl!,
+        child: CachedNetworkImage(
+          imageUrl: message.imageUrl!,
           width: 280,
           height: 200,
           fit: BoxFit.cover,
-          loadingBuilder: (context, child, loadingProgress) {
-            if (loadingProgress == null) return child;
-            return Container(
-              width: 280,
-              height: 200,
-              color: isMine ? Colors.white24 : Colors.grey.shade100,
-              child: Center(
-                child: CircularProgressIndicator(
-                  value: loadingProgress.expectedTotalBytes != null
-                      ? loadingProgress.cumulativeBytesLoaded / loadingProgress.expectedTotalBytes!
-                      : null,
-                  color: isMine ? Colors.white : AppColors.primary,
-                ),
+          placeholder: (context, url) => Container(
+            width: 280,
+            height: 200,
+            color: isMine ? Colors.white24 : Colors.grey.shade100,
+            child: Center(
+              child: CircularProgressIndicator(
+                color: isMine ? Colors.white : AppColors.primary,
               ),
-            );
-          },
-          errorBuilder: (context, error, stackTrace) {
+            ),
+          ),
+          errorWidget: (context, url, error) {
             return Container(
               width: 280,
               height: 200,
@@ -559,14 +554,11 @@ class _ChatMessagesList extends StatelessWidget {
           ),
           body: Center(
             child: InteractiveViewer(
-              child: Image.network(
-                imageUrl,
+              child: CachedNetworkImage(
+                imageUrl: imageUrl,
                 fit: BoxFit.contain,
-                loadingBuilder: (context, child, loadingProgress) {
-                  if (loadingProgress == null) return child;
-                  return const Center(child: CircularProgressIndicator(color: Colors.white));
-                },
-                errorBuilder: (context, error, stackTrace) {
+                placeholder: (context, url) => const Center(child: CircularProgressIndicator(color: Colors.white)),
+                errorWidget: (context, url, error) {
                   return const Center(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,

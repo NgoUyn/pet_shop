@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
@@ -196,10 +197,10 @@ class _PetDetailPageState extends State<PetDetailPage> {
                 color: Color(0xFF2F80ED),
               ),
             )
-          : Image.network(
-              imageUrl,
+          : CachedNetworkImage(
+              imageUrl: imageUrl,
               fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
+              errorWidget: (context, url, error) {
                 return const Center(
                   child: Icon(
                     Icons.pets,

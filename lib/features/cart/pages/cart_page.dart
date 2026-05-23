@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
@@ -248,11 +249,11 @@ class _CartPageState extends State<CartPage> {
       );
     }
 
-    return Image.network(
-      normalized,
+    return CachedNetworkImage(
+      imageUrl: normalized,
       fit: BoxFit.cover,
-      errorBuilder:
-          (context, error, stackTrace) {
+      errorWidget:
+          (context, url, error) {
         return Container(
           color: AppColors.background,
           alignment: Alignment.center,

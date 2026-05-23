@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
@@ -421,11 +422,11 @@ class ProductSearchDelegate extends SearchDelegate<ProductItem?> {
       );
     }
 
-    return Image.network(
-      normalized,
+    return CachedNetworkImage(
+      imageUrl: normalized,
       width: double.infinity,
       fit: BoxFit.cover,
-      errorBuilder: (context, error, stackTrace) {
+      errorWidget: (context, url, error) {
         return Container(
           color: AppColors.background,
           alignment: Alignment.center,

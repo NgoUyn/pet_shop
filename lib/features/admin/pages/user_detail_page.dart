@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
@@ -1007,12 +1008,12 @@ class _UserDetailPageState extends State<UserDetailPage> {
                 separatorBuilder: (_, __) => const SizedBox(width: 6),
                 itemBuilder: (_, i) => ClipRRect(
                   borderRadius: BorderRadius.circular(6),
-                  child: Image.network(
-                    review.imageUrls[i],
+                  child: CachedNetworkImage(
+                    imageUrl: review.imageUrls[i],
                     width: 60,
                     height: 60,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
+                    errorWidget: (_, __, ___) =>
                         const Icon(Icons.broken_image, size: 24, color: Colors.grey),
                   ),
                 ),

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
@@ -257,8 +258,8 @@ class _ReviewManagementPageState extends State<ReviewManagementPage> {
                     ClipRRect(
                       borderRadius: BorderRadius.circular(6),
                       child: item['imageUrl'] is String
-                          ? Image.network(item['imageUrl'] as String, width: 40, height: 40, fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) =>
+                          ? CachedNetworkImage(imageUrl: item['imageUrl'] as String, width: 40, height: 40, fit: BoxFit.cover,
+                              errorWidget: (_, __, ___) =>
                                   Container(width: 40, height: 40, color: Colors.grey.shade200,
                                       child: const Icon(Icons.image_outlined, size: 20, color: Colors.grey)))
                           : Container(width: 40, height: 40, color: Colors.grey.shade200,
@@ -365,12 +366,12 @@ class _ReviewManagementPageState extends State<ReviewManagementPage> {
                     separatorBuilder: (_, __) => const SizedBox(width: 6),
                     itemBuilder: (_, i) => ClipRRect(
                       borderRadius: BorderRadius.circular(6),
-                      child: Image.network(
-                        item.imageUrls[i],
+                      child: CachedNetworkImage(
+                        imageUrl: item.imageUrls[i],
                         width: 80,
                         height: 80,
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) =>
+                        errorWidget: (_, __, ___) =>
                             const Icon(Icons.broken_image, size: 40, color: Colors.grey),
                       ),
                     ),

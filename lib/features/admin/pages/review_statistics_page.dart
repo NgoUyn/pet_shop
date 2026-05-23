@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
@@ -1925,12 +1926,12 @@ class _TopReviewedList extends StatelessWidget {
                 if (item.imageUrl != null)
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: Image.network(
-                      item.imageUrl!,
+                    child: CachedNetworkImage(
+                      imageUrl: item.imageUrl!,
                       width: 40,
                       height: 40,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
+                      errorWidget: (_, __, ___) => Container(
                         width: 40,
                         height: 40,
                         color: Colors.grey.shade200,

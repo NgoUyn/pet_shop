@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -104,7 +105,7 @@ class _BannerManagementPageState extends State<BannerManagementPage> {
                 return Card(
                   child: ListTile(
                     leading: it.imageUrl.isNotEmpty
-                        ? Image.network(it.imageUrl, width: 72, fit: BoxFit.cover, errorBuilder: (_,__,___)=> const Icon(Icons.broken_image))
+                        ? CachedNetworkImage(imageUrl: it.imageUrl, width: 72, fit: BoxFit.cover, errorWidget: (_,__,___)=> const Icon(Icons.broken_image))
                         : const Icon(Icons.image_outlined),
                     title: Text(it.name ?? 'Banner ${it.id}'),
                     subtitle: Text('ID: ${it.id} • Tạo: ${it.createdAt}'),

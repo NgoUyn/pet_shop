@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -288,8 +289,8 @@ class _ReviewPageState extends State<ReviewPage> {
                     ClipRRect(
                       borderRadius: BorderRadius.circular(6),
                       child: item['imageUrl'] is String
-                          ? Image.network(item['imageUrl'] as String, width: 48, height: 48, fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) => Container(width: 48, height: 48, color: Colors.grey.shade200,
+                          ? CachedNetworkImage(imageUrl: item['imageUrl'] as String, width: 48, height: 48, fit: BoxFit.cover,
+                              errorWidget: (_, __, ___) => Container(width: 48, height: 48, color: Colors.grey.shade200,
                                   child: const Icon(Icons.image_outlined, size: 24, color: Colors.grey)))
                           : Container(width: 48, height: 48, color: Colors.grey.shade200,
                               child: const Icon(Icons.pets, size: 24, color: Colors.grey)),
@@ -387,12 +388,12 @@ class _ReviewPageState extends State<ReviewPage> {
             itemBuilder: (context, index) {
               return ClipRRect(
                 borderRadius: BorderRadius.circular(8),
-                child: Image.network(
-                  urls[index],
+                child: CachedNetworkImage(
+                  imageUrl: urls[index],
                   width: 100,
                   height: 100,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) =>
+                  errorWidget: (_, __, ___) =>
                       const Icon(Icons.broken_image, size: 40, color: Colors.grey),
                 ),
               );

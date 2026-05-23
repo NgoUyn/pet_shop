@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
@@ -131,12 +132,12 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
       if (isNetwork) {
         imageWidget = ClipRRect(
           borderRadius: BorderRadius.circular(20),
-          child: Image.network(
-            url,
+          child: CachedNetworkImage(
+            imageUrl: url,
             height: 180,
             width: double.infinity,
             fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) => _buildPreviewPlaceholder(),
+            errorWidget: (_, __, ___) => _buildPreviewPlaceholder(),
           ),
         );
       } else {

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
@@ -265,10 +266,10 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
                 clipBehavior: Clip.antiAlias,
                 child: item.imageUrl == null || item.imageUrl!.trim().isEmpty
                     ? Icon(item.kind == _WarehouseKind.pet ? Icons.pets_outlined : Icons.shopping_bag_outlined, color: AppColors.textLight, size: 34)
-                    : Image.network(
-                        item.imageUrl!.trim(),
+                    : CachedNetworkImage(
+                        imageUrl: item.imageUrl!.trim(),
                         fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Icon(item.kind == _WarehouseKind.pet ? Icons.pets_outlined : Icons.shopping_bag_outlined, color: AppColors.textLight, size: 34),
+                        errorWidget: (_, __, ___) => Icon(item.kind == _WarehouseKind.pet ? Icons.pets_outlined : Icons.shopping_bag_outlined, color: AppColors.textLight, size: 34),
                       ),
               ),
               const SizedBox(width: 12),

@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../constants/app_colors.dart';
 import '../db/app_database.dart';
@@ -206,7 +207,7 @@ class _NavigationMenuSheetState extends State<NavigationMenuSheet> {
                       width: 40,
                       height: 40,
                       child: pet.imageUrl != null && pet.imageUrl!.isNotEmpty
-                          ? Image.network(pet.imageUrl!, fit: BoxFit.cover)
+                          ? CachedNetworkImage(imageUrl: pet.imageUrl!, fit: BoxFit.cover)
                           : Container(
                               color: AppColors.background,
                               child: const Icon(Icons.pets, color: AppColors.textLight),
@@ -269,7 +270,7 @@ class _NavigationMenuSheetState extends State<NavigationMenuSheet> {
                   width: 40,
                   height: 40,
                   child: product.imageUrl != null && product.imageUrl!.isNotEmpty
-                      ? Image.network(product.imageUrl!, fit: BoxFit.cover)
+                      ? CachedNetworkImage(imageUrl: product.imageUrl!, fit: BoxFit.cover)
                       : Container(
                           color: AppColors.background,
                           child: const Icon(Icons.inventory_2_outlined, color: AppColors.textLight),

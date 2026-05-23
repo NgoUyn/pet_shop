@@ -1,3 +1,4 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
@@ -570,18 +571,16 @@ class _PetDetailBodyState extends State<PetDetailBody> {
                 color: Color(0xFF2F80ED),
               ),
             )
-          : Image.network(
-              imageUrl,
+          : CachedNetworkImage(
+              imageUrl: imageUrl,
               fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) {
-                return const Center(
-                  child: Icon(
-                    Icons.pets,
-                    size: 96,
-                    color: Color(0xFF2F80ED),
-                  ),
-                );
-              },
+              errorWidget: (context, url, error) => const Center(
+                child: Icon(
+                  Icons.pets,
+                  size: 96,
+                  color: Color(0xFF2F80ED),
+                ),
+              ),
             ),
     );
   }
@@ -914,12 +913,12 @@ class _PetDetailBodyState extends State<PetDetailBody> {
                 separatorBuilder: (context, index) => const SizedBox(width: 6),
                 itemBuilder: (context, i) => ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Image.network(
-                    review.imageUrls[i],
+                  child: CachedNetworkImage(
+                    imageUrl: review.imageUrls[i],
                     width: 80,
                     height: 80,
                     fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) =>
+                    errorWidget: (context, url, error) =>
                         const Icon(Icons.broken_image, size: 32, color: Colors.grey),
                   ),
                 ),
@@ -1008,11 +1007,11 @@ class _PetDetailBodyState extends State<PetDetailBody> {
                     ? const Center(
                         child: Icon(Icons.pets, size: 40, color: Color(0xFF9AA5B1)),
                       )
-                    : Image.network(
-                        imageUrl,
+                    : CachedNetworkImage(
+                        imageUrl: imageUrl,
                         fit: BoxFit.cover,
                         width: double.infinity,
-                        errorBuilder: (context, error, stackTrace) => const Center(
+                        errorWidget: (context, url, error) => const Center(
                           child: Icon(Icons.pets, size: 40, color: Color(0xFF9AA5B1)),
                         ),
                       ),
