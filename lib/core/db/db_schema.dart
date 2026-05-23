@@ -67,6 +67,7 @@ Future<void> createBaseSchema(Database db) async {
       IsVaccinated INTEGER NOT NULL DEFAULT 0,
       ImageURL TEXT,
       IsActive INTEGER NOT NULL CHECK (IsActive IN (0, 1)),
+      StockQuantity INTEGER NOT NULL DEFAULT 1 CHECK (StockQuantity >= 0),
       CreatedAt TEXT NOT NULL,
       UpdatedAt TEXT,
       FOREIGN KEY (CustomerID) REFERENCES Customer(CustomerID) ON DELETE SET NULL

@@ -94,15 +94,15 @@ class FavoriteRepository {
     final localItems = results[0] as List<ProductItem>;
     final firestoreItems = results[1] as List<ProductItem>;
 
-    // Dedup by productId
+    // Dedup by productId, ưu tiên Firestore khi trùng dữ liệu
     final seen = <int>{};
     final merged = <ProductItem>[];
-    for (final item in [...localItems, ...firestoreItems]) {
+    for (final item in [...firestoreItems, ...localItems]) {
       if (seen.add(item.productId)) {
         merged.add(item);
       }
     }
-    return merged;
+    return _hydrateFavoriteProducts(merged);
   }
 
   Future<List<ProductItem>> _listLocalFavoriteProducts(int userId) async {
@@ -138,7 +138,7 @@ class FavoriteRepository {
           price: (data['price'] as num).toDouble(),
           stockQuantity: (data['stockQuantity'] as num?)?.toInt() ?? 0,
           description: data['description'] as String?,
-          imageUrl: data['imageUrl'] as String?,
+          imageUrl: _readImageUrl(data),
           isActive: data['isActive'] as bool? ?? true,
           createdAt: DateTime.parse((data['createdAt'] as String)),
         );
@@ -224,12 +224,12 @@ class FavoriteRepository {
 
     final seen = <int>{};
     final merged = <PetItem>[];
-    for (final item in [...localItems, ...firestoreItems]) {
+    for (final item in [...firestoreItems, ...localItems]) {
       if (seen.add(item.petId)) {
         merged.add(item);
       }
     }
-    return merged;
+    return _hydrateFavoritePets(merged);
   }
 
   Future<List<PetItem>> _listLocalFavoritePets(int userId) async {
@@ -267,7 +267,7 @@ class FavoriteRepository {
           price: (data['price'] as num?)?.toDouble(),
           age: (data['age'] as num?)?.toInt(),
           personality: data['personality'] as String?,
-          imageUrl: data['imageUrl'] as String?,
+          imageUrl: _readImageUrl(data),
           isDewormed: data['isDewormed'] as bool? ?? false,
           isVaccinated: data['isVaccinated'] as bool? ?? false,
           isActive: data['isActive'] as bool? ?? true,
@@ -394,5 +394,71 @@ class FavoriteRepository {
     } catch (e) {
       print('FavoriteRepository._unsyncFavoritePetFromFirestore error: $e');
     }
+  }
+
+  Future<List<ProductItem>> _hydrateFavoriteProducts(List<ProductItem> items) async {
+    return Future.wait(items.map((item) async {
+      if ((item.imageUrl ?? '').trim().isNotEmpty) {
+        return item;
+      }
+
+      final canonical = await ProductRepository.instance.getProductById(item.productId);
+      if (canonical == null) {
+        return item;
+      }
+
+      return ProductItem(
+        productId: canonical.productId,
+        categoryId: canonical.categoryId,
+        productName: canonical.productName,
+        price: canonical.price,
+        stockQuantity: canonical.stockQuantity,
+        description: canonical.description ?? item.description,
+        imageUrl: canonical.imageUrl,
+        isActive: canonical.isActive,
+        createdAt: canonical.createdAt,
+      );
+    }));
+  }
+
+  Future<List<PetItem>> _hydrateFavoritePets(List<PetItem> items) async {
+    return Future.wait(items.map((item) async {
+      if ((item.imageUrl ?? '').trim().isNotEmpty) {
+        return item;
+      }
+
+      final canonical = await PetRepository.instance.getPetById(item.petId);
+      if (canonical == null) {
+        return item;
+      }
+
+      return PetItem(
+        petId: canonical.petId,
+        petName: canonical.petName,
+        species: canonical.species,
+        breed: canonical.breed,
+        gender: canonical.gender,
+        description: canonical.description ?? item.description,
+        price: canonical.price ?? item.price,
+        age: canonical.age ?? item.age,
+        personality: canonical.personality ?? item.personality,
+        imageUrl: canonical.imageUrl,
+        isDewormed: canonical.isDewormed,
+        isVaccinated: canonical.isVaccinated,
+        isActive: canonical.isActive,
+        createdAt: canonical.createdAt,
+        stockQuantity: canonical.stockQuantity,
+      );
+    }));
+  }
+
+  String? _readImageUrl(Map<String, dynamic> data) {
+    for (final key in const ['imageUrl', 'imageURL', 'ImageURL', 'image', 'image_url']) {
+      final value = data[key];
+      if (value is String && value.trim().isNotEmpty) {
+        return value;
+      }
+    }
+    return null;
   }
 }

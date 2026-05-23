@@ -35,11 +35,21 @@ class ProductItem {
       price: (row['Price'] as num).toDouble(),
       stockQuantity: (row['StockQuantity'] as int?) ?? 0,
       description: row['Description'] as String?,
-      imageUrl: row['ImageURL'] as String?,
+      imageUrl: _readImageUrl(row),
       isActive: (row['IsActive'] as int?) == 1,
       createdAt: DateTime.parse(row['CreatedAt'] as String),
     );
   }
+}
+
+String? _readImageUrl(Map<String, Object?> data) {
+  for (final key in const ['ImageURL', 'imageUrl', 'imageURL', 'image', 'image_url']) {
+    final value = data[key];
+    if (value is String && value.trim().isNotEmpty) {
+      return value;
+    }
+  }
+  return null;
 }
 
 class ProductRepository {
@@ -109,7 +119,7 @@ class ProductRepository {
           price: (data['price'] as num).toDouble(),
           stockQuantity: (data['stockQuantity'] as num?)?.toInt() ?? 0,
           description: data['description'] as String?,
-          imageUrl: data['imageUrl'] as String?,
+          imageUrl: _readFirestoreImageUrl(data),
           isActive: data['isActive'] as bool? ?? true,
           createdAt: DateTime.parse((data['createdAt'] as String)),
         );
@@ -130,7 +140,34 @@ class ProductRepository {
     );
 
     if (rows.isNotEmpty) {
-      return ProductItem.fromRow(rows.first);
+      final localItem = ProductItem.fromRow(rows.first);
+      if ((localItem.imageUrl ?? '').trim().isNotEmpty) {
+        return localItem;
+      }
+
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('products')
+            .doc(productId.toString())
+            .get();
+        if (!doc.exists) return localItem;
+        final data = doc.data()!;
+        final firestoreItem = ProductItem(
+          productId: productId,
+          categoryId: (data['categoryId'] as num).toInt(),
+          productName: (data['productName'] as String?) ?? '',
+          price: (data['price'] as num).toDouble(),
+          stockQuantity: (data['stockQuantity'] as num?)?.toInt() ?? 0,
+          description: data['description'] as String?,
+          imageUrl: _readFirestoreImageUrl(data),
+          isActive: data['isActive'] as bool? ?? true,
+          createdAt: DateTime.parse((data['createdAt'] as String)),
+        );
+        return (firestoreItem.imageUrl ?? '').trim().isNotEmpty ? firestoreItem : localItem;
+      } catch (e) {
+        print('ProductRepository.getProductById Firestore image merge error: $e');
+        return localItem;
+      }
     }
 
     // Fallback to Firestore (may have been created on another device)
@@ -148,7 +185,7 @@ class ProductRepository {
         price: (data['price'] as num).toDouble(),
         stockQuantity: (data['stockQuantity'] as num?)?.toInt() ?? 0,
         description: data['description'] as String?,
-        imageUrl: data['imageUrl'] as String?,
+        imageUrl: _readFirestoreImageUrl(data),
         isActive: data['isActive'] as bool? ?? true,
         createdAt: DateTime.parse((data['createdAt'] as String)),
       );
@@ -318,4 +355,14 @@ class ProductRepository {
     if (rows.isEmpty) return null;
     return rows.first['CategoryName'] as String?;
   }
+}
+
+String? _readFirestoreImageUrl(Map<String, dynamic> data) {
+  for (final key in const ['imageUrl', 'imageURL', 'ImageURL', 'image', 'image_url']) {
+    final value = data[key];
+    if (value is String && value.trim().isNotEmpty) {
+      return value;
+    }
+  }
+  return null;
 }

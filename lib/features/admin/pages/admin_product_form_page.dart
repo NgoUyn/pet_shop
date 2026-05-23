@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/constants/app_colors.dart';
@@ -8,6 +9,7 @@ import '../../../core/db/app_database.dart';
 import '../../../core/utils/cloudinary_helper.dart';
 import '../../../core/widgets/optimized_network_image.dart';
 import '../../../core/utils/cloudinary_transform.dart';
+import '../../../core/utils/vnd_currency_input_formatter.dart';
 import '../../home/services/product_repository.dart';
 
 class AdminProductFormPage extends StatefulWidget {
@@ -54,7 +56,7 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
     final product = widget.product;
     if (product != null) {
       _productNameController.text = product.productName;
-      _priceController.text = product.price.toStringAsFixed(0);
+      _priceController.text = formatVndAmount(product.price);
       _stockController.text = product.stockQuantity.toString();
       _descriptionController.text = product.description ?? '';
       _imageUrlController.text = product.imageUrl ?? '';
@@ -259,7 +261,7 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
           productId: widget.product!.productId,
           categoryId: _selectedCategoryId!,
           productName: _productNameController.text.trim(),
-          price: double.parse(_priceController.text.trim()),
+          price: (parseVndAmount(_priceController.text) ?? 0).toDouble(),
           stockQuantity: stockQuantity,
           description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
           imageUrl: (imageUrl == null || imageUrl.isEmpty) ? null : imageUrl,
@@ -269,7 +271,7 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
         await ProductRepository.instance.addProduct(
           categoryId: _selectedCategoryId!,
           productName: _productNameController.text.trim(),
-          price: double.parse(_priceController.text.trim()),
+          price: (parseVndAmount(_priceController.text) ?? 0).toDouble(),
           stockQuantity: stockQuantity,
           description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
           imageUrl: (imageUrl == null || imageUrl.isEmpty) ? null : imageUrl,
@@ -409,10 +411,12 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
                             child: _buildTextField(
                               controller: _priceController,
                               label: 'Giá',
-                              hintText: '150000',
+                              hintText: '150.000',
                               keyboardType: TextInputType.number,
+                              inputFormatters: [VndCurrencyInputFormatter()],
+                              suffixText: 'VNĐ',
                               validator: (value) {
-                                final parsed = double.tryParse((value ?? '').trim());
+                                final parsed = parseVndAmount(value)?.toDouble();
                                 if (parsed == null || parsed <= 0) {
                                   return 'Vui lòng nhập giá hợp lệ';
                                 }
@@ -486,15 +490,19 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
     String? Function(String?)? validator,
     TextInputType keyboardType = TextInputType.text,
     int maxLines = 1,
+    List<TextInputFormatter>? inputFormatters,
+    String? suffixText,
   }) {
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
       maxLines: maxLines,
+      inputFormatters: inputFormatters,
       validator: validator,
       decoration: InputDecoration(
         labelText: label,
         hintText: hintText,
+        suffixText: suffixText,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
       ),
     );

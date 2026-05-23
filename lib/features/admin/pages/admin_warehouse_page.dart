@@ -7,6 +7,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/widgets/optimized_network_image.dart';
 import '../../../core/utils/cloudinary_transform.dart';
 import '../../../core/utils/price_helper.dart';
+import '../../../core/utils/vnd_currency_input_formatter.dart';
 import '../../pet_detail/pages/pet_detail_page.dart';
 import '../../product_detail/pages/admin_product_detail.dart';
 import '../../home/services/pet_repository.dart';
@@ -874,9 +875,10 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
                       controller: maxDiscountCtrl,
                       decoration: const InputDecoration(labelText: 'Giảm tối đa (VNĐ)', hintText: '0 = không giới hạn'),
                       keyboardType: TextInputType.number,
+                      inputFormatters: [VndCurrencyInputFormatter()],
                       validator: (v) {
                         if (v?.trim().isEmpty == true) return 'Vui lòng nhập';
-                        if (double.tryParse(v!) == null) return 'Số không hợp lệ';
+                        if (parseVndAmount(v) == null) return 'Số không hợp lệ';
                         return null;
                       },
                     ),
@@ -885,9 +887,10 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
                       controller: minOrderCtrl,
                       decoration: const InputDecoration(labelText: 'Giá trị đơn tối thiểu (VNĐ)'),
                       keyboardType: TextInputType.number,
+                      inputFormatters: [VndCurrencyInputFormatter()],
                       validator: (v) {
                         if (v?.trim().isEmpty == true) return 'Vui lòng nhập';
-                        if (double.tryParse(v!) == null) return 'Số không hợp lệ';
+                        if (parseVndAmount(v) == null) return 'Số không hợp lệ';
                         return null;
                       },
                     ),
@@ -923,8 +926,8 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
                         code: codeCtrl.text.trim().toUpperCase(),
                         description: descCtrl.text.trim(),
                         discountPercent: double.parse(percentCtrl.text.trim()),
-                        maxDiscount: double.parse(maxDiscountCtrl.text.trim()),
-                        minOrderValue: double.parse(minOrderCtrl.text.trim()),
+                        maxDiscount: (parseVndAmount(maxDiscountCtrl.text) ?? 0).toDouble(),
+                        minOrderValue: (parseVndAmount(minOrderCtrl.text) ?? 0).toDouble(),
                         expiryDate: selectedDate,
                       );
                       if (context.mounted) Navigator.pop(context, true);

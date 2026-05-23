@@ -224,6 +224,17 @@ class NotificationRepository {
     return (results[0] as int) + (results[1] as int);
   }
 
+  Stream<int> watchUnreadCountForCurrentUser({Duration interval = const Duration(seconds: 5)}) async* {
+    final currentUserId = AuthSession.instance.currentUserId.value;
+    if (currentUserId == null) {
+      yield 0;
+      return;
+    }
+
+    yield await unreadCountForCurrentUser();
+    yield* Stream<void>.periodic(interval).asyncMap((_) => unreadCountForCurrentUser()).distinct();
+  }
+
   Future<int> _unreadCountLocal(int currentUserId) async {
     final db = await AppDatabase.instance;
     final rows = await db.rawQuery(

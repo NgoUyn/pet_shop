@@ -88,6 +88,13 @@ class _UserDetailPageState extends State<UserDetailPage> {
       }
     }
 
+    // Thử lấy localUserId từ initialUser (Firestore user có field này)
+    final localUserIdRaw = initialUser['localUserId'];
+    if (localUserIdRaw is int && localUserIdRaw > 0) {
+      _resolvedUserId = localUserIdRaw;
+      return;
+    }
+
     // Thử tìm theo email
     final email = (initialUser['Email'] as String?)?.trim().toLowerCase();
     if (email != null && email.isNotEmpty) {
@@ -123,9 +130,13 @@ class _UserDetailPageState extends State<UserDetailPage> {
 
   Future<void> _loadUserDetail() async {
     try {
-      // Nếu có initialUser và không có local userId, giữ nguyên initialUser
+      // Nếu có initialUser và không có local userId, thử lấy từ Firestore
       if (_resolvedUserId <= 0 && widget.initialUser != null) {
+        final initial = Map<String, Object?>.from(widget.initialUser!);
+        // Thử merge phone/address từ Firestore nếu có FirebaseUID
+        await _mergePhoneAddressFromFirestore(initial);
         setState(() {
+          _user = initial;
           _loading = false;
           _error = null;
         });
@@ -175,7 +186,7 @@ class _UserDetailPageState extends State<UserDetailPage> {
 
         // Merge phone & address từ Firestore (users/{uid}) vì SQLite local có thể không được
         // đồng bộ khi user cập nhật profile trên thiết bị khác
-        _mergePhoneAddressFromFirestore(sqliteUser);
+        await _mergePhoneAddressFromFirestore(sqliteUser);
 
         setState(() {
           _user = sqliteUser;
@@ -183,8 +194,11 @@ class _UserDetailPageState extends State<UserDetailPage> {
           _error = null;
         });
       } else if (widget.initialUser != null) {
-        // Giữ lại initialUser nếu không tìm thấy trong SQLite
+        // Giữ lại initialUser nếu không tìm thấy trong SQLite, nhưng thử merge từ Firestore
+        final initial = Map<String, Object?>.from(widget.initialUser!);
+        await _mergePhoneAddressFromFirestore(initial);
         setState(() {
+          _user = initial;
           _loading = false;
           _error = null;
         });
@@ -226,16 +240,34 @@ class _UserDetailPageState extends State<UserDetailPage> {
       final data = docSnapshot.data();
       if (data == null) return;
 
-      // Merge phone từ Firestore nếu có
-      final firestorePhone = data['phone'] as String?;
-      if (firestorePhone != null && firestorePhone.isNotEmpty) {
-        user['Phone'] = firestorePhone;
+      // Merge phone từ Firestore nếu có - thử nhiều field name khác nhau
+      final phoneFields = ['phone', 'phoneNumber', 'Phone', 'PhoneNumber'];
+      for (final field in phoneFields) {
+        final val = data[field] as String?;
+        if (val != null && val.isNotEmpty) {
+          user['Phone'] = val;
+          break;
+        }
       }
 
-      // Merge address từ Firestore nếu có
-      final firestoreAddress = data['address'] as String?;
-      if (firestoreAddress != null && firestoreAddress.isNotEmpty) {
-        user['Address'] = firestoreAddress;
+      // Merge address từ Firestore nếu có - thử nhiều field name khác nhau
+      final addressFields = ['address', 'Address', 'shippingAddress', 'ShippingAddress'];
+      for (final field in addressFields) {
+        final val = data[field] as String?;
+        if (val != null && val.isNotEmpty) {
+          user['Address'] = val;
+          break;
+        }
+      }
+
+      // Fallback: nếu vẫn không có Phone/Address, lấy từ initialUser (dữ liệu từ user_list_page)
+      if ((user['Phone'] as String?)?.isEmpty != false && widget.initialUser?['Phone'] is String) {
+        final initialPhone = widget.initialUser!['Phone'] as String;
+        if (initialPhone.isNotEmpty) user['Phone'] = initialPhone;
+      }
+      if ((user['Address'] as String?)?.isEmpty != false && widget.initialUser?['Address'] is String) {
+        final initialAddress = widget.initialUser!['Address'] as String;
+        if (initialAddress.isNotEmpty) user['Address'] = initialAddress;
       }
     } catch (e) {
       // Không throw lỗi, chỉ log để debug
@@ -246,10 +278,27 @@ class _UserDetailPageState extends State<UserDetailPage> {
   Future<void> _loadRecentOrders() async {
     try {
       final user = _user;
-      final firebaseUid = user?['FirebaseUID'] as String?;
+      final firebaseUid = (user?['FirebaseUID'] as String?)?.trim();
       final email = (user?['Email'] as String?)?.trim().toLowerCase();
+      int? customerId;
 
-      final orders = <OrderInfo>[];
+      if (_resolvedUserId > 0) {
+        try {
+          final db = await AppDatabase.instance;
+          final rows = await db.query(
+            'Customer',
+            columns: ['CustomerID'],
+            where: 'UserID = ?',
+            whereArgs: [_resolvedUserId],
+            limit: 1,
+          );
+          if (rows.isNotEmpty) {
+            customerId = rows.first['CustomerID'] as int?;
+          }
+        } catch (_) {}
+      }
+
+      final ordersByInvoiceId = <int, OrderInfo>{};
 
       // 1. Load từ local SQLite
       if (_resolvedUserId > 0) {
@@ -277,69 +326,87 @@ class _UserDetailPageState extends State<UserDetailPage> {
             ''', [invoiceId]);
 
             final items = detailRows.map(OrderItemInfo.fromRow).toList();
-            orders.add(OrderInfo.fromRow(row, items));
+            ordersByInvoiceId[invoiceId] = OrderInfo.fromRow(row, items);
           }
         } catch (e) {
           print('loadRecentOrders local error: $e');
         }
       }
 
-      // 2. Load từ Firestore để bổ sung
+      // 2. Load từ Firestore để bổ sung - lấy tất cả docs và filter client-side
+      // để tránh lỗi thiếu composite index trên Firestore
       try {
-        List<Map<String, dynamic>> firestoreOrders = [];
+        final snapshot = await FirebaseFirestore.instance
+            .collection('orders')
+            .get();
 
-        if (firebaseUid != null && firebaseUid.isNotEmpty) {
-          try {
-            final snapshot = await FirebaseFirestore.instance
-                .collection('orders')
-                .where('customerFirebaseUid', isEqualTo: firebaseUid)
-                .get();
-            firestoreOrders = snapshot.docs.map((doc) => doc.data()).toList();
-          } catch (_) {}
+        String? normalizeText(Object? value) {
+          if (value is! String) return null;
+          final normalized = value.trim();
+          return normalized.isEmpty ? null : normalized;
         }
-
-        if (firestoreOrders.isEmpty && email != null && email.isNotEmpty) {
-          try {
-            final snapshot = await FirebaseFirestore.instance
-                .collection('orders')
-                .where('customerEmail', isEqualTo: email)
-                .get();
-            firestoreOrders = snapshot.docs.map((doc) => doc.data()).toList();
-          } catch (_) {}
-        }
-
-        final localInvoiceIds = orders.map((o) => o.invoiceId).toSet();
-        for (final data in firestoreOrders) {
+        
+        for (final doc in snapshot.docs) {
+          final data = doc.data();
           final invoiceId = (data['invoiceId'] as num?)?.toInt() ?? 0;
-          if (invoiceId == 0 || localInvoiceIds.contains(invoiceId)) continue;
+          if (invoiceId == 0) continue;
 
+          if (ordersByInvoiceId.containsKey(invoiceId)) continue;
+          
+          // Kiểm tra xem order này có thuộc về user không
+          final docFirebaseUid = normalizeText(data['customerFirebaseUid'])
+              ?? normalizeText(data['firebaseUid'])
+              ?? normalizeText(data['customerUid']);
+          final docEmail = normalizeText(data['customerEmail'])
+              ?? normalizeText(data['email'])?.toLowerCase();
+          final docCustomerId = (data['customerId'] as num?)?.toInt();
+          final docLocalUserId = (data['localUserId'] as num?)?.toInt();
+          final docUserId = (data['userId'] as num?)?.toInt();
+          
+          final matchesUid = firebaseUid != null && firebaseUid.isNotEmpty && docFirebaseUid == firebaseUid;
+          final matchesEmail = email != null && email.isNotEmpty && docEmail == email;
+          final matchesCustomerId = customerId != null && docCustomerId == customerId;
+          final matchesLocalUserId = _resolvedUserId > 0 &&
+              (docLocalUserId == _resolvedUserId || docUserId == _resolvedUserId);
+          
+          if (!matchesUid && !matchesEmail && !matchesCustomerId && !matchesLocalUserId) continue;
+          
           final itemsData = data['items'] as List<dynamic>? ?? [];
           final items = itemsData.map((item) {
             final itemMap = item as Map<String, dynamic>;
             return OrderItemInfo(
               invoiceDetailId: (itemMap['invoiceDetailId'] as num?)?.toInt() ?? 0,
-              productName: (itemMap['productName'] as String? ?? itemMap['petName'] as String? ?? '').trim(),
+              productId: (itemMap['productId'] as num?)?.toInt(),
+              productName: (itemMap['productName'] as String? ?? '').trim().isNotEmpty
+                  ? (itemMap['productName'] as String).trim()
+                  : null,
+              petId: (itemMap['petId'] as num?)?.toInt(),
+              petName: (itemMap['petName'] as String? ?? '').trim().isNotEmpty
+                  ? (itemMap['petName'] as String).trim()
+                  : null,
               quantity: (itemMap['quantity'] as num?)?.toInt() ?? 0,
               unitPrice: (itemMap['unitPrice'] as num?)?.toDouble() ?? 0,
             );
           }).toList();
 
-          final createdAt = data['createdAt'] as String? ?? '';
-          final totalAmount = (data['totalAmount'] as num?)?.toDouble() ?? 0;
-          final orderStatus = (data['orderStatus'] as String? ?? data['paymentStatus'] as String? ?? '').toLowerCase();
-
-          orders.add(OrderInfo(
+          ordersByInvoiceId[invoiceId] = OrderInfo(
             invoiceId: invoiceId,
-            totalAmount: totalAmount,
-            createdAt: createdAt,
-            orderStatus: orderStatus,
-            paymentStatus: orderStatus,
+            paymentStatus: (data['paymentStatus'] as String?) ?? '',
+            orderStatus: (data['orderStatus'] as String?) ?? (data['paymentStatus'] as String?) ?? '',
+            totalAmount: (data['totalAmount'] as num?)?.toDouble() ?? 0,
+            shippingAddress: data['shippingAddress'] as String?,
+            paymentMethod: data['paymentMethod'] as String?,
+            createdAt: (data['createdAt'] as String?) ?? '',
+            updatedAt: data['updatedAt'] as String?,
             items: items,
-          ));
+            customerName: data['customerName'] as String?,
+          );
         }
       } catch (e) {
         print('loadRecentOrders firestore error: $e');
       }
+
+      final orders = ordersByInvoiceId.values.toList();
 
       // Sắp xếp
       orders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -394,29 +461,32 @@ class _UserDetailPageState extends State<UserDetailPage> {
         }
       }
 
-      // 2. Load từ Firestore để bổ sung
+      // 2. Load từ Firestore để bổ sung - lấy tất cả docs và filter client-side
+      // để tránh lỗi thiếu composite index trên Firestore
       try {
-        List<ReviewItem> firestoreReviews = [];
-
         if (firebaseUid != null && firebaseUid.isNotEmpty) {
-          try {
-            final snapshot = await FirebaseFirestore.instance
-                .collection('reviews')
-                .where('firebaseUid', isEqualTo: firebaseUid)
-                .get();
-            firestoreReviews = snapshot.docs
-                .map((doc) => ReviewItem.fromFirestore(doc))
-                .where((r) => !r.isDeleted)
-                .toList();
-          } catch (_) {}
-        }
-
-        // Merge: tránh trùng lặp
-        final localReviewKeys = reviews.map((r) => '${r.invoiceId}_${r.customerName ?? ''}').toSet();
-        for (final fr in firestoreReviews) {
-          final key = '${fr.invoiceId}_${fr.customerName ?? ''}';
-          if (!localReviewKeys.contains(key)) {
-            reviews.add(fr);
+          final snapshot = await FirebaseFirestore.instance
+              .collection('reviews')
+              .get();
+          
+          final localReviewKeys = reviews.map((r) => '${r.invoiceId}_${r.customerName ?? ''}').toSet();
+          
+          for (final doc in snapshot.docs) {
+            try {
+              final review = ReviewItem.fromFirestore(doc);
+              if (review.isDeleted) continue;
+              
+              // Kiểm tra xem review này có thuộc về user không
+              final docFirebaseUid = (doc.data()['firebaseUid'] as String?)?.trim();
+              if (docFirebaseUid != firebaseUid) continue;
+              
+              // Tránh trùng lặp với local
+              final key = '${review.invoiceId}_${review.customerName ?? ''}';
+              if (!localReviewKeys.contains(key)) {
+                reviews.add(review);
+                localReviewKeys.add(key);
+              }
+            } catch (_) {}
           }
         }
       } catch (e) {

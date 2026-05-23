@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../auth/pages/login_page.dart';
 import '../../auth/services/auth_session.dart';
+import '../../cart/pages/checkout_page.dart';
+import '../../cart/services/cart_repository.dart';
 import '../../product_detail/pages/product_detail_page.dart';
 import '../../pet_detail/pages/pet_detail_page.dart';
 import '../../home/services/product_repository.dart';
@@ -57,6 +59,96 @@ class _FavoritesPageState extends State<FavoritesPage>
     } catch (e) {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  Future<void> _ensureLoggedIn() async {
+    if (AuthSession.instance.currentUserId.value != null) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginPage()),
+    );
+  }
+
+  Future<void> _addProductToCart(ProductItem item) async {
+    await _ensureLoggedIn();
+    if (AuthSession.instance.currentUserId.value == null) return;
+    try {
+      await CartRepository.instance.addProductToCart(productId: item.productId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã thêm vào giỏ hàng')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))),
+      );
+    }
+  }
+
+  Future<void> _addPetToCart(PetItem item) async {
+    await _ensureLoggedIn();
+    if (AuthSession.instance.currentUserId.value == null) return;
+    try {
+      await CartRepository.instance.addPetToCart(petId: item.petId);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Đã thêm thú cưng vào giỏ hàng')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceAll('StateError: ', ''))),
+      );
+    }
+  }
+
+  void _buyProduct(ProductItem item) {
+    _ensureLoggedIn().then((_) {
+      if (!mounted || AuthSession.instance.currentUserId.value == null) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CheckoutPage(
+            directItem: CartProductEntry(
+              cartItemId: 0,
+              productId: item.productId,
+              petId: null,
+              productName: item.productName,
+              imageUrl: item.imageUrl,
+              unitPrice: item.price,
+              quantity: 1,
+              addedAt: DateTime.now(),
+              stockQuantity: item.stockQuantity,
+            ),
+          ),
+        ),
+      );
+    });
+  }
+
+  void _buyPet(PetItem item) {
+    _ensureLoggedIn().then((_) {
+      if (!mounted || AuthSession.instance.currentUserId.value == null) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CheckoutPage(
+            directItem: CartProductEntry(
+              cartItemId: 0,
+              productId: null,
+              petId: item.petId,
+              productName: item.petName,
+              imageUrl: item.imageUrl,
+              unitPrice: item.price ?? 0,
+              quantity: 1,
+              addedAt: DateTime.now(),
+              stockQuantity: 1,
+            ),
+          ),
+        ),
+      );
+    });
   }
 
   void _toggleBatchDeleteMode() {
@@ -403,9 +495,8 @@ class _FavoritesPageState extends State<FavoritesPage>
                 ),
               );
             },
-            onCartTap: () {
-              // Navigate to cart or add to cart
-            },
+            onCartTap: () => _addProductToCart(item),
+            onBuyTap: () => _buyProduct(item),
           ),
           // Checkbox overlay for batch selection
           Positioned(
@@ -455,9 +546,8 @@ class _FavoritesPageState extends State<FavoritesPage>
           ),
         );
       },
-      onCartTap: () {
-        // Navigate to cart or add to cart
-      },
+      onCartTap: () => _addProductToCart(item),
+      onBuyTap: () => _buyProduct(item),
     );
 
   }
@@ -512,9 +602,8 @@ class _FavoritesPageState extends State<FavoritesPage>
                 ),
               );
             },
-            onCartTap: () {
-              // Navigate to cart or add to cart
-            },
+            onCartTap: () => _addPetToCart(item),
+            onBuyTap: () => _buyPet(item),
           ),
           // Checkbox overlay for batch selection
           Positioned(
@@ -565,9 +654,8 @@ class _FavoritesPageState extends State<FavoritesPage>
           ),
         );
       },
-      onCartTap: () {
-        // Navigate to cart or add to cart
-      },
+      onCartTap: () => _addPetToCart(item),
+      onBuyTap: () => _buyPet(item),
     );
 
   }

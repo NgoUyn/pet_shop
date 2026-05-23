@@ -7,6 +7,7 @@ import '../../chat/services/chat_repository.dart';
 import '../../home/services/pet_repository.dart';
 import '../../home/services/product_repository.dart';
 import '../../notifications/services/notification_repository.dart';
+import '../../profile/services/profile_repository.dart';
 import 'order_firestore_service.dart';
 
 class OrderInfo {
@@ -615,63 +616,115 @@ class OrderRepository {
       await _tryUpdateLocalStatus(invoiceId, 'Cancelled');
     }
 
-    // 5. Auto-send chat messages to notify both admin and customer
+    // 5. Auto-send refund chat only for paid orders
+    if (paymentStatus.trim().toLowerCase() == 'paid') {
+      try {
+        final chatRepo = ChatRepository.instance;
+        final adminUser = await chatRepo.getAdminUser();
+        final firebaseUser = FirebaseAuth.instance.currentUser;
+        if (adminUser != null && firebaseUser != null) {
+          final threadId = 'support_${firebaseUser.uid}_${adminUser.uid}';
+          final threadRef = FirebaseFirestore.instance.collection('chats').doc(threadId);
+          final now = Timestamp.now();
+
+          // Message 1: Customer -> Admin (thông báo huỷ đơn)
+          final msg1Ref = threadRef.collection('messages').doc();
+          final msg1Content = 'Đơn hàng #$invoiceId đã được hủy bởi khách hàng.';
+
+          // Message 2: Admin -> Customer (yêu cầu thông tin hoàn tiền)
+          final msg2Ref = threadRef.collection('messages').doc();
+          final msg2Content = 'Đơn hàng #$invoiceId đã được hủy. Vui lòng gửi thông tin tài khoản ngân hàng (STK, tên ngân hàng, chủ tài khoản) để shop hoàn tiền cho bạn.';
+
+          // Ensure thread document exists and update lastMessage
+          await threadRef.set({
+            'threadId': threadId,
+            'customerUid': firebaseUser.uid,
+            'customerName': firebaseUser.displayName ?? 'Khách hàng',
+            'customerEmail': firebaseUser.email ?? '',
+            'adminUid': adminUser.uid,
+            'adminName': adminUser.fullName,
+            'adminEmail': adminUser.email,
+            'lastMessage': msg2Content,
+            'lastMessageAt': now,
+            'customerUnreadCount': 1,
+            'adminUnreadCount': 1,
+            'createdAt': now,
+            'updatedAt': now,
+          }, SetOptions(merge: true));
+
+          // Send message from customer to admin
+          await msg1Ref.set({
+            'messageId': msg1Ref.id,
+            'senderUid': firebaseUser.uid,
+            'receiverUid': adminUser.uid,
+            'content': msg1Content,
+            'createdAt': now,
+          });
+
+          // Send message from admin to customer
+          await msg2Ref.set({
+            'messageId': msg2Ref.id,
+            'senderUid': adminUser.uid,
+            'receiverUid': firebaseUser.uid,
+            'content': msg2Content,
+            'createdAt': now,
+          });
+        }
+      } catch (e) {
+        print('cancelOrderByCustomer: auto-send chat message failed (non-fatal): $e');
+      }
+    }
+
+    // 5b. Notify admin with order + customer details so the admin badge can update.
     try {
       final chatRepo = ChatRepository.instance;
       final adminUser = await chatRepo.getAdminUser();
       final firebaseUser = FirebaseAuth.instance.currentUser;
-      if (adminUser != null && firebaseUser != null) {
-        final threadId = 'support_${firebaseUser.uid}_${adminUser.uid}';
-        final threadRef = FirebaseFirestore.instance.collection('chats').doc(threadId);
-        final now = Timestamp.now();
+      if (adminUser != null && adminUser.localUserId != null && firebaseUser != null) {
+        final db = await AppDatabase.instance;
+        final customerProfile = await ProfileRepository.instance.getCurrentProfile();
+        final invoiceRows = await db.query(
+          'Invoice',
+          columns: ['ShippingAddress', 'PaymentMethod', 'TotalAmount'],
+          where: 'InvoiceID = ?',
+          whereArgs: [invoiceId],
+          limit: 1,
+        );
 
-        // Message 1: Customer -> Admin (thông báo huỷ đơn)
-        final msg1Ref = threadRef.collection('messages').doc();
-        final msg1Content = 'Đơn hàng #$invoiceId đã được hủy bởi khách hàng.';
+        final shippingAddress = invoiceRows.isNotEmpty ? (invoiceRows.first['ShippingAddress'] as String?) ?? '' : '';
+        final paymentMethod = invoiceRows.isNotEmpty ? (invoiceRows.first['PaymentMethod'] as String?) ?? '' : '';
+        final totalAmount = invoiceRows.isNotEmpty ? ((invoiceRows.first['TotalAmount'] as num?)?.toDouble() ?? 0.0) : 0.0;
+        final customerFullName = customerProfile?.fullName?.trim() ?? '';
+        final customerEmailValue = customerProfile?.email?.trim() ?? '';
+        final customerPhoneValue = customerProfile?.phone?.trim() ?? '';
+        final customerName = customerFullName.isNotEmpty
+          ? customerFullName
+          : (firebaseUser.displayName?.trim().isNotEmpty == true ? firebaseUser.displayName!.trim() : 'Khách hàng');
+        final customerEmail = customerEmailValue.isNotEmpty ? customerEmailValue : (firebaseUser.email ?? '');
+        final customerPhone = customerPhoneValue;
 
-        // Message 2: Admin -> Customer (yêu cầu thông tin hoàn tiền)
-        final msg2Ref = threadRef.collection('messages').doc();
-        final msg2Content = currentStatus == 'Preparing'
-            ? 'Đơn hàng #$invoiceId đã được hủy. Vui lòng gửi thông tin tài khoản ngân hàng (STK, tên ngân hàng, chủ tài khoản) để shop hoàn tiền cho bạn.'
-            : 'Đơn hàng #$invoiceId đã được hủy theo yêu cầu của bạn.';
-
-        // Ensure thread document exists and update lastMessage
-        await threadRef.set({
-          'threadId': threadId,
-          'customerUid': firebaseUser.uid,
-          'customerName': firebaseUser.displayName ?? 'Khách hàng',
-          'customerEmail': firebaseUser.email ?? '',
-          'adminUid': adminUser.uid,
-          'adminName': adminUser.fullName,
-          'adminEmail': adminUser.email,
-          'lastMessage': msg2Content,
-          'lastMessageAt': now,
-          'customerUnreadCount': 1,
-          'adminUnreadCount': 1,
-          'createdAt': now,
-          'updatedAt': now,
-        }, SetOptions(merge: true));
-
-        // Send message from customer to admin
-        await msg1Ref.set({
-          'messageId': msg1Ref.id,
-          'senderUid': firebaseUser.uid,
-          'receiverUid': adminUser.uid,
-          'content': msg1Content,
-          'createdAt': now,
-        });
-
-        // Send message from admin to customer
-        await msg2Ref.set({
-          'messageId': msg2Ref.id,
-          'senderUid': adminUser.uid,
-          'receiverUid': firebaseUser.uid,
-          'content': msg2Content,
-          'createdAt': now,
+        await FirebaseFirestore.instance.collection('notifications').add({
+          'firebaseUid': adminUser.uid,
+          'localUserId': adminUser.localUserId,
+          'type': 'order',
+          'title': 'Khách hàng huỷ đơn hàng',
+          'content': [
+            'Đơn hàng #$invoiceId đã bị huỷ bởi khách hàng $customerName.',
+            if (customerEmail.isNotEmpty) 'Email: $customerEmail',
+            if (customerPhone.isNotEmpty) 'SĐT: $customerPhone',
+            if (paymentMethod.isNotEmpty) 'Phương thức thanh toán: $paymentMethod',
+            if (shippingAddress.isNotEmpty) 'Địa chỉ nhận hàng: $shippingAddress',
+            'Tổng tiền: ${totalAmount.toStringAsFixed(0)}đ',
+            'Trạng thái đơn: $currentStatus / $paymentStatus',
+          ].join('\n'),
+          'referenceId': invoiceId,
+          'referenceType': 'order',
+          'createdAt': DateTime.now().toIso8601String(),
+          'isRead': false,
         });
       }
     } catch (e) {
-      print('cancelOrderByCustomer: auto-send chat message failed (non-fatal): $e');
+      print('cancelOrderByCustomer: admin notification failed (non-fatal): $e');
     }
 
     // 6. Notify (best-effort)

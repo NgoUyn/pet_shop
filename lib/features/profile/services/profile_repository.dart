@@ -98,7 +98,9 @@ class ProfileRepository {
       return null;
     }
 
-    final row = rows.first;
+    final row = Map<String, Object?>.from(rows.first);
+    await _mergeFirestoreProfileIntoLocalCache(row);
+
     return ProfileData(
       userId: row['UserID'] as int,
       fullName: (row['FullName'] as String?) ?? '',
@@ -108,6 +110,133 @@ class ProfileRepository {
       address: row['Address'] as String?,
       loyaltyPoints: (row['LoyaltyPoints'] as int?) ?? 0,
     );
+  }
+
+  Future<void> _mergeFirestoreProfileIntoLocalCache(Map<String, Object?> row) async {
+    final localFirebaseUid = (row['FirebaseUID'] as String?)?.trim();
+    final currentFirebaseUid = FirebaseAuth.instance.currentUser?.uid.trim();
+    final firebaseUid = (localFirebaseUid != null && localFirebaseUid.isNotEmpty)
+        ? localFirebaseUid
+        : (currentFirebaseUid?.isNotEmpty == true ? currentFirebaseUid : null);
+
+    if (firebaseUid == null) {
+      return;
+    }
+
+    try {
+      final doc = await FirebaseFirestore.instance.collection('users').doc(firebaseUid).get();
+      final data = doc.data();
+      if (!doc.exists || data == null) {
+        return;
+      }
+
+      final firestoreFullName = (data['fullName'] as String?)?.trim();
+      final firestoreEmail = (data['email'] as String?)?.trim();
+      final firestoreRole = (data['role'] as String?)?.trim();
+      final firestorePhone = (data['phone'] as String?)?.trim();
+      final firestoreAddress = (data['address'] as String?)?.trim();
+      final firestoreLoyaltyPoints = (data['loyaltyPoints'] as num?)?.toInt();
+
+      final localRole = (row['Role'] as String?)?.trim().toLowerCase() ?? 'customer';
+
+      if (firestoreFullName != null && firestoreFullName.isNotEmpty) {
+        row['FullName'] = firestoreFullName;
+      }
+      if (firestoreEmail != null && firestoreEmail.isNotEmpty) {
+        row['Email'] = firestoreEmail;
+      }
+      if (firestoreRole != null && firestoreRole.isNotEmpty && localRole != 'admin') {
+        row['Role'] = firestoreRole;
+      }
+      if (firestorePhone != null && firestorePhone.isNotEmpty) {
+        row['Phone'] = firestorePhone;
+      }
+      if (firestoreAddress != null && firestoreAddress.isNotEmpty) {
+        row['Address'] = firestoreAddress;
+      }
+      if (firestoreLoyaltyPoints != null) {
+        row['LoyaltyPoints'] = firestoreLoyaltyPoints;
+      }
+
+      await _updateLocalCacheFromFirestore(
+        userId: row['UserID'] as int,
+        firebaseUid: firebaseUid,
+        fullName: firestoreFullName,
+        email: firestoreEmail,
+        role: firestoreRole,
+        phone: firestorePhone,
+        address: firestoreAddress,
+        loyaltyPoints: firestoreLoyaltyPoints,
+      );
+    } catch (e) {
+      print('ProfileRepository._mergeFirestoreProfileIntoLocalCache error: $e');
+    }
+  }
+
+  Future<void> _updateLocalCacheFromFirestore({
+    required int userId,
+    required String firebaseUid,
+    String? fullName,
+    String? email,
+    String? role,
+    String? phone,
+    String? address,
+    int? loyaltyPoints,
+  }) async {
+    final db = await AppDatabase.instance;
+    final now = DateTime.now().toIso8601String();
+
+    final userUpdates = <String, Object?>{
+      'FirebaseUID': firebaseUid,
+      'UpdatedAt': now,
+    };
+
+    if (fullName != null && fullName.isNotEmpty) {
+      userUpdates['FullName'] = fullName;
+    }
+    if (email != null && email.isNotEmpty) {
+      userUpdates['Email'] = email.toLowerCase();
+    }
+    if (role != null && role.isNotEmpty) {
+      userUpdates['Role'] = role;
+    }
+
+    await db.update(
+      'User',
+      userUpdates,
+      where: 'UserID = ?',
+      whereArgs: [userId],
+    );
+
+    final customerUpdates = <String, Object?>{};
+    if (phone != null) {
+      customerUpdates['Phone'] = phone.isEmpty ? null : phone;
+    }
+    if (address != null) {
+      customerUpdates['Address'] = address.isEmpty ? null : address;
+    }
+    if (loyaltyPoints != null) {
+      customerUpdates['LoyaltyPoints'] = loyaltyPoints;
+    }
+
+    if (customerUpdates.isNotEmpty) {
+      final customerRows = await db.query(
+        'Customer',
+        columns: ['CustomerID'],
+        where: 'UserID = ?',
+        whereArgs: [userId],
+        limit: 1,
+      );
+
+      if (customerRows.isNotEmpty) {
+        await db.update(
+          'Customer',
+          customerUpdates,
+          where: 'UserID = ?',
+          whereArgs: [userId],
+        );
+      }
+    }
   }
 
   Future<ProfileData?> getCurrentProfile() async {

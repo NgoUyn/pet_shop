@@ -467,10 +467,10 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
   }
 
   Future<void> _cancelOrderByCustomer(OrderInfo order) async {
-    final isPreparing = order.orderStatus == 'Preparing';
-    final message = isPreparing
-        ? 'Đơn hàng #${order.invoiceId} đã được thanh toán. Nếu huỷ, shop sẽ liên hệ hướng dẫn hoàn tiền. Bạn có chắc muốn huỷ?'
-        : 'Bạn có chắc muốn huỷ đơn hàng #${order.invoiceId}?';
+    final isPaid = order.paymentStatus.trim().toLowerCase() == 'paid';
+    final message = isPaid
+      ? 'Đơn hàng #${order.invoiceId} đã được thanh toán. Nếu huỷ, shop sẽ liên hệ hướng dẫn hoàn tiền. Bạn có chắc muốn huỷ?'
+      : 'Bạn có chắc muốn huỷ đơn hàng #${order.invoiceId}?';
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -501,7 +501,7 @@ class _OrderHistoryPageState extends State<OrderHistoryPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(isPreparing ? 'Đã huỷ đơn hàng! Vui lòng xem tin nhắn từ shop để được hướng dẫn hoàn tiền.' : 'Đã huỷ đơn hàng!'),
+          content: Text(isPaid ? 'Đã huỷ đơn hàng! Vui lòng xem tin nhắn từ shop để được hướng dẫn hoàn tiền.' : 'Đã huỷ đơn hàng!'),
           backgroundColor: Colors.orange,
         ),
       );

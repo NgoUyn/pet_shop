@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/db/app_database.dart';
+import '../../../core/utils/vnd_currency_input_formatter.dart';
 import '../../home/services/product_repository.dart';
 
 class ProductEditorResult {
@@ -48,7 +49,7 @@ Future<ProductEditorResult?> showProductEditorSheet(
 
   final formKey = GlobalKey<FormState>();
   final nameController = TextEditingController(text: initialProduct?.productName ?? '');
-  final priceController = TextEditingController(text: initialProduct == null ? '' : initialProduct.price.toStringAsFixed(0));
+  final priceController = TextEditingController(text: initialProduct == null ? '' : formatVndAmount(initialProduct.price));
   final stockController = TextEditingController(text: initialProduct?.stockQuantity.toString() ?? '1');
   final descriptionController = TextEditingController(text: initialProduct?.description ?? '');
   final imageUrlController = TextEditingController(text: initialProduct?.imageUrl ?? '');
@@ -111,9 +112,10 @@ Future<ProductEditorResult?> showProductEditorSheet(
                     TextFormField(
                       controller: priceController,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: const InputDecoration(labelText: 'Giá', border: OutlineInputBorder()),
+                      inputFormatters: [VndCurrencyInputFormatter()],
+                      decoration: const InputDecoration(labelText: 'Giá', border: OutlineInputBorder(), suffixText: 'VNĐ'),
                       validator: (value) {
-                        final parsed = double.tryParse((value ?? '').trim());
+                        final parsed = parseVndAmount(value)?.toDouble();
                         if (parsed == null || parsed <= 0) return 'Vui lòng nhập giá hợp lệ';
                         return null;
                       },
@@ -157,7 +159,7 @@ Future<ProductEditorResult?> showProductEditorSheet(
                           ProductEditorResult(
                             categoryId: selectedCategoryId!,
                             productName: nameController.text.trim(),
-                            price: double.parse(priceController.text.trim()),
+                            price: (parseVndAmount(priceController.text) ?? 0).toDouble(),
                             stockQuantity: int.parse(stockController.text.trim()),
                             description: descriptionController.text.trim().isEmpty
                                 ? null

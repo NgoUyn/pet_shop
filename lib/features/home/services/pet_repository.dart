@@ -51,7 +51,7 @@ class PetItem {
       price: rawPrice?.toDouble(),
       age: row['Age'] as int?,
       personality: row['Personality'] as String?,
-      imageUrl: row['ImageURL'] as String?,
+      imageUrl: _readImageUrl(row),
       isDewormed: (row['IsDewormed'] as int?) == 1,
       isVaccinated: (row['IsVaccinated'] as int?) == 1,
       isActive: (row['IsActive'] as int?) == 1,
@@ -59,6 +59,16 @@ class PetItem {
       stockQuantity: (row['StockQuantity'] as int?) ?? 1,
     );
   }
+}
+
+String? _readImageUrl(Map<String, Object?> data) {
+  for (final key in const ['ImageURL', 'imageUrl', 'imageURL', 'image', 'image_url']) {
+    final value = data[key];
+    if (value is String && value.trim().isNotEmpty) {
+      return value;
+    }
+  }
+  return null;
 }
 
 class PetRepository {
@@ -131,7 +141,7 @@ class PetRepository {
           price: (data['price'] as num?)?.toDouble(),
           age: (data['age'] as num?)?.toInt(),
           personality: data['personality'] as String?,
-          imageUrl: data['imageUrl'] as String?,
+          imageUrl: _readFirestoreImageUrl(data),
           isDewormed: data['isDewormed'] as bool? ?? false,
           isVaccinated: data['isVaccinated'] as bool? ?? false,
           isActive: data['isActive'] as bool? ?? true,
@@ -155,7 +165,40 @@ class PetRepository {
     );
 
     if (rows.isNotEmpty) {
-      return PetItem.fromRow(rows.first);
+      final localItem = PetItem.fromRow(rows.first);
+      if ((localItem.imageUrl ?? '').trim().isNotEmpty) {
+        return localItem;
+      }
+
+      try {
+        final doc = await FirebaseFirestore.instance
+            .collection('pets')
+            .doc(petId.toString())
+            .get();
+        if (!doc.exists) return localItem;
+        final data = doc.data()!;
+        final firestoreItem = PetItem(
+          petId: petId,
+          petName: (data['petName'] as String?) ?? '',
+          species: (data['species'] as String?) ?? '',
+          breed: data['breed'] as String?,
+          gender: data['gender'] as String?,
+          description: data['description'] as String?,
+          price: (data['price'] as num?)?.toDouble(),
+          age: (data['age'] as num?)?.toInt(),
+          personality: data['personality'] as String?,
+          imageUrl: _readFirestoreImageUrl(data),
+          isDewormed: data['isDewormed'] as bool? ?? false,
+          isVaccinated: data['isVaccinated'] as bool? ?? false,
+          isActive: data['isActive'] as bool? ?? true,
+          createdAt: DateTime.parse((data['createdAt'] as String)),
+          stockQuantity: (data['stockQuantity'] as num?)?.toInt() ?? 1,
+        );
+        return (firestoreItem.imageUrl ?? '').trim().isNotEmpty ? firestoreItem : localItem;
+      } catch (e) {
+        print('PetRepository.getPetById Firestore image merge error: $e');
+        return localItem;
+      }
     }
 
     // Fallback to Firestore (may have been created on another device)
@@ -176,7 +219,7 @@ class PetRepository {
         price: (data['price'] as num?)?.toDouble(),
         age: (data['age'] as num?)?.toInt(),
         personality: data['personality'] as String?,
-        imageUrl: data['imageUrl'] as String?,
+        imageUrl: _readFirestoreImageUrl(data),
         isDewormed: data['isDewormed'] as bool? ?? false,
         isVaccinated: data['isVaccinated'] as bool? ?? false,
         isActive: data['isActive'] as bool? ?? true,
@@ -376,4 +419,14 @@ class PetRepository {
       print('PetRepository.syncStockToFirestore error: $e');
     }
   }
+}
+
+String? _readFirestoreImageUrl(Map<String, dynamic> data) {
+  for (final key in const ['imageUrl', 'imageURL', 'ImageURL', 'image', 'image_url']) {
+    final value = data[key];
+    if (value is String && value.trim().isNotEmpty) {
+      return value;
+    }
+  }
+  return null;
 }

@@ -40,6 +40,7 @@ class _AdminShellPageState extends State<AdminShellPage> {
   late Future<_AdminDashboardSummary> _summaryFuture;
   int _unreadNotifications = 0;
   int _unreadChats = 0;
+  StreamSubscription<int>? _notificationCountSubscription;
   Timer? _refreshTimer;
 
   @override
@@ -48,6 +49,12 @@ class _AdminShellPageState extends State<AdminShellPage> {
     _selectedTab = widget.initialTab;
     _summaryFuture = _AdminDashboardSummary.load();
     _refreshBadgeCounts();
+    _notificationCountSubscription = NotificationRepository.instance.watchUnreadCountForCurrentUser().listen((count) {
+      if (!mounted) return;
+      setState(() {
+        _unreadNotifications = count;
+      });
+    });
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       _refreshBadgeCounts();
       if (mounted) {
@@ -60,6 +67,7 @@ class _AdminShellPageState extends State<AdminShellPage> {
 
   @override
   void dispose() {
+    _notificationCountSubscription?.cancel();
     _refreshTimer?.cancel();
     super.dispose();
   }
@@ -112,6 +120,7 @@ class _AdminShellPageState extends State<AdminShellPage> {
   }
 
   Future<void> _openNotifications() async {
+    await NotificationRepository.instance.markAllAsReadForCurrentUser();
     await Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => const _AdminNotificationCenterPage()),
     );
@@ -161,7 +170,55 @@ class _AdminShellPageState extends State<AdminShellPage> {
     );
   }
 
+  void _showOfferMenu() {
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.inventory_2_outlined, color: AppColors.primary),
+                title: const Text('Kho hàng', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: const Text('Quản lý tồn kho sản phẩm'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _selectTab(2);
+                },
+              ),
+              const Divider(height: 1, indent: 16, endIndent: 16),
+              ListTile(
+                leading: const Icon(Icons.sell_outlined, color: AppColors.secondary),
+                title: const Text('Đã bán', style: TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: const Text('Xem đơn hàng đã bán'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _selectTab(1);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
+
   Widget build(BuildContext context) {
     final pages = [
       _AdminDashboardPage(
@@ -174,7 +231,6 @@ class _AdminShellPageState extends State<AdminShellPage> {
       AdminWarehousePage(),
       UserListPage(),
       ReviewManagementPage(),
-      _AdminAccountPage(onLogoutTap: _logout),
     ];
 
     return Scaffold(
@@ -191,16 +247,11 @@ class _AdminShellPageState extends State<AdminShellPage> {
             2 => 'Kho hàng',
             3 => 'Khách hàng',
             4 => 'Đánh giá',
-            _ => 'Tài khoản',
+            _ => '',
           },
           style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700),
         ),
         actions: [
-          IconButton(
-            onPressed: () => _pushPage(const _AdminServicesPage()),
-            icon: const Icon(Icons.local_offer_outlined),
-            tooltip: 'Dịch vụ',
-          ),
           IconButton(
             onPressed: _openNotifications,
             icon: _badgeIcon(Icons.notifications_none_outlined, _unreadNotifications),
@@ -211,7 +262,12 @@ class _AdminShellPageState extends State<AdminShellPage> {
             icon: _badgeIcon(Icons.chat_bubble_outline, _unreadChats),
             tooltip: 'Tin nhắn',
           ),
-          const SizedBox(width: 8),
+          IconButton(
+            onPressed: _logout,
+            icon: const Icon(Icons.logout),
+            tooltip: 'Đăng xuất',
+          ),
+          const SizedBox(width: 4),
         ],
       ),
       body: IndexedStack(
@@ -249,11 +305,6 @@ class _AdminShellPageState extends State<AdminShellPage> {
             icon: Icon(Icons.rate_review_outlined),
             selectedIcon: Icon(Icons.rate_review),
             label: 'Đánh giá',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: 'Tài khoản',
           ),
         ],
       ),

@@ -1,12 +1,14 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/cloudinary_helper.dart';
 import '../../../core/widgets/optimized_network_image.dart';
 import '../../../core/utils/cloudinary_transform.dart';
+import '../../../core/utils/vnd_currency_input_formatter.dart';
 import '../../home/services/pet_repository.dart';
 
 class AdminPetFormPage extends StatefulWidget {
@@ -46,7 +48,7 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
       _petNameController.text = pet.petName;
       _species = pet.species;
       _breedController.text = pet.breed ?? '';
-      _priceController.text = pet.price?.toStringAsFixed(0) ?? '';
+      _priceController.text = pet.price == null ? '' : formatVndAmount(pet.price!);
       _ageController.text = pet.age?.toString() ?? '';
       _personalityController.text = pet.personality ?? '';
       _descriptionController.text = pet.description ?? '';
@@ -227,7 +229,7 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
           species: _species,
           breed: resolvedBreed,
           gender: _gender,
-          price: double.parse(_priceController.text.trim()),
+          price: (parseVndAmount(_priceController.text) ?? 0).toDouble(),
           description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
           age: int.tryParse(_ageController.text.trim()),
           personality: _personalityController.text.trim().isEmpty ? null : _personalityController.text.trim(),
@@ -241,7 +243,7 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
           species: _species,
           breed: resolvedBreed,
           gender: _gender,
-          price: double.parse(_priceController.text.trim()),
+          price: (parseVndAmount(_priceController.text) ?? 0).toDouble(),
           description: _descriptionController.text.trim().isEmpty ? null : _descriptionController.text.trim(),
           age: int.tryParse(_ageController.text.trim()),
           personality: _personalityController.text.trim().isEmpty ? null : _personalityController.text.trim(),
@@ -374,8 +376,10 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
                               label: 'Giá',
                               hintText: '3.500.000',
                               keyboardType: TextInputType.number,
+                              inputFormatters: [VndCurrencyInputFormatter()],
+                              suffixText: 'VNĐ',
                               validator: (value) {
-                                final parsed = double.tryParse((value ?? '').trim());
+                                final parsed = parseVndAmount(value)?.toDouble();
                                 if (parsed == null || parsed <= 0) {
                                   return 'Vui lòng nhập giá hợp lệ';
                                 }
@@ -568,15 +572,19 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
     String? Function(String?)? validator,
     TextInputType keyboardType = TextInputType.text,
     int maxLines = 1,
+    List<TextInputFormatter>? inputFormatters,
+    String? suffixText,
   }) {
     return TextFormField(
       controller: controller,
       keyboardType: keyboardType,
       maxLines: maxLines,
+      inputFormatters: inputFormatters,
       validator: validator,
       decoration: InputDecoration(
         labelText: label,
         hintText: hintText,
+        suffixText: suffixText,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
       ),
     );

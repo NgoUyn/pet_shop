@@ -37,18 +37,21 @@ class _UserListPageState extends State<UserListPage> {
 
   Future<List<Map<String, Object?>>> _loadUsers() async {
     final db = await AppDatabase.instance;
-    final localUsers = await db.query(
-      'User',
-      columns: [
-        'UserID',
-        'Role',
-        'Email',
-        'FullName',
-        'CreatedAt',
-        'FirebaseUID',
-      ],
-      orderBy: 'UserID DESC',
-    );
+    final localUsers = await db.rawQuery('''
+      SELECT
+        u.UserID,
+        u.Role,
+        u.Email,
+        u.FullName,
+        u.CreatedAt,
+        u.FirebaseUID,
+        c.Phone,
+        c.Address,
+        COALESCE(c.LoyaltyPoints, 0) AS LoyaltyPoints
+      FROM User u
+      LEFT JOIN Customer c ON c.UserID = u.UserID
+      ORDER BY u.UserID DESC
+    ''');
 
     final firestoreSnapshot = await FirebaseFirestore.instance.collection('users').get();
 
