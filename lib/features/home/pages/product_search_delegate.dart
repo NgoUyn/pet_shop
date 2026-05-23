@@ -325,7 +325,8 @@ class ProductSearchDelegate extends SearchDelegate<ProductItem?> {
         Navigator.push(
           context,
           MaterialPageRoute(
-            builder: (_) => CustomerPetDetailPage(petId: pet.petId),
+            builder: (_) => CustomerPetDetailPage(pet: pet),
+
           ),
         );
       },
