@@ -1,7 +1,8 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/optimized_network_image.dart';
+import '../../../core/utils/cloudinary_transform.dart';
 import '../../../core/services/pet_provider.dart';
 import '../../admin/pages/admin_pet_form_page.dart';
 import '../../reviews/services/review_repository.dart';
@@ -197,18 +198,10 @@ class _PetDetailPageState extends State<PetDetailPage> {
                 color: Color(0xFF2F80ED),
               ),
             )
-          : CachedNetworkImage(
+          : OptimizedNetworkImage(
               imageUrl: imageUrl,
+              size: CloudinaryImageSize.medium,
               fit: BoxFit.cover,
-              errorWidget: (context, url, error) {
-                return const Center(
-                  child: Icon(
-                    Icons.pets,
-                    size: 96,
-                    color: Color(0xFF2F80ED),
-                  ),
-                );
-              },
             ),
     );
   }

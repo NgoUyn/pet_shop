@@ -1,7 +1,8 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/optimized_network_image.dart';
+import '../../../core/utils/cloudinary_transform.dart';
 import '../../../core/services/pet_provider.dart';
 import '../../../core/services/product_provider.dart';
 import '../../../core/utils/cloudinary_helper.dart';
@@ -253,18 +254,12 @@ class _HomePageState extends State<HomePage> {
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(20),
-                    child: CachedNetworkImage(
-                      imageUrl: CloudinaryHelper.getBannerImage('banner1'),
+                    child: OptimizedNetworkImage(
+                      imageUrl: 'https://i.pinimg.com/1200x/79/54/fe/7954fe5fac405a381f2af964ef774abb.jpg',
+                      size: CloudinaryImageSize.banner,
                       fit: BoxFit.cover,
                       width: double.infinity,
                       height: double.infinity,
-                      placeholder: (context, url) =>
-                          const Center(child: CircularProgressIndicator(color: AppColors.accent)),
-                      errorWidget: (context, url, error) => Container(
-                        color: AppColors.accentLight,
-                        child: const Center(
-                            child: Icon(Icons.pets, size: 50, color: AppColors.accent)),
-                      ),
                     ),
                   ),
                   // (Image search moved to header camera icon)

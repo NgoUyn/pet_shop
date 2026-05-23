@@ -55,7 +55,11 @@ class AuthRepository {
       final existingEmail = (rows.first['Email'] as String?)?.trim().toLowerCase();
       final existingFullName = (rows.first['FullName'] as String?) ?? '';
       final existingRole = (rows.first['Role'] as String?) ?? 'customer';
-      final resolvedName = (displayName ?? firebaseUser.displayName ?? existingFullName).trim();
+      // Ưu tiên tên cũ trong DB, chỉ cập nhật nếu tên cũ trống
+      final resolvedName = (existingFullName.isNotEmpty
+          ? existingFullName
+          : (displayName ?? firebaseUser.displayName ?? '')
+      ).trim();
       String resolvedRole = _isAdminAccount(normalizedEmail) ? 'admin' : existingRole;
 
       try {

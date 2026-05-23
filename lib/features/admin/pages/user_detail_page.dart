@@ -1,10 +1,11 @@
 import 'dart:async';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/optimized_network_image.dart';
+import '../../../core/utils/cloudinary_transform.dart';
 import '../../../core/db/app_database.dart';
 import '../../chat/pages/chat_page.dart';
 import '../../orders/services/order_repository.dart';
@@ -171,6 +172,11 @@ class _UserDetailPageState extends State<UserDetailPage> {
             }
           }
         }
+
+        // Merge phone & address từ Firestore (users/{uid}) vì SQLite local có thể không được
+        // đồng bộ khi user cập nhật profile trên thiết bị khác
+        _mergePhoneAddressFromFirestore(sqliteUser);
+
         setState(() {
           _user = sqliteUser;
           _loading = false;
@@ -200,6 +206,40 @@ class _UserDetailPageState extends State<UserDetailPage> {
           _loading = false;
         });
       }
+    }
+  }
+
+  /// Đọc phone & address từ Firestore document users/{firebaseUid} và merge vào user map
+  /// để đảm bảo admin luôn thấy dữ liệu mới nhất (cross-device sync)
+  Future<void> _mergePhoneAddressFromFirestore(Map<String, Object?> user) async {
+    final firebaseUid = user['FirebaseUID'] as String?;
+    if (firebaseUid == null || firebaseUid.isEmpty) return;
+
+    try {
+      final docSnapshot = await FirebaseFirestore.instance
+          .collection('users')
+          .doc(firebaseUid)
+          .get();
+
+      if (!docSnapshot.exists) return;
+
+      final data = docSnapshot.data();
+      if (data == null) return;
+
+      // Merge phone từ Firestore nếu có
+      final firestorePhone = data['phone'] as String?;
+      if (firestorePhone != null && firestorePhone.isNotEmpty) {
+        user['Phone'] = firestorePhone;
+      }
+
+      // Merge address từ Firestore nếu có
+      final firestoreAddress = data['address'] as String?;
+      if (firestoreAddress != null && firestoreAddress.isNotEmpty) {
+        user['Address'] = firestoreAddress;
+      }
+    } catch (e) {
+      // Không throw lỗi, chỉ log để debug
+      print('_mergePhoneAddressFromFirestore error: $e');
     }
   }
 
@@ -1008,13 +1048,12 @@ class _UserDetailPageState extends State<UserDetailPage> {
                 separatorBuilder: (_, __) => const SizedBox(width: 6),
                 itemBuilder: (_, i) => ClipRRect(
                   borderRadius: BorderRadius.circular(6),
-                  child: CachedNetworkImage(
+                  child: OptimizedNetworkImage(
                     imageUrl: review.imageUrls[i],
+                    size: CloudinaryImageSize.avatar,
                     width: 60,
                     height: 60,
                     fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) =>
-                        const Icon(Icons.broken_image, size: 24, color: Colors.grey),
                   ),
                 ),
               ),
@@ -1037,8 +1076,6 @@ class _InfoRow extends StatelessWidget {
   final String value;
   final Color? valueColor;
 
-  @override
-  @override
   @override
   Widget build(BuildContext context) {
     return Padding(

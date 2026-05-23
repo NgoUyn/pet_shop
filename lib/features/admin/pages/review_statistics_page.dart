@@ -1,8 +1,9 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/optimized_network_image.dart';
+import '../../../core/utils/cloudinary_transform.dart';
 import '../services/sentiment_service.dart';
 
 // ─── Data Models ───────────────────────────────────────────────────────
@@ -1926,18 +1927,12 @@ class _TopReviewedList extends StatelessWidget {
                 if (item.imageUrl != null)
                   ClipRRect(
                     borderRadius: BorderRadius.circular(8),
-                    child: CachedNetworkImage(
+                    child: OptimizedNetworkImage(
                       imageUrl: item.imageUrl!,
+                      size: CloudinaryImageSize.avatar,
                       width: 40,
                       height: 40,
                       fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => Container(
-                        width: 40,
-                        height: 40,
-                        color: Colors.grey.shade200,
-                        child: const Icon(Icons.image_outlined,
-                            size: 20, color: Colors.grey),
-                      ),
                     ),
                   )
                 else

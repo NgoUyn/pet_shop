@@ -1,6 +1,7 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/optimized_network_image.dart';
+import '../../../core/utils/cloudinary_transform.dart';
 import '../../auth/services/auth_session.dart';
 import '../../profile/services/profile_repository.dart';
 import '../../cart/services/cart_repository.dart';
@@ -424,7 +425,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Khách hàng', style: Theme.of(context).textTheme.titleMedium),
+                  // Text('Khách hàng', style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
                   SizedBox(
                     width: double.infinity,
@@ -562,7 +563,7 @@ class _CheckoutPageState extends State<CheckoutPage> {
                   Text('Danh sách sản phẩm', style: Theme.of(context).textTheme.titleMedium),
                   const SizedBox(height: 8),
                   ..._items.map((e) => ListTile(
-                        leading: SizedBox(width: 48, child: e.imageUrl == null || e.imageUrl!.isEmpty ? const Icon(Icons.image) : CachedNetworkImage(imageUrl: e.imageUrl!, fit: BoxFit.cover)),
+                        leading: SizedBox(width: 48, child: e.imageUrl == null || e.imageUrl!.isEmpty ? const Icon(Icons.image) : OptimizedNetworkImage(imageUrl: e.imageUrl!, size: CloudinaryImageSize.avatar, fit: BoxFit.cover)),
                         title: Text(e.productName),
                         subtitle: Text('${e.quantity} x ${_formatPrice(e.unitPrice)}'),
                         trailing: Text(_formatPrice(e.lineTotal)),

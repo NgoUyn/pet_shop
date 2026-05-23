@@ -1,8 +1,8 @@
-import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/price_helper.dart';
+import '../../../core/widgets/optimized_network_image.dart';
+import '../../../core/utils/cloudinary_transform.dart';
 import '../services/pet_repository.dart';
 
 /// Reusable Pet Card widget used across all pages.
@@ -352,7 +352,7 @@ class PetCard extends StatelessWidget {
   }
 }
 
-// ── Image builder with CachedNetworkImage ────────────────────────────────
+// ── Image builder with OptimizedNetworkImage ────────────────────────────
 
 Widget _buildImage(String? imageUrl) {
   final normalized = (imageUrl ?? '').trim();
@@ -364,34 +364,11 @@ Widget _buildImage(String? imageUrl) {
     );
   }
 
-  if (normalized.startsWith('http://') || normalized.startsWith('https://')) {
-    return CachedNetworkImage(
-      imageUrl: normalized,
-      width: double.infinity,
-      fit: BoxFit.cover,
-      // memCacheHeight reduces CPU load by decoding at a fixed resolution
-      memCacheHeight: 400,
-      placeholder: (context, url) => const Center(
-        child: CircularProgressIndicator(),
-      ),
-      errorWidget: (context, url, error) => _buildFallback(),
-    );
-  }
-
-  return Image.file(
-    File(normalized),
+  return OptimizedNetworkImage(
+    imageUrl: normalized,
+    size: CloudinaryImageSize.thumbnail,
     width: double.infinity,
     fit: BoxFit.cover,
-    errorBuilder: (context, error, stackTrace) => _buildFallback(),
-  );
-}
-
-Widget _buildFallback() {
-  return Container(
-    color: const Color(0xFFF9FAFB),
-    alignment: Alignment.center,
-    child: const Icon(Icons.broken_image_outlined,
-        color: Color(0xFFB0B8C1), size: 44),
   );
 }
 

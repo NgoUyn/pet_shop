@@ -1,11 +1,12 @@
 import 'dart:io';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/cloudinary_helper.dart';
+import '../../../core/widgets/optimized_network_image.dart';
+import '../../../core/utils/cloudinary_transform.dart';
 import '../../home/services/pet_repository.dart';
 
 class AdminPetFormPage extends StatefulWidget {
@@ -132,12 +133,12 @@ class _AdminPetFormPageState extends State<AdminPetFormPage> {
       if (isNetwork) {
         imageWidget = ClipRRect(
           borderRadius: BorderRadius.circular(20),
-          child: CachedNetworkImage(
+          child: OptimizedNetworkImage(
             imageUrl: url,
+            size: CloudinaryImageSize.medium,
             height: 180,
             width: double.infinity,
             fit: BoxFit.cover,
-            errorWidget: (_, __, ___) => _buildPreviewPlaceholder(),
           ),
         );
       } else {

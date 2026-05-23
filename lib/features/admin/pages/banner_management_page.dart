@@ -1,11 +1,12 @@
 import 'dart:io';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/cloudinary_helper.dart';
+import '../../../core/widgets/optimized_network_image.dart';
+import '../../../core/utils/cloudinary_transform.dart';
 import '../../admin/services/banner_repository.dart';
 
 class BannerManagementPage extends StatefulWidget {
@@ -38,7 +39,12 @@ class _BannerManagementPageState extends State<BannerManagementPage> {
 
   Future<void> _addBanner() async {
     final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery);
+    final picked = await picker.pickImage(
+      source: ImageSource.gallery,
+      maxWidth: 1600,
+      maxHeight: 800,
+      imageQuality: 80,
+    );
     if (picked == null) return;
 
     showDialog(
@@ -105,7 +111,7 @@ class _BannerManagementPageState extends State<BannerManagementPage> {
                 return Card(
                   child: ListTile(
                     leading: it.imageUrl.isNotEmpty
-                        ? CachedNetworkImage(imageUrl: it.imageUrl, width: 72, fit: BoxFit.cover, errorWidget: (_,__,___)=> const Icon(Icons.broken_image))
+                        ? OptimizedNetworkImage(imageUrl: it.imageUrl, size: CloudinaryImageSize.avatar, width: 72, fit: BoxFit.cover)
                         : const Icon(Icons.image_outlined),
                     title: Text(it.name ?? 'Banner ${it.id}'),
                     subtitle: Text('ID: ${it.id} • Tạo: ${it.createdAt}'),

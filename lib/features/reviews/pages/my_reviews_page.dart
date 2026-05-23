@@ -1,7 +1,8 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/optimized_network_image.dart';
+import '../../../core/utils/cloudinary_transform.dart';
 import '../../orders/services/order_repository.dart';
 import '../services/review_repository.dart';
 import 'review_page.dart';
@@ -273,13 +274,9 @@ class _ReviewCard extends StatelessWidget {
                         ClipRRect(
                           borderRadius: BorderRadius.circular(6),
                           child: item['imageUrl'] is String
-                              ? CachedNetworkImage(imageUrl: item['imageUrl'] as String,
-                                  width: 48, height: 48, fit: BoxFit.cover,
-                                  errorWidget: (_, __, ___) => Container(
-                                      width: 48, height: 48,
-                                      color: Colors.grey.shade200,
-                                      child: const Icon(Icons.image_outlined,
-                                          size: 24, color: Colors.grey)))
+                              ? OptimizedNetworkImage(imageUrl: item['imageUrl'] as String,
+                                  size: CloudinaryImageSize.avatar,
+                                  width: 48, height: 48, fit: BoxFit.cover)
                               : Container(
                                   width: 48, height: 48,
                                   color: Colors.grey.shade200,
@@ -337,13 +334,12 @@ class _ReviewCard extends StatelessWidget {
                   separatorBuilder: (_, __) => const SizedBox(width: 6),
                   itemBuilder: (_, i) => ClipRRect(
                     borderRadius: BorderRadius.circular(6),
-                    child: CachedNetworkImage(
+                    child: OptimizedNetworkImage(
                       imageUrl: review.imageUrls[i],
+                      size: CloudinaryImageSize.avatar,
                       width: 80,
                       height: 80,
                       fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) =>
-                          const Icon(Icons.broken_image, size: 40, color: Colors.grey),
                     ),
                   ),
                 ),

@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
@@ -18,11 +21,66 @@ class _LoginPageState extends State<LoginPage> {
   bool _obscure = true;
   bool _loading = false;
 
+  /// Timer để tự động kiểm tra emailVerified sau khi đăng ký
+  Timer? _verifyTimer;
+  bool _isPolling = false;
+
   @override
   void dispose() {
+    _verifyTimer?.cancel();
     _emailCtrl.dispose();
     _passCtrl.dispose();
     super.dispose();
+  }
+
+  /// Bắt đầu polling kiểm tra emailVerified
+  void _startVerificationPolling() {
+    _verifyTimer?.cancel();
+    _isPolling = true;
+    _verifyTimer = Timer.periodic(const Duration(seconds: 3), (_) async {
+      if (!mounted) {
+        _verifyTimer?.cancel();
+        return;
+      }
+      await _checkEmailVerified();
+    });
+  }
+
+  /// Kiểm tra emailVerified và tự động đăng nhập nếu đã xác thực
+  Future<void> _checkEmailVerified() async {
+    try {
+      final firebaseAuth = FirebaseAuth.instance;
+      final currentUser = firebaseAuth.currentUser;
+      if (currentUser == null) return;
+
+      await currentUser.reload();
+      final refreshedUser = firebaseAuth.currentUser;
+      if (refreshedUser == null || !refreshedUser.emailVerified) return;
+
+      // Email đã được xác thực! Tự động đăng nhập
+      _verifyTimer?.cancel();
+      _isPolling = false;
+
+      if (!mounted) return;
+      setState(() => _loading = true);
+
+      final userId = await AuthRepository.instance.syncVerifiedFirebaseUser();
+      if (!mounted) return;
+
+      if (userId != null) {
+        // Đăng nhập thành công, pop về Home
+        if (Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+      } else {
+        setState(() => _loading = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Không thể đồng bộ tài khoản. Vui lòng đăng nhập thủ công.')),
+        );
+      }
+    } catch (_) {
+      // Bỏ qua lỗi, tiếp tục polling
+    }
   }
 
   Future<void> _onLogin() async {
@@ -92,6 +150,21 @@ class _LoginPageState extends State<LoginPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(e.toString().replaceFirst('StateError: ', ''))),
       );
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Tự động bắt đầu polling nếu có user Firebase chưa verify email
+    _autoStartPollingIfNeeded();
+  }
+
+  /// Kiểm tra và tự động polling nếu có user Firebase chưa verify
+  void _autoStartPollingIfNeeded() {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser != null && !currentUser.emailVerified) {
+      _startVerificationPolling();
     }
   }
 
@@ -181,6 +254,44 @@ class _LoginPageState extends State<LoginPage> {
                               ),
                       ),
                     ),
+                    // Hiển thị trạng thái đang chờ xác thực email
+                    if (_isPolling)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Đang chờ xác thực email...',
+                              style: TextStyle(
+                                color: AppColors.textLight,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    if (_isPolling)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: TextButton(
+                          onPressed: () {
+                            _verifyTimer?.cancel();
+                            _isPolling = false;
+                            if (mounted) setState(() {});
+                          },
+                          child: const Text(
+                            'Huỷ chờ tự động',
+                            style: TextStyle(fontSize: 12, color: Colors.grey),
+                          ),
+                        ),
+                      ),
                     const SizedBox(height: 14),
                     const Text(
                       'Hoặc tiếp tục bằng',

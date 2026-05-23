@@ -68,19 +68,9 @@ class ProfileRepository {
       return null;
     }
 
-    if (normalized.length < 3) {
-      return 'Địa chỉ phải có ít nhất 3 ký tự';
+    if (normalized.length < 5) {
+      return 'Địa chỉ phải có ít nhất 5 ký tự';
     }
-
-    if (normalized.length > 120) {
-      return 'Địa chỉ không được vượt quá 120 ký tự';
-    }
-
-    final allowed = RegExp(r'^[\p{L}\p{M}0-9 ]+$', unicode: true);
-    if (!allowed.hasMatch(normalized)) {
-      return 'Địa chỉ không được chứa ký tự đặc biệt';
-    }
-
     return null;
   }
 

@@ -1,10 +1,11 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/optimized_network_image.dart';
+import '../../../core/utils/cloudinary_transform.dart';
 import '../../../core/utils/price_helper.dart';
 import '../../pet_detail/pages/pet_detail_page.dart';
 import '../../product_detail/pages/admin_product_detail.dart';
@@ -266,10 +267,10 @@ class _AdminWarehousePageState extends State<AdminWarehousePage> {
                 clipBehavior: Clip.antiAlias,
                 child: item.imageUrl == null || item.imageUrl!.trim().isEmpty
                     ? Icon(item.kind == _WarehouseKind.pet ? Icons.pets_outlined : Icons.shopping_bag_outlined, color: AppColors.textLight, size: 34)
-                    : CachedNetworkImage(
+                    : OptimizedNetworkImage(
                         imageUrl: item.imageUrl!.trim(),
+                        size: CloudinaryImageSize.avatar,
                         fit: BoxFit.cover,
-                        errorWidget: (_, __, ___) => Icon(item.kind == _WarehouseKind.pet ? Icons.pets_outlined : Icons.shopping_bag_outlined, color: AppColors.textLight, size: 34),
                       ),
               ),
               const SizedBox(width: 12),

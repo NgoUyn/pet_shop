@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/optimized_network_image.dart';
+import '../../../core/utils/cloudinary_transform.dart';
 import '../../chat/pages/chat_page.dart';
 import '../../chat/services/chat_repository.dart';
 import '../../home/services/product_repository.dart';
@@ -484,16 +485,10 @@ class _ProductDetailBodyState extends State<ProductDetailBody> {
                 color: Color(0xFF3E7C63),
               ),
             )
-          : CachedNetworkImage(
+          : OptimizedNetworkImage(
               imageUrl: imageUrl,
+              size: CloudinaryImageSize.medium,
               fit: BoxFit.cover,
-              errorWidget: (context, url, error) => const Center(
-                child: Icon(
-                  Icons.shopping_bag_outlined,
-                  size: 96,
-                  color: Color(0xFF3E7C63),
-                ),
-              ),
             ),
     );
   }
@@ -733,13 +728,12 @@ class _ProductDetailBodyState extends State<ProductDetailBody> {
                 separatorBuilder: (_, __) => const SizedBox(width: 6),
                 itemBuilder: (_, i) => ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: CachedNetworkImage(
+                  child: OptimizedNetworkImage(
                     imageUrl: review.imageUrls[i],
+                    size: CloudinaryImageSize.avatar,
                     width: 80,
                     height: 80,
                     fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) =>
-                        const Icon(Icons.broken_image, size: 32, color: Colors.grey),
                   ),
                 ),
               ),
@@ -827,13 +821,11 @@ class _ProductDetailBodyState extends State<ProductDetailBody> {
                     ? const Center(
                         child: Icon(Icons.shopping_bag_outlined, size: 40, color: Color(0xFF9AA5B1)),
                       )
-                    : CachedNetworkImage(
+                    : OptimizedNetworkImage(
                         imageUrl: imageUrl,
+                        size: CloudinaryImageSize.thumbnail,
                         fit: BoxFit.cover,
                         width: double.infinity,
-                        errorWidget: (_, __, ___) => const Center(
-                          child: Icon(Icons.shopping_bag_outlined, size: 40, color: Color(0xFF9AA5B1)),
-                        ),
                       ),
               ),
             ),

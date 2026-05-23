@@ -1,12 +1,13 @@
 import 'dart:io';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/db/app_database.dart';
 import '../../../core/utils/cloudinary_helper.dart';
+import '../../../core/widgets/optimized_network_image.dart';
+import '../../../core/utils/cloudinary_transform.dart';
 import '../../home/services/product_repository.dart';
 
 class AdminProductFormPage extends StatefulWidget {
@@ -107,7 +108,9 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
     try {
       final file = await _imagePicker.pickImage(
         source: ImageSource.gallery,
-        imageQuality: 85,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 82,
       );
       if (file == null) return;
       setState(() {
@@ -165,12 +168,12 @@ class _AdminProductFormPageState extends State<AdminProductFormPage> {
     } else if (hasExistingImage) {
       imageWidget = ClipRRect(
         borderRadius: BorderRadius.circular(20),
-        child: CachedNetworkImage(
+        child: OptimizedNetworkImage(
           imageUrl: existingUrl,
+          size: CloudinaryImageSize.medium,
           height: 180,
           width: double.infinity,
           fit: BoxFit.cover,
-          errorWidget: (_, __, ___) => _buildPreviewPlaceholder(),
         ),
       );
     } else {

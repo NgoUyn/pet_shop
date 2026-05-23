@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 
+import 'cloudinary_transform.dart';
+
 /// Helper to upload images to Cloudinary
 class CloudinaryHelper {
   CloudinaryHelper._();
@@ -63,6 +65,7 @@ class CloudinaryHelper {
   /// Used by home_page.dart.
   static String getBannerImage(String bannerName) {
     final cloudName = dotenv.env['CLOUDINARY_CLOUD_NAME'] ?? 'dyk8jc0nq';
-    return 'https://res.cloudinary.com/$cloudName/image/upload/v1/banners/$bannerName';
+    final url = 'https://res.cloudinary.com/$cloudName/image/upload/v1/banners/$bannerName';
+    return CloudinaryTransform.transform(url, size: CloudinaryImageSize.banner);
   }
 }

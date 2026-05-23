@@ -1,8 +1,9 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/db/app_database.dart';
+import '../../../core/widgets/optimized_network_image.dart';
+import '../../../core/utils/cloudinary_transform.dart';
 import '../../auth/pages/login_page.dart';
 import '../../auth/services/auth_session.dart';
 import '../../cart/services/cart_repository.dart';
@@ -321,6 +322,7 @@ class ProductSearchDelegate extends SearchDelegate<ProductItem?> {
 
   Widget _buildPetCard(BuildContext context, PetItem pet) {
     final isFavorited = _favoritePetIds.contains(pet.petId);
+    final imageUrl = (pet.imageUrl ?? '').trim();
     return GestureDetector(
       onTap: () {
         Navigator.push(
@@ -342,18 +344,25 @@ class ProductSearchDelegate extends SearchDelegate<ProductItem?> {
             Expanded(
               child: ClipRRect(
                 borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
-                child: Container(
-                  color: const Color(0xFFF9FAFB),
-                  alignment: Alignment.center,
-                  child: Text(
-                    pet.species.contains('Chó') || pet.species.contains('chó')
-                        ? '🐕'
-                        : pet.species.contains('Mèo') || pet.species.contains('mèo')
-                            ? '🐱'
-                            : '🐾',
-                    style: const TextStyle(fontSize: 48),
-                  ),
-                ),
+                child: imageUrl.isNotEmpty
+                    ? OptimizedNetworkImage(
+                        imageUrl: imageUrl,
+                        size: CloudinaryImageSize.thumbnail,
+                        width: double.infinity,
+                        fit: BoxFit.cover,
+                      )
+                    : Container(
+                        color: const Color(0xFFF9FAFB),
+                        alignment: Alignment.center,
+                        child: Text(
+                          pet.species.contains('Chó') || pet.species.contains('chó')
+                              ? '🐕'
+                              : pet.species.contains('Mèo') || pet.species.contains('mèo')
+                                  ? '🐱'
+                                  : '🐾',
+                          style: const TextStyle(fontSize: 48),
+                        ),
+                      ),
               ),
             ),
             Padding(
@@ -422,17 +431,11 @@ class ProductSearchDelegate extends SearchDelegate<ProductItem?> {
       );
     }
 
-    return CachedNetworkImage(
+    return OptimizedNetworkImage(
       imageUrl: normalized,
+      size: CloudinaryImageSize.thumbnail,
       width: double.infinity,
       fit: BoxFit.cover,
-      errorWidget: (context, url, error) {
-        return Container(
-          color: AppColors.background,
-          alignment: Alignment.center,
-          child: const Icon(Icons.broken_image_outlined, color: AppColors.textLight, size: 44),
-        );
-      },
     );
   }
 

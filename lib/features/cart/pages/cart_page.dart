@@ -1,7 +1,8 @@
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/optimized_network_image.dart';
+import '../../../core/utils/cloudinary_transform.dart';
 import '../../auth/pages/login_page.dart';
 import '../../auth/services/auth_session.dart';
 import '../services/cart_repository.dart';
@@ -249,21 +250,14 @@ class _CartPageState extends State<CartPage> {
       );
     }
 
-    return CachedNetworkImage(
+    return OptimizedNetworkImage(
       imageUrl: normalized,
+      size: CloudinaryImageSize.avatar,
+      width: 80,
+      height: 80,
+      memCacheWidth: 120,
+      memCacheHeight: 120,
       fit: BoxFit.cover,
-      errorWidget:
-          (context, url, error) {
-        return Container(
-          color: AppColors.background,
-          alignment: Alignment.center,
-          child: const Icon(
-            Icons.broken_image_outlined,
-            color: AppColors.textLight,
-            size: 34,
-          ),
-        );
-      },
     );
   }
 

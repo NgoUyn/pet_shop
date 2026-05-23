@@ -1,10 +1,11 @@
 import 'dart:io';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../../core/widgets/optimized_network_image.dart';
+import '../../../core/utils/cloudinary_transform.dart';
 import '../../../core/utils/cloudinary_helper.dart';
 import '../services/chat_repository.dart';
 import '../services/sensitive_image_detector.dart';
@@ -465,38 +466,12 @@ class _ChatMessagesList extends StatelessWidget {
       borderRadius: BorderRadius.circular(12),
       child: GestureDetector(
         onTap: () => _showImagePreview(context, message.imageUrl!),
-        child: CachedNetworkImage(
+        child: OptimizedNetworkImage(
           imageUrl: message.imageUrl!,
+          size: CloudinaryImageSize.medium,
           width: 280,
           height: 200,
           fit: BoxFit.cover,
-          placeholder: (context, url) => Container(
-            width: 280,
-            height: 200,
-            color: isMine ? Colors.white24 : Colors.grey.shade100,
-            child: Center(
-              child: CircularProgressIndicator(
-                color: isMine ? Colors.white : AppColors.primary,
-              ),
-            ),
-          ),
-          errorWidget: (context, url, error) {
-            return Container(
-              width: 280,
-              height: 200,
-              color: Colors.grey.shade200,
-              child: const Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.broken_image, size: 40, color: Colors.grey),
-                    SizedBox(height: 4),
-                    Text('Không thể tải ảnh', style: TextStyle(fontSize: 12, color: Colors.grey)),
-                  ],
-                ),
-              ),
-            );
-          },
         ),
       ),
     );
@@ -554,22 +529,10 @@ class _ChatMessagesList extends StatelessWidget {
           ),
           body: Center(
             child: InteractiveViewer(
-              child: CachedNetworkImage(
+              child: OptimizedNetworkImage(
                 imageUrl: imageUrl,
+                size: CloudinaryImageSize.large,
                 fit: BoxFit.contain,
-                placeholder: (context, url) => const Center(child: CircularProgressIndicator(color: Colors.white)),
-                errorWidget: (context, url, error) {
-                  return const Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.broken_image, size: 64, color: Colors.white54),
-                        SizedBox(height: 8),
-                        Text('Không thể tải ảnh', style: TextStyle(color: Colors.white54)),
-                      ],
-                    ),
-                  );
-                },
               ),
             ),
           ),
