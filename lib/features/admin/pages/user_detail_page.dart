@@ -282,9 +282,10 @@ class _UserDetailPageState extends State<UserDetailPage> {
       final email = (user?['Email'] as String?)?.trim().toLowerCase();
       int? customerId;
 
-      if (_resolvedUserId > 0) {
-        try {
-          final db = await AppDatabase.instance;
+      try {
+        final db = await AppDatabase.instance;
+
+        if (_resolvedUserId > 0) {
           final rows = await db.query(
             'Customer',
             columns: ['CustomerID'],
@@ -295,13 +296,39 @@ class _UserDetailPageState extends State<UserDetailPage> {
           if (rows.isNotEmpty) {
             customerId = rows.first['CustomerID'] as int?;
           }
-        } catch (_) {}
-      }
+        }
+
+        if (customerId == null && email != null && email.isNotEmpty) {
+          final rows = await db.rawQuery('''
+            SELECT c.CustomerID
+            FROM User u
+            JOIN Customer c ON c.UserID = u.UserID
+            WHERE LOWER(TRIM(u.Email)) = ?
+            LIMIT 1
+          ''', [email]);
+          if (rows.isNotEmpty) {
+            customerId = rows.first['CustomerID'] as int?;
+          }
+        }
+
+        if (customerId == null && firebaseUid != null && firebaseUid.isNotEmpty) {
+          final rows = await db.rawQuery('''
+            SELECT c.CustomerID
+            FROM User u
+            JOIN Customer c ON c.UserID = u.UserID
+            WHERE u.FirebaseUID = ?
+            LIMIT 1
+          ''', [firebaseUid]);
+          if (rows.isNotEmpty) {
+            customerId = rows.first['CustomerID'] as int?;
+          }
+        }
+      } catch (_) {}
 
       final ordersByInvoiceId = <int, OrderInfo>{};
 
       // 1. Load từ local SQLite
-      if (_resolvedUserId > 0) {
+      if (customerId != null) {
         try {
           final db = await AppDatabase.instance;
           final invoiceRows = await db.rawQuery('''
@@ -311,9 +338,9 @@ class _UserDetailPageState extends State<UserDetailPage> {
             FROM Invoice i
             JOIN Customer c ON i.CustomerID = c.CustomerID
             JOIN User u ON c.UserID = u.UserID
-            WHERE c.UserID = ?
+            WHERE i.CustomerID = ?
             ORDER BY i.CreatedAt DESC
-          ''', [_resolvedUserId]);
+          ''', [customerId]);
 
           for (final row in invoiceRows) {
             final invoiceId = row['InvoiceID'] as int;
@@ -803,11 +830,8 @@ class _UserDetailPageState extends State<UserDetailPage> {
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                 ),
                 const Divider(),
-                _InfoRow(label: 'User ID', value: '#${user['UserID']}'),
                 _InfoRow(label: 'Email', value: email),
-                _InfoRow(label: 'Firebase UID', value: firebaseUid ?? 'Chưa có'),
                 _InfoRow(label: 'Ngày tạo', value: _formatDateTime(createdAt)),
-                _InfoRow(label: 'Cập nhật', value: _formatDateTime(updatedAt)),
                 const SizedBox(height: 8),
                 if (role.toLowerCase() != 'admin')
                   SizedBox(

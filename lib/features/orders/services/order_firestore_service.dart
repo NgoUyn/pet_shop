@@ -1,5 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../../core/db/app_database.dart';
+import '../../auth/services/auth_session.dart';
 import 'order_repository.dart';
 
 class OrderFirestoreService {
@@ -152,24 +154,55 @@ class OrderFirestoreService {
       final firebaseUser = FirebaseAuth.instance.currentUser;
       if (firebaseUser == null) return [];
 
+      int? localCustomerId;
+      try {
+        final userId = AuthSession.instance.currentUserId.value;
+        if (userId != null) {
+          final db = await AppDatabase.instance;
+          final rows = await db.query(
+            'Customer',
+            columns: ['CustomerID'],
+            where: 'UserID = ?',
+            whereArgs: [userId],
+            limit: 1,
+          );
+          if (rows.isNotEmpty) {
+            localCustomerId = rows.first['CustomerID'] as int?;
+          }
+        }
+      } catch (_) {}
+
       final base = _firestore.collection('orders');
-      List<DocumentSnapshot> docs = [];
+      final queries = <Future<QuerySnapshot<Map<String, dynamic>>>>[];
 
       if (statusFilter != null && statusFilter.isNotEmpty) {
         if (statusFilter == 'Unpaid') {
-          // Only get orders with orderStatus == 'Unpaid'
-          final snapshot = await base
-              .where('customerFirebaseUid', isEqualTo: firebaseUser.uid)
-              .where('orderStatus', isEqualTo: 'Unpaid')
-              .get();
-          docs = snapshot.docs;
+          queries.add(base.where('customerFirebaseUid', isEqualTo: firebaseUser.uid).where('orderStatus', isEqualTo: 'Unpaid').get());
+          if (localCustomerId != null) {
+            queries.add(base.where('customerId', isEqualTo: localCustomerId).where('orderStatus', isEqualTo: 'Unpaid').get());
+          }
         } else {
-          final snapshot = await base.where('customerFirebaseUid', isEqualTo: firebaseUser.uid).where('orderStatus', isEqualTo: statusFilter).get();
-          docs = snapshot.docs;
+          queries.add(base.where('customerFirebaseUid', isEqualTo: firebaseUser.uid).where('orderStatus', isEqualTo: statusFilter).get());
+          if (localCustomerId != null) {
+            queries.add(base.where('customerId', isEqualTo: localCustomerId).where('orderStatus', isEqualTo: statusFilter).get());
+          }
         }
       } else {
-        final snapshot = await base.where('customerFirebaseUid', isEqualTo: firebaseUser.uid).get();
-        docs = snapshot.docs;
+        queries.add(base.where('customerFirebaseUid', isEqualTo: firebaseUser.uid).get());
+        if (localCustomerId != null) {
+          queries.add(base.where('customerId', isEqualTo: localCustomerId).get());
+        }
+      }
+
+      final results = await Future.wait(queries);
+      final docs = <DocumentSnapshot>[];
+      final seenDocIds = <String>{};
+      for (final snapshot in results) {
+        for (final doc in snapshot.docs) {
+          if (seenDocIds.add(doc.id)) {
+            docs.add(doc);
+          }
+        }
       }
 
       final seen = <String>{};

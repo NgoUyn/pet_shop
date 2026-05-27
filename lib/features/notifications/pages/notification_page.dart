@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../orders/pages/order_history_page.dart';
+import '../../orders/services/order_repository.dart';
 import '../../reviews/pages/review_page.dart';
 import '../services/notification_repository.dart';
 
@@ -12,6 +13,7 @@ class NotificationPage extends StatefulWidget {
 }
 
 class _NotificationPageState extends State<NotificationPage> {
+  final OrderRepository _orderRepo = OrderRepository.instance;
   List<AppNotificationItem> _notifications = [];
   bool _isLoading = true;
   String _searchQuery = '';
@@ -103,8 +105,17 @@ class _NotificationPageState extends State<NotificationPage> {
 
     if (item.type == 'order' && item.referenceId != null) {
       if (!mounted) return;
-      final isCompleted = item.title.contains('hoàn thành') ||
-          item.title.contains('giao thành công');
+      bool isCompleted = false;
+      try {
+        final order = await _orderRepo.getOrderForCurrentUserByInvoiceId(item.referenceId!);
+        isCompleted = order?.orderStatus == 'Completed';
+      } catch (_) {}
+
+      if (!isCompleted) {
+        isCompleted = item.title.contains('hoàn thành') ||
+            item.title.contains('giao thành công');
+      }
+
       if (isCompleted) {
         final submitted = await Navigator.push<bool>(
           context,

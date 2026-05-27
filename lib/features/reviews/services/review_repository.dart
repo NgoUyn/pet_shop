@@ -109,6 +109,8 @@ class ReviewRepository {
       throw StateError('Đánh giá phải từ 1 đến 5 sao');
     }
 
+    final isFlagged = moderationStatus == 'flagged' || moderationStatus == 'rejected';
+
     // Ensure invoice exists locally (may have been created on another device)
     await _ensureInvoiceExistsLocally(db, invoiceId);
 
@@ -120,6 +122,8 @@ class ReviewRepository {
       'Content': content?.trim().isEmpty == true ? null : content?.trim(),
       'CreatedAt': now,
       'UpdatedAt': null,
+      'IsFlagged': isFlagged ? 1 : 0,
+      'ModerationStatus': moderationStatus,
     });
 
     // Insert review images
@@ -377,6 +381,12 @@ class ReviewRepository {
     final images = await _loadImages(db, reviewId);
     final review = ReviewItem.fromRow(rows.first, imageUrls: images);
     if (review.isDeleted) return null;
+    // Don't return flagged/pending/rejected reviews to the user
+    if (review.moderationStatus == 'flagged' ||
+        review.moderationStatus == 'pending' ||
+        review.moderationStatus == 'rejected') {
+      return null;
+    }
     return review;
   }
 
@@ -479,6 +489,8 @@ class ReviewRepository {
       JOIN Invoice i ON r.InvoiceID = i.InvoiceID
       JOIN InvoiceDetail id ON i.InvoiceID = id.InvoiceID
       WHERE id.ProductID = ?
+        AND (r.IsDeleted IS NULL OR r.IsDeleted = 0)
+        AND (r.ModerationStatus IS NULL OR r.ModerationStatus = 'approved')
       ORDER BY r.CreatedAt DESC
     ''', [productId]);
 
@@ -498,9 +510,16 @@ class ReviewRepository {
           .where('productIds', arrayContains: productId)
           .get();
 
-      final items = snapshot.docs
+      var items = snapshot.docs
           .map((doc) => ReviewItem.fromFirestore(doc))
           .toList();
+
+      // Filter out flagged/pending/rejected/deleted reviews
+      items.removeWhere((item) =>
+          item.isDeleted ||
+          item.moderationStatus == 'flagged' ||
+          item.moderationStatus == 'pending' ||
+          item.moderationStatus == 'rejected');
 
       // Sort client-side to avoid composite index
       items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -521,6 +540,8 @@ class ReviewRepository {
       JOIN Invoice i ON r.InvoiceID = i.InvoiceID
       JOIN InvoiceDetail id ON i.InvoiceID = id.InvoiceID
       WHERE id.PetID = ?
+        AND (r.IsDeleted IS NULL OR r.IsDeleted = 0)
+        AND (r.ModerationStatus IS NULL OR r.ModerationStatus = 'approved')
       ORDER BY r.CreatedAt DESC
     ''', [petId]);
 
@@ -549,6 +570,13 @@ class ReviewRepository {
             .where((item) => item.orderItems.any((orderItem) => (orderItem['petId'] as num?)?.toInt() == petId))
             .toList();
       }
+
+      // Filter out flagged/pending/rejected/deleted reviews
+      items.removeWhere((item) =>
+          item.isDeleted ||
+          item.moderationStatus == 'flagged' ||
+          item.moderationStatus == 'pending' ||
+          item.moderationStatus == 'rejected');
 
       items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       return items;
@@ -715,6 +743,12 @@ class ReviewRepository {
     }
 
     var result = localMap.values.toList();
+    // Filter out flagged/pending/rejected reviews so users don't see
+    // their toxic/flagged reviews in "My Reviews"
+    result.removeWhere((item) =>
+        item.moderationStatus == 'flagged' ||
+        item.moderationStatus == 'pending' ||
+        item.moderationStatus == 'rejected');
     result.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return result;
   }

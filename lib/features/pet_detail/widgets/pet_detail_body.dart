@@ -119,7 +119,7 @@ class _PetDetailBodyState extends State<PetDetailBody> {
     try {
       // Use the same review repository but query by petId
       // Reviews are stored with invoice details that may reference PetID
-      final reviews = await ReviewRepository.instance.getByProductId(_currentPet.petId);
+      final reviews = await ReviewRepository.instance.getByPetId(_currentPet.petId);
       if (mounted) {
         setState(() {
           _reviews = reviews;

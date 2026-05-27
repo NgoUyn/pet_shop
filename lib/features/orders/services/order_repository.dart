@@ -137,6 +137,26 @@ class OrderRepository {
 
   static final OrderRepository instance = OrderRepository._();
 
+  bool _matchesStatusFilter(OrderInfo order, String? statusFilter) {
+    if (statusFilter == null || statusFilter.isEmpty) return true;
+    return order.orderStatus == statusFilter ||
+        (order.orderStatus.isEmpty && order.paymentStatus == statusFilter);
+  }
+
+  List<OrderInfo> _mergeOrdersByInvoiceId(List<OrderInfo> localOrders, List<OrderInfo> firestoreOrders) {
+    final ordersByInvoiceId = <int, OrderInfo>{};
+
+    for (final order in localOrders) {
+      ordersByInvoiceId[order.invoiceId] = order;
+    }
+
+    for (final firestoreOrder in firestoreOrders) {
+      ordersByInvoiceId[firestoreOrder.invoiceId] = firestoreOrder;
+    }
+
+    return ordersByInvoiceId.values.toList();
+  }
+
   /// Get all orders for the current user
   Future<List<OrderInfo>> getOrdersForCurrentUser({String? statusFilter}) async {
     final userId = AuthSession.instance.currentUserId.value;
@@ -156,28 +176,18 @@ class OrderRepository {
     if (customerRows.isEmpty) return [];
     final customerId = customerRows.first['CustomerID'] as int;
 
-    // Build query
-    String where = 'i.CustomerID = ?';
-    List<dynamic> whereArgs = [customerId];
-
-    if (statusFilter != null && statusFilter.isNotEmpty) {
-      where += ' AND (i.OrderStatus = ? OR (i.OrderStatus IS NULL AND i.PaymentStatus = ?))';
-      whereArgs.add(statusFilter);
-      whereArgs.add(statusFilter);
-    }
-
     final invoiceRows = await db.rawQuery(
       '''
       SELECT i.*,
         COALESCE(i.OrderStatus, i.PaymentStatus) as EffectiveStatus
       FROM Invoice i
-      WHERE $where
+      WHERE i.CustomerID = ?
       ORDER BY i.CreatedAt DESC
       ''',
-      whereArgs,
+      [customerId],
     );
 
-    final orders = <OrderInfo>[];
+    final localOrders = <OrderInfo>[];
     for (final row in invoiceRows) {
       final invoiceId = row['InvoiceID'] as int;
 
@@ -193,20 +203,17 @@ class OrderRepository {
       );
 
       final items = detailRows.map(OrderItemInfo.fromRow).toList();
-      orders.add(OrderInfo.fromRow(row, items));
+      localOrders.add(OrderInfo.fromRow(row, items));
     }
 
-    // Merge with Firestore orders (cross-device)
+    final firestoreOrders = <OrderInfo>[];
     try {
-      final firestoreOrders = await OrderFirestoreService.instance
-          .getOrdersForCurrentFirebaseUser(statusFilter: statusFilter);
-      final localInvoiceIds = orders.map((o) => o.invoiceId).toSet();
-      for (final fo in firestoreOrders) {
-        if (!localInvoiceIds.contains(fo.invoiceId)) {
-          orders.add(fo);
-        }
-      }
+      firestoreOrders.addAll(await OrderFirestoreService.instance.getOrdersForCurrentFirebaseUser());
     } catch (_) {}
+
+    final orders = _mergeOrdersByInvoiceId(localOrders, firestoreOrders)
+        .where((order) => _matchesStatusFilter(order, statusFilter))
+        .toList();
 
     orders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return orders;
@@ -215,15 +222,6 @@ class OrderRepository {
   /// Get all orders (for admin)
   Future<List<OrderInfo>> getAllOrders({String? statusFilter}) async {
     final db = await AppDatabase.instance;
-
-    String where = '1=1';
-    List<dynamic> whereArgs = [];
-
-    if (statusFilter != null && statusFilter.isNotEmpty) {
-      where += ' AND (i.OrderStatus = ? OR (i.OrderStatus IS NULL AND i.PaymentStatus = ?))';
-      whereArgs.add(statusFilter);
-      whereArgs.add(statusFilter);
-    }
 
     final invoiceRows = await db.rawQuery(
       '''
@@ -234,13 +232,13 @@ class OrderRepository {
       FROM Invoice i
       JOIN Customer c ON i.CustomerID = c.CustomerID
       JOIN User u ON c.UserID = u.UserID
-      WHERE $where
+      WHERE 1=1
       ORDER BY i.CreatedAt DESC
       ''',
-      whereArgs,
+      const [],
     );
 
-    final orders = <OrderInfo>[];
+    final localOrders = <OrderInfo>[];
     for (final row in invoiceRows) {
       final invoiceId = row['InvoiceID'] as int;
 
@@ -256,23 +254,30 @@ class OrderRepository {
       );
 
       final items = detailRows.map(OrderItemInfo.fromRow).toList();
-      orders.add(OrderInfo.fromRow(row, items));
+      localOrders.add(OrderInfo.fromRow(row, items));
     }
 
-    // Merge with Firestore orders (cross-device)
+    final firestoreOrders = <OrderInfo>[];
     try {
-      final firestoreOrders = await OrderFirestoreService.instance
-          .getOrdersForCurrentFirebaseUser(statusFilter: statusFilter);
-      final localInvoiceIds = orders.map((o) => o.invoiceId).toSet();
-      for (final fo in firestoreOrders) {
-        if (!localInvoiceIds.contains(fo.invoiceId)) {
-          orders.add(fo);
-        }
-      }
+      firestoreOrders.addAll(await OrderFirestoreService.instance.getAllOrdersFromFirestore());
     } catch (_) {}
+
+    final orders = _mergeOrdersByInvoiceId(localOrders, firestoreOrders)
+        .where((order) => _matchesStatusFilter(order, statusFilter))
+        .toList();
 
     orders.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     return orders;
+  }
+
+  Future<OrderInfo?> getOrderForCurrentUserByInvoiceId(int invoiceId) async {
+    final orders = await getOrdersForCurrentUser();
+    for (final order in orders) {
+      if (order.invoiceId == invoiceId) {
+        return order;
+      }
+    }
+    return null;
   }
 
   /// Get customer UserID from invoice
@@ -778,11 +783,11 @@ class OrderRepository {
     String content,
   ) async {
     final customerFirebaseUid = (orderDoc['customerFirebaseUid'] as String?) ?? '';
-    if (customerFirebaseUid.isEmpty) return;
+    final localUserId = await _getCustomerUserId(invoiceId);
+    if (customerFirebaseUid.isEmpty && localUserId == null) return;
 
     try {
-      await FirebaseFirestore.instance.collection('notifications').add({
-        'firebaseUid': customerFirebaseUid,
+      final notificationData = <String, dynamic>{
         'type': type,
         'title': title,
         'content': content,
@@ -790,10 +795,17 @@ class OrderRepository {
         'referenceType': 'order',
         'createdAt': DateTime.now().toIso8601String(),
         'isRead': false,
-      });
+      };
+      if (customerFirebaseUid.isNotEmpty) {
+        notificationData['firebaseUid'] = customerFirebaseUid;
+      }
+      if (localUserId != null) {
+        notificationData['localUserId'] = localUserId;
+      }
+
+      await FirebaseFirestore.instance.collection('notifications').add(notificationData);
 
       // Also try local notification if the customer user exists locally
-      final localUserId = await _getCustomerUserId(invoiceId);
       if (localUserId != null) {
         await NotificationRepository.instance.create(
           userId: localUserId,
